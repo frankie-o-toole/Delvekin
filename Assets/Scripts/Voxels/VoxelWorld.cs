@@ -16,7 +16,6 @@ public class VoxelWorld : MonoBehaviour
     private void Start()
     {
         GenerateTestWorld();
-        DebugWorld();
     }
 
     #region World Generation
@@ -112,27 +111,6 @@ public class VoxelWorld : MonoBehaviour
 
             chunkRenderers[chunkCoord].RebuildMesh();
         }
-
-        Debug.Log($"Setting voxel at {worldPos} to {type}");
-        Debug.Log($"Chunk coord: {chunkCoord}");
     }
-
-    #endregion
-
-    #region Debug
-
-    private void DebugWorld()
-    {
-        Debug.Log("=== WORLD DEBUG ===");
-
-        Chunk chunk = chunks[Vector3Int.zero];
-
-        Debug.Log(chunk.GetVoxel(0, 0, 0).Type);
-        Debug.Log(chunk.GetVoxel(0, 1, 0).Type);
-        Debug.Log(chunk.GetVoxel(0, 2, 0).Type);
-
-        Debug.Log($"Chunks: {chunks.Count}");
-    }
-
     #endregion
 }
