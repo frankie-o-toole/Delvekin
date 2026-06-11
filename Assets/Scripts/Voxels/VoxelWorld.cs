@@ -3,64 +3,64 @@ using UnityEngine;
 
 public class VoxelWorld : MonoBehaviour
 {
-    private Dictionary<Vector3Int, Chunk> chunks =
-        new Dictionary<Vector3Int, Chunk>();
-
-    private Dictionary<Vector3Int, ChunkRenderer> chunkRenderers =
-        new Dictionary<Vector3Int, ChunkRenderer>();
-
-    [Header("World Settings")]
-    public int worldSizeInChunks = 1;
+    private Dictionary<Vector3Int, Chunk> chunks = new();
+    private Dictionary<Vector3Int, ChunkRenderer> chunkRenderers = new();
 
     public Material voxelMaterial;
+
+    private LevelData currentLevel;
+
     private void Start()
     {
-        GenerateTestWorld();
+        LoadGeneratedLevel(1234, 1);
+    }
+    private void Update()
+    {
+        if (Input.GetKeyDown(KeyCode.G))
+        {
+            LoadGeneratedLevel(Random.Range(0, 99999), 1);
+        }
+
+        if (Input.GetKeyDown(KeyCode.S))
+        {
+            LevelSerializer.Save(currentLevel, "test_level");
+        }
+    }
+    public void LoadGeneratedLevel(int seed, int worldSize)
+    {
+        currentLevel = LevelGenerator.Generate(seed, worldSize);
+
+        BuildFromLevel(currentLevel);
     }
 
-    #region World Generation
-
-    private void GenerateTestWorld()
+    private void BuildFromLevel(LevelData data)
     {
-        for (int x = 0; x < worldSizeInChunks; x++)
-            for (int y = 0; y < 1; y++)
-                for (int z = 0; z < worldSizeInChunks; z++)
-                {
-                    Vector3Int chunkCoord = new Vector3Int(x, y, z);
-
-                    CreateChunk(chunkCoord);
-                }
-    }
-
-    private void CreateChunk(Vector3Int coord)
-    {
-        // 1. Create data chunk
-        Chunk chunk = new Chunk(coord);
-        chunks.Add(coord, chunk);
-
-        // 2. Fill test terrain (TEMPORARY PLACEHOLDER)
-        FillTestTerrain(chunk);
-
-        // 3. Create renderer
-        CreateChunkRenderer(chunk);
-    }
-
-    private void FillTestTerrain(Chunk chunk)
-    {
-        for (int x = 0; x < Chunk.ChunkSize; x++)
-            for (int z = 0; z < Chunk.ChunkSize; z++)
+        for (int x = 0; x < data.worldSizeInChunks; x++)
+            for (int z = 0; z < data.worldSizeInChunks; z++)
             {
-                chunk.SetVoxel(x, 0, z, new Voxel(VoxelType.Granite));
-                chunk.SetVoxel(x, 1, z, new Voxel(VoxelType.Dirt));
+                Chunk chunk = new Chunk(new Vector3Int(x, 0, z));
+
+                for (int lx = 0; lx < Chunk.ChunkSize; lx++)
+                    for (int ly = 0; ly < Chunk.ChunkSize; ly++)
+                        for (int lz = 0; lz < Chunk.ChunkSize; lz++)
+                        {
+                            chunk.SetVoxel(lx, ly, lz,
+                                new Voxel(data.chunks[x, 0, z][lx, ly, lz]));
+                        }
+
+                chunks[new Vector3Int(x, 0, z)] = chunk;
+
+                CreateChunkRenderer(chunk);
             }
     }
+
     private void CreateChunkRenderer(Chunk chunk)
     {
         GameObject go = new GameObject($"Chunk {chunk.ChunkCoordinate}");
 
         ChunkRenderer renderer = go.AddComponent<ChunkRenderer>();
 
-        var meshRenderer = go.GetComponent<MeshRenderer>();
+        MeshRenderer meshRenderer = go.GetComponent<MeshRenderer>();
         meshRenderer.material = voxelMaterial;
 
         renderer.Initialize(chunk);
@@ -68,25 +68,14 @@ public class VoxelWorld : MonoBehaviour
         chunkRenderers.Add(chunk.ChunkCoordinate, renderer);
     }
 
-    #endregion
-
-    #region World Queries
-
     public Voxel GetVoxel(Vector3Int worldPos)
     {
-        Vector3Int chunkCoord =
-            VoxelMath.WorldToChunkCoord(worldPos);
-
-        Vector3Int localPos =
-            VoxelMath.WorldToLocalVoxel(worldPos);
+        Vector3Int chunkCoord = VoxelMath.WorldToChunkCoord(worldPos);
+        Vector3Int local = VoxelMath.WorldToLocalVoxel(worldPos);
 
         if (chunks.TryGetValue(chunkCoord, out Chunk chunk))
         {
-            return chunk.GetVoxel(
-                localPos.x,
-                localPos.y,
-                localPos.z
-            );
+            return chunk.GetVoxel(local.x, local.y, local.z);
         }
 
         return new Voxel(VoxelType.Air);
@@ -100,17 +89,15 @@ public class VoxelWorld : MonoBehaviour
         Vector3Int localPos =
             VoxelMath.WorldToLocalVoxel(worldPos);
 
-        if (chunks.TryGetValue(chunkCoord, out Chunk chunk))
-        {
-            chunk.SetVoxel(
-                localPos.x,
-                localPos.y,
-                localPos.z,
-                new Voxel(type)
-            );
+        if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))
+            return;
 
-            chunkRenderers[chunkCoord].RebuildMesh();
-        }
+        chunk.SetVoxel(
+            localPos.x,
+            localPos.y,
+            localPos.z,
+            new Voxel(type));
+
+        chunkRenderers[chunkCoord].RebuildMesh();
     }
-    #endregion
 }

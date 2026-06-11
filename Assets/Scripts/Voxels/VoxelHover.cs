@@ -7,41 +7,58 @@ public class VoxelHover : MonoBehaviour
     [SerializeField] private Camera cam;
     [SerializeField] private VoxelWorld voxelWorld;
     [SerializeField] private Transform highlight;
-    //Color hoverColor;
+
+    private Vector3Int hoveredVoxel;
+    private Vector3Int placementVoxel;
+
+    private VoxelType selectedVoxelType = VoxelType.Dirt;
 
     private Vector3Int lastVoxel = new(int.MinValue, int.MinValue, int.MinValue);
     void Update()
     {
         UpdateHover();
+        UpdateEditing();
     }
 
+    private bool TryGetMousePosition(out Vector2 pos)
+    {
+        pos = default;
+
+        if (Mouse.current == null)
+            return false;
+
+        pos = Mouse.current.position.ReadValue();
+
+        if (float.IsNaN(pos.x) || float.IsNaN(pos.y))
+            return false;
+
+        return true;
+    }
     private void UpdateHover()
     {
         if (cam == null || voxelWorld == null || highlight == null)
             return;
 
-        Ray ray = cam.ScreenPointToRay(Mouse.current.position.ReadValue());
+        if (!TryGetMousePosition(out Vector2 mousePos))
+            return;
+
+        Ray ray = cam.ScreenPointToRay(mousePos);
 
         if (Physics.Raycast(ray, out RaycastHit hit, 100f))
         {
-            Vector3 hitPoint = hit.point;
+            Vector3 insidePoint = hit.point - hit.normal * 0.01f;
+            Vector3 outsidePoint = hit.point + hit.normal * 0.01f;
 
-            // Push slightly inside voxel volume
-            hitPoint -= hit.normal * 0.01f;
+            hoveredVoxel = Vector3Int.FloorToInt(insidePoint);
+            placementVoxel = Vector3Int.FloorToInt(outsidePoint);
 
-            Vector3Int voxelPos = Vector3Int.FloorToInt(hitPoint);
-
-            // Only update if voxel changed (performance + stability)
-            if (voxelPos == lastVoxel)
+            if (hoveredVoxel == lastVoxel)
                 return;
 
-            lastVoxel = voxelPos;
-            Voxel voxel = voxelWorld.GetVoxel(voxelPos);
-            Debug.Log($"Hover voxel: {voxelPos} | Type: {voxel.Type}");
-            MoveHighlight(voxelPos);
+            lastVoxel = hoveredVoxel;
+
+            MoveHighlight(hoveredVoxel);
         }
-
-
     }
 
     private void MoveHighlight(Vector3Int voxelPos)
@@ -54,5 +71,37 @@ public class VoxelHover : MonoBehaviour
         );
 
         highlight.position = worldPos;
+    }
+
+    private void UpdateEditing()
+    {
+        if (voxelWorld == null)
+            return;
+
+        if (Keyboard.current.digit1Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.Dirt;
+            Debug.Log("Selected Dirt");
+        }
+
+        if (Keyboard.current.digit2Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.Granite;
+            Debug.Log("Selected Granite");
+        }
+
+        if (Mouse.current.leftButton.wasPressedThisFrame)
+        {
+            voxelWorld.SetVoxel(
+                hoveredVoxel,
+                VoxelType.Air);
+        }
+
+        if (Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            voxelWorld.SetVoxel(
+                placementVoxel,
+                selectedVoxelType);
+        }
     }
 }
