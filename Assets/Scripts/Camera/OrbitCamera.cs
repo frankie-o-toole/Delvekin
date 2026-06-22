@@ -31,6 +31,7 @@ public class OrbitCamera : MonoBehaviour
     private bool isRotating;
     private bool isPanning;
 
+    public bool IsRotating => isRotating;
     private void Start()
     {
         if (target == null)

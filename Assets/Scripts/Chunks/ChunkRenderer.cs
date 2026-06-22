@@ -167,8 +167,13 @@ public class ChunkRenderer : MonoBehaviour
     {
         return type switch
         {
-            VoxelType.Dirt => new Color(0.45f, 0.27f, 0.12f),
+            VoxelType.Dirt => new Color(0.56f, 0.26f, 0.13f),
             VoxelType.Granite => new Color(0.5f, 0.5f, 0.55f),
+            VoxelType.Lava => Color.red,
+            VoxelType.Water => new Color(0.05f, 0.55f, 0.7f),
+            VoxelType.Vine => new Color(0, 0.25f, 0),
+            VoxelType.Snow => Color.white,
+
             _ => Color.magenta
         };
     }

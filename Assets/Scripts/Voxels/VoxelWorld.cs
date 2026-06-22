@@ -9,6 +9,7 @@ public class VoxelWorld : MonoBehaviour
     public Material voxelMaterial;
 
     private LevelData currentLevel;
+    private string fileName = "TestLevel";
 
     private void Start()
     {
@@ -16,18 +17,99 @@ public class VoxelWorld : MonoBehaviour
     }
     private void Update()
     {
-        if (Input.GetKeyDown(KeyCode.G))
+/*        if (Input.GetKeyDown(KeyCode.G))
         {
             LoadGeneratedLevel(Random.Range(0, 99999), 1);
         }
 
+        if (Input.GetKeyDown(KeyCode.L))
+        {
+            LoadSavedLevel("TestLevel");
+        }
+
         if (Input.GetKeyDown(KeyCode.S))
         {
-            LevelSerializer.Save(currentLevel, "test_level");
+            SavedLevel save =
+                CreateSaveData();
+
+            LevelSerializer.Save(
+                save,
+                "TestLevel");
+        }*/
+    }
+    public SavedLevel CreateSaveData()
+    {
+        SavedLevel save = new();
+
+        foreach (var pair in chunks)
+        {
+            Vector3Int chunkCoord = pair.Key;
+            Chunk chunk = pair.Value;
+
+            for (int x = 0; x < Chunk.ChunkSize; x++)
+            {
+                for (int y = 0; y < Chunk.ChunkSize; y++)
+                {
+                    for (int z = 0; z < Chunk.ChunkSize; z++)
+                    {
+                        Voxel voxel = chunk.GetVoxel(x, y, z);
+
+                        if (voxel.Type == VoxelType.Air)
+                            continue;
+
+                        save.voxels.Add(new SavedVoxel
+                        {
+                            x = chunkCoord.x * Chunk.ChunkSize + x,
+                            y = y,
+                            z = chunkCoord.z * Chunk.ChunkSize + z,
+                            type = voxel.Type
+                        });
+                    }
+                }
+            }
         }
+
+        return save;
+    }
+    public void SaveLevel(string name)
+    {
+        SavedLevel save = CreateSaveData();
+
+        LevelSerializer.Save(save, name);
+
+        Debug.Log($"Saved: {name}");
+    }
+    public void LoadSavedLevel(string fileName)
+    {
+        SavedLevel save = LevelSerializer.Load(fileName);
+
+        if (save == null)
+            return;
+
+        ClearWorld();
+
+        foreach (SavedVoxel voxel in save.voxels)
+        {
+            SetVoxel(
+                new Vector3Int(voxel.x, voxel.y, voxel.z),
+                voxel.type);
+        }
+    }
+
+    public void ClearWorld()
+    {
+        foreach (var renderer in chunkRenderers.Values)
+        {
+            Destroy(renderer.gameObject);
+        }
+
+        chunks.Clear();
+        chunkRenderers.Clear();
     }
     public void LoadGeneratedLevel(int seed, int worldSize)
     {
+        ClearWorld();
+
         currentLevel = LevelGenerator.Generate(seed, worldSize);
 
         BuildFromLevel(currentLevel);
@@ -56,7 +138,7 @@ public class VoxelWorld : MonoBehaviour
 
     private void CreateChunkRenderer(Chunk chunk)
     {
-        GameObject go = new GameObject($"Chunk {chunk.ChunkCoordinate}");
+        GameObject go = new($"Chunk {chunk.ChunkCoordinate}");
 
         ChunkRenderer renderer = go.AddComponent<ChunkRenderer>();
 
@@ -89,8 +171,13 @@ public class VoxelWorld : MonoBehaviour
         Vector3Int localPos =
             VoxelMath.WorldToLocalVoxel(worldPos);
 
+        Debug.Log($"World: {worldPos} -> Chunk: {chunkCoord}");
+
         if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))
+        {
+            Debug.LogWarning($"No chunk exists at {chunkCoord}");
             return;
+        }
 
         chunk.SetVoxel(
             localPos.x,
@@ -99,5 +186,40 @@ public class VoxelWorld : MonoBehaviour
             new Voxel(type));
 
         chunkRenderers[chunkCoord].RebuildMesh();
+    }
+    private void OnGUI()
+    {
+        GUI.matrix = Matrix4x4.TRS(
+            Vector3.zero,
+            Quaternion.identity,
+            Vector3.one * 2.5f
+        );
+
+        GUILayout.BeginArea(new Rect(10, 10, 220, 200));
+
+        GUILayout.Label("Level Save/Load");
+
+        fileName = GUILayout.TextField(fileName);
+
+        GUILayout.Space(10);
+
+        if (GUILayout.Button("Save"))
+        {
+            SaveLevel(fileName);
+        }
+
+        if (GUILayout.Button("Load"))
+        {
+            LoadSavedLevel(fileName);
+        }
+
+        GUILayout.Space(10);
+
+        if (GUILayout.Button("Generate Random"))
+        {
+            LoadGeneratedLevel(Random.Range(0, 99999), 1);
+        }
+
+        GUILayout.EndArea();
     }
 }

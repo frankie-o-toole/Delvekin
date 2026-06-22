@@ -7,6 +7,10 @@ public class VoxelHover : MonoBehaviour
     [SerializeField] private Camera cam;
     [SerializeField] private VoxelWorld voxelWorld;
     [SerializeField] private Transform highlight;
+    [SerializeField] private OrbitCamera orbitCamera;
+
+    private Vector2 rightMouseStart;
+    private bool rightMouseDragged;
 
     private Vector3Int hoveredVoxel;
     private Vector3Int placementVoxel;
@@ -75,6 +79,22 @@ public class VoxelHover : MonoBehaviour
 
     private void UpdateEditing()
     {
+        Vector2 mousePos = Mouse.current.position.ReadValue();
+
+        if (Mouse.current.rightButton.wasPressedThisFrame)
+        {
+            rightMouseStart = mousePos;
+            rightMouseDragged = false;
+        }
+
+        if (Mouse.current.rightButton.isPressed)
+        {
+            if (Vector2.Distance(mousePos, rightMouseStart) > 5f)
+            {
+                rightMouseDragged = true;
+            }
+        }
+
         if (voxelWorld == null)
             return;
 
@@ -90,6 +110,30 @@ public class VoxelHover : MonoBehaviour
             Debug.Log("Selected Granite");
         }
 
+        if (Keyboard.current.digit3Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.Lava;
+            Debug.Log("Selected Lava");
+        }
+
+        if (Keyboard.current.digit4Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.Water;
+            Debug.Log("Selected Water");
+        }
+
+        if (Keyboard.current.digit5Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.Vine;
+            Debug.Log("Selected Vine");
+        }
+
+        if (Keyboard.current.digit6Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.Snow;
+            Debug.Log("Selected Snow");
+        }
+
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
             voxelWorld.SetVoxel(
@@ -97,11 +141,14 @@ public class VoxelHover : MonoBehaviour
                 VoxelType.Air);
         }
 
-        if (Mouse.current.rightButton.wasPressedThisFrame)
+        if (Mouse.current.rightButton.wasReleasedThisFrame)
         {
-            voxelWorld.SetVoxel(
-                placementVoxel,
-                selectedVoxelType);
+            if (!rightMouseDragged)
+            {
+                voxelWorld.SetVoxel(
+                    placementVoxel,
+                    selectedVoxelType);
+            }
         }
     }
 }

@@ -3,20 +3,35 @@ using UnityEngine;
 
 public static class LevelSerializer
 {
-    public static void Save(LevelData data, string name)
+    public static void Save(SavedLevel level, string fileName)
     {
-        string json = JsonUtility.ToJson(data, true);
-        File.WriteAllText(Application.dataPath + $"/{name}.json", json);
+        string json = JsonUtility.ToJson(level, true);
+
+        string path =
+            Path.Combine(
+                Application.persistentDataPath,
+                fileName + ".json");
+
+        File.WriteAllText(path, json);
+
+        Debug.Log($"Saved level to: {path}");
     }
 
-    public static LevelData Load(string name)
+    public static SavedLevel Load(string fileName)
     {
-        string path = Application.dataPath + $"/{name}.json";
+        string path =
+            Path.Combine(
+                Application.persistentDataPath,
+                fileName + ".json");
 
         if (!File.Exists(path))
+        {
+            Debug.LogWarning($"File not found: {path}");
             return null;
+        }
 
         string json = File.ReadAllText(path);
-        return JsonUtility.FromJson<LevelData>(json);
+
+        return JsonUtility.FromJson<SavedLevel>(json);
     }
 }
