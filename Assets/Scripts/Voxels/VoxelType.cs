@@ -5,6 +5,10 @@ public enum VoxelType
 {
     Air,
     Dirt,
-    Granite
+    Granite,
+    Lava,
+    Water,
+    Vine,
+    Snow
 }
 
