@@ -7,7 +7,7 @@ public class VoxelHover : MonoBehaviour
     [SerializeField] private Camera cam;
     [SerializeField] private VoxelWorld voxelWorld;
     [SerializeField] private Transform highlight;
-    [SerializeField] private OrbitCamera orbitCamera;
+    [SerializeField] private OrbitCameraMode orbitCamera;
 
     private Vector2 rightMouseStart;
     private bool rightMouseDragged;

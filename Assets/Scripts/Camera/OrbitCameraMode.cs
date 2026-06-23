@@ -1,19 +1,19 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-public class OrbitCamera : MonoBehaviour
+public class OrbitCameraMode : MonoBehaviour, ICameraMode
 {
     [Header("Target")]
     [SerializeField] private Transform target;
 
     [Header("Distance Settings")]
-    [SerializeField] private float distance = 25f;
+    [SerializeField] private float distance = 30f;
     [SerializeField] private float minDistance = 5f;
     [SerializeField] private float maxDistance = 80f;
     [SerializeField] private float zoomSpeed = 10f;
 
     [Header("Rotation Settings")]
-    [SerializeField] private float rotationSpeed = 180f;
+    [SerializeField] private float rotationSpeed = 50f;
     [SerializeField] private float minPitch = -80f;
     [SerializeField] private float maxPitch = 80f;
 
@@ -30,8 +30,10 @@ public class OrbitCamera : MonoBehaviour
     private Vector2 lastMousePos;
     private bool isRotating;
     private bool isPanning;
-
     public bool IsRotating => isRotating;
+
+    private OrbitSnapshot savedState;
+
     private void Start()
     {
         if (target == null)
@@ -46,17 +48,18 @@ public class OrbitCamera : MonoBehaviour
         pitch = angles.x;
     }
 
-    private void Update()
+    public void Enter()
     {
-        HandleInput();
-    }
-
-    private void LateUpdate()
-    {
+        RestoreState();
         UpdateCamera();
     }
 
-    private void HandleInput()
+    public void Exit()
+    {
+        SaveState();
+    }
+
+    public void HandleInput()
     {
         Vector2 mousePos = Mouse.current.position.ReadValue();
 
@@ -115,7 +118,7 @@ public class OrbitCamera : MonoBehaviour
         }
     }
 
-    private void UpdateCamera()
+    public void UpdateCamera()
     {
         Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
 
@@ -134,5 +137,42 @@ public class OrbitCamera : MonoBehaviour
 
         transform.position = finalPosition;
         transform.rotation = rotation;
+    }
+
+    public void SaveState()
+    {
+        savedState.TargetPosition = target.position;
+        savedState.Yaw = yaw;
+        savedState.Pitch = pitch;
+        savedState.Distance = distance;
+    }
+
+    public void RestoreState()
+    {
+        if (savedState.Distance <= 0.01f)
+            return;
+
+        target.position = savedState.TargetPosition;
+        yaw = savedState.Yaw;
+        pitch = savedState.Pitch;
+        distance = savedState.Distance;
+    }
+
+    public Vector3 GetCurrentPosition()
+    {
+        return transform.position;
+    }
+
+    public Quaternion GetCurrentRotation()
+    {
+        return transform.rotation;
+    }
+
+    private struct OrbitSnapshot
+    {
+        public Vector3 TargetPosition;
+        public float Yaw;
+        public float Pitch;
+        public float Distance;
     }
 }
