@@ -44,6 +44,14 @@ public class ChunkRenderer : MonoBehaviour
                     if (!voxel.IsSolid())
                         continue;
 
+                    // World Position 
+                    Vector3Int worldPos = chunk.ChunkCoordinate * Chunk.ChunkSize
+                                         + new Vector3Int(x, y, z);
+
+                    // Visibility Check
+                    if (!VoxelVisibilitySystem.IsVoxelVisible(worldPos))
+                        continue;
+
                     AddCubeFaces(x, y, z, voxel, vertices, triangles, colors);
                 }
 

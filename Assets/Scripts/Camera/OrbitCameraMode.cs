@@ -30,6 +30,7 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     private Vector2 lastMousePos;
     private bool isRotating;
     private bool isPanning;
+    private bool justEntered;
     public bool IsRotating => isRotating;
 
     private OrbitSnapshot savedState;
@@ -51,6 +52,13 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     public void Enter()
     {
         RestoreState();
+
+        VoxelVisibilitySystem.ResetVisibility();
+
+        //ChunkRefreshSystem.RequestFullRefresh();
+
+        justEntered = true;
+
         UpdateCamera();
     }
 
@@ -120,6 +128,12 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
     public void UpdateCamera()
     {
+        if (justEntered)
+        {
+            justEntered = false;
+            return;
+        }
+
         Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
 
         Vector3 desiredPosition = target.position + rotation * new Vector3(0, 0, -distance);

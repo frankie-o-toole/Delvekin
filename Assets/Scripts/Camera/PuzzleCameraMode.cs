@@ -28,6 +28,7 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
 
     public void Enter()
     {
+        VoxelVisibilitySystem.SetToInitialPuzzleState();
         panOffset = Vector3.zero;
         isPanning = false;
     }
@@ -39,8 +40,14 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
     public void HandleInput()
     {
         HandlePan();
+        HandleScroll();
     }
-
+    public SliceAxis GetSliceAxis()
+    {
+        return currentSide == PuzzleSide.East || currentSide == PuzzleSide.West
+            ? SliceAxis.X
+            : SliceAxis.Z;
+    }
     public void UpdateCamera()
     {
         Vector3 basePosition = GetPuzzlePosition(currentSide);
@@ -48,14 +55,27 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
         cameraPosition = basePosition + panOffset;
         cameraRotation = GetPuzzleRotation(currentSide);
 
-        Camera.main.transform.position = cameraPosition;
-        Camera.main.transform.rotation = cameraRotation;
+        //Camera.main.transform.position = cameraPosition;
+        //Camera.main.transform.rotation = cameraRotation;
     }
 
     // -------------------------------------------------
     // Input: RMB PAN
     // -------------------------------------------------
 
+    private void HandleScroll()
+    {
+        float scroll = Mouse.current.scroll.ReadValue().y;
+
+        if (Mathf.Abs(scroll) > 0.01f)
+        {
+            SliceAxis axis = GetSliceAxis();
+
+            int delta = scroll > 0 ? 1 : -1;
+            VoxelVisibilitySystem.ChangeLayer(delta);
+            ChunkRefreshSystem.RequestFullRefresh();
+        }
+    }
     private void HandlePan()
     {
         if (Mouse.current == null)
@@ -98,6 +118,7 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
 
     public void SetSide(PuzzleSide side)
     {
+        Debug.Log("Current side is " + side);
         currentSide = side;
     }
 

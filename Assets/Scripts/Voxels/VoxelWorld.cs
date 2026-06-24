@@ -15,6 +15,7 @@ public class VoxelWorld : MonoBehaviour
 
     private void Start()
     {
+        ChunkRefreshSystem.OnRefreshRequested += RebuildAllChunks;
         LoadGeneratedLevel(1234, 1);
     }
     public SavedLevel CreateSaveData()
@@ -66,7 +67,14 @@ public class VoxelWorld : MonoBehaviour
         if (save == null)
             return;
 
+        ClearWorld();
+
+        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
+
         BuildFromSavedLevel(save);
+
+        VoxelVisibilitySystem.ResetVisibility();
+        ChunkRefreshSystem.RequestFullRefresh();
     }
 
     public void ClearWorld()
@@ -85,48 +93,85 @@ public class VoxelWorld : MonoBehaviour
 
         currentLevel = LevelGenerator.Generate(seed, worldSize);
 
+        VoxelVisibilitySystem.ResetVisibility();
+        ChunkRefreshSystem.RequestFullRefresh();
+
         BuildFromLevel(currentLevel);
     }
     private void BuildFromSavedLevel(SavedLevel save)
     {
         ClearWorld();
 
+        // 1. disable systems that react to visuals
+        VoxelVisibilitySystem.SetToInitialPuzzleState();
+
+        // 2. PURE DATA BUILD (NO renderers, NO GetOrCreateChunk)
         foreach (SavedVoxel voxel in save.voxels)
         {
-            SetVoxel(new Vector3Int(voxel.x, voxel.y, voxel.z), voxel.type);
+            Vector3Int worldPos = new(voxel.x, voxel.y, voxel.z);
+
+            Vector3Int chunkCoord = VoxelMath.WorldToChunkCoord(worldPos);
+            Vector3Int localPos = VoxelMath.WorldToLocalVoxel(worldPos);
+
+            if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))
+            {
+                chunk = new Chunk(chunkCoord);
+                chunks.Add(chunkCoord, chunk);
+            }
+
+            chunk.SetVoxel(localPos.x, localPos.y, localPos.z, new Voxel(voxel.type));
         }
+
+        // 3. NOW create renderers AFTER ALL DATA EXISTS
+        foreach (var kvp in chunks)
+        {
+            CreateChunkRenderer(kvp.Value);
+        }
+
+        // 4. visibility setup AFTER renderers exist
+        VoxelVisibilitySystem.SetBounds(0, Chunk.ChunkSize * 10);
+        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
+        VoxelVisibilitySystem.ResetVisibility();
+
+        // 5. final mesh pass
+        ChunkRefreshSystem.RequestFullRefresh();
     }
     private void BuildFromLevel(LevelData data)
     {
+        ClearWorld();
+
         for (int x = 0; x < data.worldSizeInChunks; x++)
             for (int z = 0; z < data.worldSizeInChunks; z++)
             {
-                Chunk chunk = new Chunk(new Vector3Int(x, 0, z));
+                Chunk chunk = new(new Vector3Int(x, 0, z));
 
                 for (int lx = 0; lx < Chunk.ChunkSize; lx++)
                     for (int ly = 0; ly < Chunk.ChunkSize; ly++)
                         for (int lz = 0; lz < Chunk.ChunkSize; lz++)
                         {
-                            chunk.SetVoxel(
-                                lx,
-                                ly,
-                                lz,
+                            chunk.SetVoxel(lx, ly, lz,
                                 new Voxel(data.chunks[x, 0, z][lx, ly, lz]));
                         }
 
                 chunks[new Vector3Int(x, 0, z)] = chunk;
-
                 CreateChunkRenderer(chunk);
             }
 
+        // 1. compute center AFTER chunks exist
         Vector3 levelCenter =
-            LevelBoundsUtility.CalculateCenter(
-                chunks.Keys,
-                Chunk.ChunkSize);
+            LevelBoundsUtility.CalculateCenter(chunks.Keys, Chunk.ChunkSize);
 
         orbitCamera.SetOrbitCenter(levelCenter);
 
-        Debug.Log($"Level Center: {levelCenter}");
+        int maxDepth = data.worldSizeInChunks * Chunk.ChunkSize;
+        VoxelVisibilitySystem.SetBounds(0, maxDepth - 1);
+
+        // 2. IMPORTANT: set view BEFORE refresh
+        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
+
+        // 3. now safe
+        VoxelVisibilitySystem.ResetVisibility();
+        ChunkRefreshSystem.RequestFullRefresh();
     }
 
     private void CreateChunkRenderer(Chunk chunk)
@@ -142,7 +187,13 @@ public class VoxelWorld : MonoBehaviour
 
         chunkRenderers.Add(chunk.ChunkCoordinate, renderer);
     }
-
+    private void RebuildAllChunks()
+    {
+        foreach (var renderer in chunkRenderers.Values)
+        {
+            renderer.RebuildMesh();
+        }
+    }
     public Voxel GetVoxel(Vector3Int worldPos)
     {
         Vector3Int chunkCoord = VoxelMath.WorldToChunkCoord(worldPos);
@@ -175,6 +226,20 @@ public class VoxelWorld : MonoBehaviour
             new Voxel(type));
 
         chunkRenderers[chunkCoord].RebuildMesh();
+    }
+    private void SetVoxelRaw(Vector3Int worldPos, VoxelType type)
+    {
+        Vector3Int chunkCoord = VoxelMath.WorldToChunkCoord(worldPos);
+        Vector3Int localPos = VoxelMath.WorldToLocalVoxel(worldPos);
+
+        Chunk chunk = GetOrCreateChunk(chunkCoord);
+
+        chunk.SetVoxel(
+            localPos.x,
+            localPos.y,
+            localPos.z,
+            new Voxel(type)
+        );
     }
     private Chunk GetOrCreateChunk(Vector3Int chunkCoord)
     {

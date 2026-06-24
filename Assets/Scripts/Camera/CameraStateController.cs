@@ -50,6 +50,9 @@ public class CameraStateController : MonoBehaviour
 
         orbitMode.SetOrbitCenter(levelCenter);
         puzzleMode.SetLevelCenter(levelCenter);
+
+        //VoxelVisibilitySystem.SetView(SliceAxis.X, +1);
+        //VoxelVisibilitySystem.SetVisibleLayer(0);
     }
 
     private void Update()
@@ -132,6 +135,10 @@ public class CameraStateController : MonoBehaviour
 
         PuzzleSide side = DetermineClosestSide();
 
+        PuzzleSliceMapping.GetSlice(side, out SliceAxis axis, out int sign);
+
+        VoxelVisibilitySystem.SetView(axis, sign);
+
         transitionStartPos = transform.position;
         transitionStartRot = transform.rotation;
 
@@ -148,6 +155,13 @@ public class CameraStateController : MonoBehaviour
 
     private void BeginTransitionToOrbit()
     {
+        transitionStartPos = transform.position;
+        transitionStartRot = transform.rotation;
+
+        PuzzleSide side = DetermineClosestSide();
+
+        puzzleMode.SetSide(side);
+
         transitionStartPos = transform.position;
         transitionStartRot = transform.rotation;
 
@@ -217,6 +231,9 @@ public class CameraStateController : MonoBehaviour
         {
             activeMode = orbitMode;
             currentState = CameraState.Orbit;
+
+            VoxelVisibilitySystem.ResetVisibility();
+            ChunkRefreshSystem.RequestFullRefresh();
         }
 
         activeMode.Enter();
