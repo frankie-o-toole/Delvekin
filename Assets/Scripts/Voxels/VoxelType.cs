@@ -9,6 +9,7 @@ public enum VoxelType
     Lava,
     Water,
     Vine,
-    Snow
+    Snow,
+    Bubblegum
 }
 

@@ -181,6 +181,7 @@ public class ChunkRenderer : MonoBehaviour
             VoxelType.Water => new Color(0.05f, 0.55f, 0.7f),
             VoxelType.Vine => new Color(0, 0.25f, 0),
             VoxelType.Snow => Color.white,
+            VoxelType.Bubblegum => Color.pink,
 
             _ => Color.magenta
         };

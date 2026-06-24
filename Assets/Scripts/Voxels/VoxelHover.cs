@@ -134,6 +134,12 @@ public class VoxelHover : MonoBehaviour
             Debug.Log("Selected Snow");
         }
 
+        if (Keyboard.current.digit7Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.Bubblegum;
+            Debug.Log("Selected Bubblegum");
+        }
+
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
             voxelWorld.SetVoxel(
