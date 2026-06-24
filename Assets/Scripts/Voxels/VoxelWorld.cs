@@ -3,6 +3,8 @@ using UnityEngine;
 
 public class VoxelWorld : MonoBehaviour
 {
+    [SerializeField] private OrbitCameraMode orbitCamera;
+
     private Dictionary<Vector3Int, Chunk> chunks = new();
     private Dictionary<Vector3Int, ChunkRenderer> chunkRenderers = new();
 
@@ -14,28 +16,6 @@ public class VoxelWorld : MonoBehaviour
     private void Start()
     {
         LoadGeneratedLevel(1234, 1);
-    }
-    private void Update()
-    {
-/*        if (Input.GetKeyDown(KeyCode.G))
-        {
-            LoadGeneratedLevel(Random.Range(0, 99999), 1);
-        }
-
-        if (Input.GetKeyDown(KeyCode.L))
-        {
-            LoadSavedLevel("TestLevel");
-        }
-
-        if (Input.GetKeyDown(KeyCode.S))
-        {
-            SavedLevel save =
-                CreateSaveData();
-
-            LevelSerializer.Save(
-                save,
-                "TestLevel");
-        }*/
     }
     public SavedLevel CreateSaveData()
     {
@@ -126,7 +106,10 @@ public class VoxelWorld : MonoBehaviour
                     for (int ly = 0; ly < Chunk.ChunkSize; ly++)
                         for (int lz = 0; lz < Chunk.ChunkSize; lz++)
                         {
-                            chunk.SetVoxel(lx, ly, lz,
+                            chunk.SetVoxel(
+                                lx,
+                                ly,
+                                lz,
                                 new Voxel(data.chunks[x, 0, z][lx, ly, lz]));
                         }
 
@@ -134,6 +117,15 @@ public class VoxelWorld : MonoBehaviour
 
                 CreateChunkRenderer(chunk);
             }
+
+        Vector3 levelCenter =
+            LevelBoundsUtility.CalculateCenter(
+                chunks.Keys,
+                Chunk.ChunkSize);
+
+        orbitCamera.SetOrbitCenter(levelCenter);
+
+        Debug.Log($"Level Center: {levelCenter}");
     }
 
     private void CreateChunkRenderer(Chunk chunk)
@@ -186,6 +178,11 @@ public class VoxelWorld : MonoBehaviour
             new Voxel(type));
 
         chunkRenderers[chunkCoord].RebuildMesh();
+    }
+
+    public IEnumerable<Vector3Int> GetChunkCoordinates()
+    {
+        return chunks.Keys;
     }
     private void OnGUI()
     {

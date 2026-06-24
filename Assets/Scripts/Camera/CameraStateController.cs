@@ -5,6 +5,7 @@ public class CameraStateController : MonoBehaviour
 {
     [SerializeField] private OrbitCameraMode orbitMode;
     [SerializeField] private PuzzleCameraMode puzzleMode;
+    [SerializeField] private VoxelWorld voxelWorld;
 
     [SerializeField] private float transitionSpeed = 3f;
 
@@ -27,6 +28,11 @@ public class CameraStateController : MonoBehaviour
     private Vector3 orbitReturnPosition;
     private Quaternion orbitReturnRotation;
 
+    // -------------------------------------------------
+    // Shared level anchor (single source of truth)
+    // -------------------------------------------------
+    private Vector3 levelCenter;
+
     private void Start()
     {
         activeMode = orbitMode;
@@ -36,6 +42,14 @@ public class CameraStateController : MonoBehaviour
         currentState = CameraState.Orbit;
 
         orbitMode.UpdateCamera();
+
+        // IMPORTANT: centralize level reference once
+        levelCenter = LevelBoundsUtility.CalculateCenter(
+            voxelWorld.GetChunkCoordinates(),
+            Chunk.ChunkSize);
+
+        orbitMode.SetOrbitCenter(levelCenter);
+        puzzleMode.SetLevelCenter(levelCenter);
     }
 
     private void Update()
@@ -78,6 +92,37 @@ public class CameraStateController : MonoBehaviour
         }
     }
 
+    // -------------------------------------------------
+    // SIDE DETECTION
+    // -------------------------------------------------
+    private PuzzleSide DetermineClosestSide()
+    {
+        Vector3 offset = transform.position - levelCenter;
+        offset.y = 0f;
+
+        if (offset.sqrMagnitude < 0.0001f)
+            return PuzzleSide.North;
+
+        offset.Normalize();
+
+        float east = Vector3.Dot(offset, Vector3.right);
+        float west = Vector3.Dot(offset, Vector3.left);
+        float north = Vector3.Dot(offset, Vector3.forward);
+        float south = Vector3.Dot(offset, Vector3.back);
+
+        float max = east;
+        PuzzleSide side = PuzzleSide.East;
+
+        if (west > max) { max = west; side = PuzzleSide.West; }
+        if (north > max) { max = north; side = PuzzleSide.North; }
+        if (south > max) { max = south; side = PuzzleSide.South; }
+
+        return side;
+    }
+
+    // -------------------------------------------------
+    // TRANSITIONS
+    // -------------------------------------------------
     private void BeginTransitionToPuzzle()
     {
         orbitMode.Exit();
@@ -85,11 +130,13 @@ public class CameraStateController : MonoBehaviour
         orbitReturnPosition = transform.position;
         orbitReturnRotation = transform.rotation;
 
+        PuzzleSide side = DetermineClosestSide();
+
         transitionStartPos = transform.position;
         transitionStartRot = transform.rotation;
 
-        transitionTargetPos = puzzleMode.GetPuzzlePosition();
-        transitionTargetRot = puzzleMode.GetPuzzleRotation();
+        transitionTargetPos = puzzleMode.GetPuzzlePosition(side);
+        transitionTargetRot = puzzleMode.GetPuzzleRotation(side);
 
         transitionDestination = CameraState.Puzzle;
 
@@ -173,5 +220,22 @@ public class CameraStateController : MonoBehaviour
         }
 
         activeMode.Enter();
+    }
+
+    // -------------------------------------------------
+    // TEMP helper: replace later with proper chunk registry
+    // -------------------------------------------------
+    private Transform[] FindChunkRoots()
+    {
+        ChunkRenderer[] chunks =
+            FindObjectsByType<ChunkRenderer>(
+                FindObjectsSortMode.None);
+
+        Transform[] result = new Transform[chunks.Length];
+
+        for (int i = 0; i < chunks.Length; i++)
+            result[i] = chunks[i].transform;
+
+        return result;
     }
 }

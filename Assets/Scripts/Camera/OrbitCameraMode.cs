@@ -34,7 +34,7 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
     private OrbitSnapshot savedState;
 
-    private void Start()
+    private void Awake()
     {
         if (target == null)
         {
@@ -137,6 +137,16 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
         transform.position = finalPosition;
         transform.rotation = rotation;
+    }
+    public void SetOrbitCenter(Vector3 center)
+    {
+        if (target == null)
+        {
+            GameObject pivot = new GameObject("Camera Pivot");
+            target = pivot.transform;
+        }
+
+        target.position = center;
     }
 
     public void SaveState()
