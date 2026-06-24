@@ -62,7 +62,11 @@ public class ChunkRenderer : MonoBehaviour
         mesh.RecalculateNormals();
 
         meshCollider.sharedMesh = null;
-        meshCollider.sharedMesh = mesh;
+
+        if (mesh.vertexCount > 0)
+        {
+            meshCollider.sharedMesh = mesh;
+        }
     }
 
     private void AddCubeFaces(
@@ -76,7 +80,7 @@ public class ChunkRenderer : MonoBehaviour
         Vector3 p = new Vector3(x, y, z);
 
         // TOP
-        if (IsAir(x, y + 1, z))
+        if (IsFaceExposed(x, y + 1, z))
             AddQuad(vertices, triangles, colors,
                 p + new Vector3(0, 1, 0),
                 p + new Vector3(1, 1, 0),
@@ -85,7 +89,7 @@ public class ChunkRenderer : MonoBehaviour
                 color);
 
         // BOTTOM
-        if (IsAir(x, y - 1, z))
+        if (IsFaceExposed(x, y - 1, z))
             AddQuad(vertices, triangles, colors,
                 p + new Vector3(0, 0, 0),
                 p + new Vector3(0, 0, 1),
@@ -94,7 +98,7 @@ public class ChunkRenderer : MonoBehaviour
                 color);
 
         // NORTH (forward)
-        if (IsAir(x, y, z + 1))
+        if (IsFaceExposed(x, y, z + 1))
             AddQuad(vertices, triangles, colors,
                 p + new Vector3(0, 0, 1),
                 p + new Vector3(0, 1, 1),
@@ -103,7 +107,7 @@ public class ChunkRenderer : MonoBehaviour
                 color);
 
         // SOUTH (back)
-        if (IsAir(x, y, z - 1))
+        if (IsFaceExposed(x, y, z - 1))
             AddQuad(vertices, triangles, colors,
                 p + new Vector3(1, 0, 0),
                 p + new Vector3(1, 1, 0),
@@ -112,7 +116,7 @@ public class ChunkRenderer : MonoBehaviour
                 color);
 
         // EAST (right)
-        if (IsAir(x + 1, y, z))
+        if (IsFaceExposed(x + 1, y, z))
             AddQuad(vertices, triangles, colors,
                 p + new Vector3(1, 0, 1),
                 p + new Vector3(1, 1, 1),
@@ -121,7 +125,7 @@ public class ChunkRenderer : MonoBehaviour
                 color);
 
         // WEST (left)
-        if (IsAir(x - 1, y, z))
+        if (IsFaceExposed(x - 1, y, z))
             AddQuad(vertices, triangles, colors,
                 p + new Vector3(0, 0, 0),
                 p + new Vector3(0, 1, 0),
@@ -130,14 +134,39 @@ public class ChunkRenderer : MonoBehaviour
                 color);
     }
 
-    private bool IsAir(int x, int y, int z)
+    private bool IsFaceExposed(
+        int neighborX,
+        int neighborY,
+        int neighborZ)
     {
-        if (x < 0 || x >= Chunk.ChunkSize ||
-            y < 0 || y >= Chunk.ChunkSize ||
-            z < 0 || z >= Chunk.ChunkSize)
-            return true; // treat outside as air
+        // Outside chunk = exposed
+        if (neighborX < 0 || neighborX >= Chunk.ChunkSize ||
+            neighborY < 0 || neighborY >= Chunk.ChunkSize ||
+            neighborZ < 0 || neighborZ >= Chunk.ChunkSize)
+        {
+            return true;
+        }
 
-        return chunk.GetVoxel(x, y, z).Type == VoxelType.Air;
+        Voxel neighborVoxel = chunk.GetVoxel(neighborX, neighborY, neighborZ);
+
+        // Air = exposed
+        if (neighborVoxel.Type == VoxelType.Air)
+        {
+            return true;
+        }
+
+        // Convert neighbour position to world position
+        Vector3Int worldNeighborPos =
+            chunk.ChunkCoordinate * Chunk.ChunkSize +
+            new Vector3Int(neighborX, neighborY, neighborZ);
+
+        // Hidden by puzzle slicing = exposed
+        if (!VoxelVisibilitySystem.IsVoxelVisible(worldNeighborPos))
+        {
+            return true;
+        }
+
+        return false;
     }
 
     private void AddQuad(

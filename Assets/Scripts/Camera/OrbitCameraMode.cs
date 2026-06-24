@@ -149,8 +149,7 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
         Vector3 finalPosition = target.position + direction * desiredDistance;
 
-        transform.position = finalPosition;
-        transform.rotation = rotation;
+        transform.SetPositionAndRotation(finalPosition, rotation);
     }
     public void SetOrbitCenter(Vector3 center)
     {

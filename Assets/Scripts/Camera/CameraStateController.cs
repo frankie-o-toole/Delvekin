@@ -134,6 +134,7 @@ public class CameraStateController : MonoBehaviour
         orbitReturnRotation = transform.rotation;
 
         PuzzleSide side = DetermineClosestSide();
+        puzzleMode.SetSide(side);
 
         PuzzleSliceMapping.GetSlice(side, out SliceAxis axis, out int sign);
 

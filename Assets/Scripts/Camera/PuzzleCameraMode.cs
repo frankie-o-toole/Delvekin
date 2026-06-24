@@ -52,11 +52,10 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
     {
         Vector3 basePosition = GetPuzzlePosition(currentSide);
 
-        cameraPosition = basePosition + panOffset;
-        cameraRotation = GetPuzzleRotation(currentSide);
+        Vector3 finalPosition = basePosition + panOffset;
+        Quaternion finalRotation = GetPuzzleRotation(currentSide);
 
-        //Camera.main.transform.position = cameraPosition;
-        //Camera.main.transform.rotation = cameraRotation;
+        transform.SetPositionAndRotation(finalPosition, finalRotation);
     }
 
     // -------------------------------------------------
@@ -93,9 +92,11 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
 
             Vector2 delta = mousePos - lastMousePos;
 
-            // Camera-aligned pan directions
-            Vector3 right = Camera.main.transform.right;
-            Vector3 up = Camera.main.transform.up;
+            // Use puzzle orientation, NOT Camera.main
+            Quaternion rotation = GetPuzzleRotation(currentSide);
+
+            Vector3 right = rotation * Vector3.right;
+            Vector3 up = Vector3.up;
 
             panOffset += (-right * delta.x + -up * delta.y) * panSpeed;
 
