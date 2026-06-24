@@ -38,6 +38,7 @@ public class Chunk
 
     public void SetVoxel(int x, int y, int z, Voxel voxel)
     {
+        Debug.Log($"Setting voxel at {ChunkCoordinate}");
         voxels[x, y, z] = voxel;
     }
 }

@@ -66,14 +66,7 @@ public class VoxelWorld : MonoBehaviour
         if (save == null)
             return;
 
-        ClearWorld();
-
-        foreach (SavedVoxel voxel in save.voxels)
-        {
-            SetVoxel(
-                new Vector3Int(voxel.x, voxel.y, voxel.z),
-                voxel.type);
-        }
+        BuildFromSavedLevel(save);
     }
 
     public void ClearWorld()
@@ -94,7 +87,15 @@ public class VoxelWorld : MonoBehaviour
 
         BuildFromLevel(currentLevel);
     }
+    private void BuildFromSavedLevel(SavedLevel save)
+    {
+        ClearWorld();
 
+        foreach (SavedVoxel voxel in save.voxels)
+        {
+            SetVoxel(new Vector3Int(voxel.x, voxel.y, voxel.z), voxel.type);
+        }
+    }
     private void BuildFromLevel(LevelData data)
     {
         for (int x = 0; x < data.worldSizeInChunks; x++)
@@ -165,11 +166,7 @@ public class VoxelWorld : MonoBehaviour
 
         Debug.Log($"World: {worldPos} -> Chunk: {chunkCoord}");
 
-        if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))
-        {
-            Debug.LogWarning($"No chunk exists at {chunkCoord}");
-            return;
-        }
+        Chunk chunk = GetOrCreateChunk(chunkCoord);
 
         chunk.SetVoxel(
             localPos.x,
@@ -179,7 +176,17 @@ public class VoxelWorld : MonoBehaviour
 
         chunkRenderers[chunkCoord].RebuildMesh();
     }
+    private Chunk GetOrCreateChunk(Vector3Int chunkCoord)
+    {
+        if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))
+        {
+            chunk = new Chunk(chunkCoord);
+            chunks.Add(chunkCoord, chunk);
+            CreateChunkRenderer(chunk);
+        }
 
+        return chunk;
+    }
     public IEnumerable<Vector3Int> GetChunkCoordinates()
     {
         return chunks.Keys;
