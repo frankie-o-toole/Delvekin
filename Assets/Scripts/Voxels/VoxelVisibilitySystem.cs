@@ -42,7 +42,8 @@ public static class VoxelVisibilitySystem
 
         int start = directionSign > 0 ? maxLayer : minLayer;
 
-        int distanceFromFront = Mathf.Abs(coord - start);
+        int delta = coord - start;
+        int distanceFromFront = delta < 0 ? -delta : delta;
 
         return distanceFromFront >= peelDepth;
     }
