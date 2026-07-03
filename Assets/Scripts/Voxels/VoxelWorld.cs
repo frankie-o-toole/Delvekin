@@ -227,20 +227,6 @@ public class VoxelWorld : MonoBehaviour
 
         chunkRenderers[chunkCoord].RebuildMesh();
     }
-    private void SetVoxelRaw(Vector3Int worldPos, VoxelType type)
-    {
-        Vector3Int chunkCoord = VoxelMath.WorldToChunkCoord(worldPos);
-        Vector3Int localPos = VoxelMath.WorldToLocalVoxel(worldPos);
-
-        Chunk chunk = GetOrCreateChunk(chunkCoord);
-
-        chunk.SetVoxel(
-            localPos.x,
-            localPos.y,
-            localPos.z,
-            new Voxel(type)
-        );
-    }
     private Chunk GetOrCreateChunk(Vector3Int chunkCoord)
     {
         if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))

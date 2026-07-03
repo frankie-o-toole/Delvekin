@@ -56,13 +56,31 @@ public class VoxelHover : MonoBehaviour
             hoveredVoxel = Vector3Int.FloorToInt(insidePoint);
             placementVoxel = Vector3Int.FloorToInt(outsidePoint);
 
-            if (hoveredVoxel == lastVoxel)
-                return;
+            if (hoveredVoxel != lastVoxel)
+            {
+                lastVoxel = hoveredVoxel;
+                MoveHighlight(hoveredVoxel);
+            }
 
-            lastVoxel = hoveredVoxel;
+            // IMPORTANT: ensure highlight is visible again if it was disabled
+            if (!highlight.gameObject.activeSelf)
+                highlight.gameObject.SetActive(true);
 
-            MoveHighlight(hoveredVoxel);
+            return;
         }
+
+        // -------------------------------------------------
+        // NO HIT CASE (THIS WAS MISSING)
+        // -------------------------------------------------
+
+        hoveredVoxel = new Vector3Int(int.MinValue, int.MinValue, int.MinValue);
+        placementVoxel = hoveredVoxel;
+
+        lastVoxel = hoveredVoxel;
+
+        // hide or disable highlight
+        if (highlight.gameObject.activeSelf)
+            highlight.gameObject.SetActive(false);
     }
 
     private void MoveHighlight(Vector3Int voxelPos)

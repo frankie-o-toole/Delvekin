@@ -14,8 +14,8 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
 
     private PuzzleSide currentSide;
 
-    private Vector3 cameraPosition;
-    private Quaternion cameraRotation;
+    private Vector3 lockedBasePosition;
+    private Quaternion lockedBaseRotation;
 
     private Vector3 panOffset;
 
@@ -31,6 +31,9 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
         VoxelVisibilitySystem.SetToInitialPuzzleState();
         panOffset = Vector3.zero;
         isPanning = false;
+
+        lockedBasePosition = GetPuzzlePosition(currentSide);
+        lockedBaseRotation = GetPuzzleRotation(currentSide);
     }
 
     public void Exit()
@@ -50,12 +53,10 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
     }
     public void UpdateCamera()
     {
-        Vector3 basePosition = GetPuzzlePosition(currentSide);
+        Vector3 basePosition = lockedBasePosition;
+        Quaternion baseRotation = lockedBaseRotation;
 
-        Vector3 finalPosition = basePosition + panOffset;
-        Quaternion finalRotation = GetPuzzleRotation(currentSide);
-
-        transform.SetPositionAndRotation(finalPosition, finalRotation);
+        transform.SetPositionAndRotation(basePosition + panOffset, baseRotation);
     }
 
     // -------------------------------------------------
