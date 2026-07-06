@@ -2,6 +2,16 @@ using UnityEngine;
 
 public static class VoxelMath
 {
+
+    public static Vector3 VoxelCenter(Vector3Int voxel)
+    {
+        return new Vector3(
+        voxel.x + 0.5f,
+        voxel.y + 0.5f,
+        voxel.z + 0.5f
+    );
+    }
+
     public static Vector3Int WorldToChunkCoord(Vector3Int worldPos)
     {
         return new Vector3Int(

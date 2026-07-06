@@ -7,6 +7,7 @@ public class VoxelWorld : MonoBehaviour
 
     private Dictionary<Vector3Int, Chunk> chunks = new();
     private Dictionary<Vector3Int, ChunkRenderer> chunkRenderers = new();
+    private List<Vector3Int>  spawnPoints = new();
 
     public Material voxelMaterial;
 
@@ -83,7 +84,8 @@ public class VoxelWorld : MonoBehaviour
         {
             Destroy(renderer.gameObject);
         }
-
+        
+        spawnPoints.Clear();
         chunks.Clear();
         chunkRenderers.Clear();
     }
@@ -97,6 +99,41 @@ public class VoxelWorld : MonoBehaviour
         ChunkRefreshSystem.RequestFullRefresh();
 
         BuildFromLevel(currentLevel);
+    }
+    public void ScanSpawnPoints()
+    {
+        spawnPoints.Clear();
+
+        foreach (var pair in chunks)
+        {
+            Vector3Int chunkCoord = pair.Key;
+            Chunk chunk = pair.Value;
+
+            for (int x = 0; x < Chunk.ChunkSize; x++)
+            {
+                for (int y = 0; y < Chunk.ChunkSize; y++)
+                {
+                    for (int z = 0; z < Chunk.ChunkSize; z++)
+                    {
+                        Voxel voxel = chunk.GetVoxel(x, y, z);
+
+                        if (voxel.Type != VoxelType.SpawnPoint)
+                            continue;
+
+                        Vector3Int worldPos = new(
+                            chunkCoord.x * Chunk.ChunkSize + x,
+                            y,
+                            chunkCoord.z * Chunk.ChunkSize + z);
+
+                        spawnPoints.Add(worldPos);
+
+                        Debug.Log(worldPos + "is where the spawnPoint is");
+                    }
+                }
+            }
+        }
+
+        Debug.Log($"Found {spawnPoints.Count} spawn point(s).");
     }
     private void BuildFromSavedLevel(SavedLevel save)
     {
@@ -149,8 +186,15 @@ public class VoxelWorld : MonoBehaviour
                     for (int ly = 0; ly < Chunk.ChunkSize; ly++)
                         for (int lz = 0; lz < Chunk.ChunkSize; lz++)
                         {
-                            chunk.SetVoxel(lx, ly, lz,
-                                new Voxel(data.chunks[x, 0, z][lx, ly, lz]));
+                            VoxelType type = data.chunks[x, 0, z][lx, ly, lz];
+
+                            Vector3Int worldPos = new(
+                                x * Chunk.ChunkSize + lx,
+                                ly,
+                                z * Chunk.ChunkSize + lz
+                            );
+
+                            chunk.SetVoxel(lx, ly, lz, new Voxel(type));
                         }
 
                 chunks[new Vector3Int(x, 0, z)] = chunk;
@@ -276,5 +320,57 @@ public class VoxelWorld : MonoBehaviour
         }
 
         GUILayout.EndArea();
+    }
+
+    // =========================
+    // DWARF-SAFE WRAPPERS
+    // =========================
+
+    public bool HasSupport(Vector3Int worldPos)
+    {
+        return GetVoxel(worldPos + Vector3Int.down).Type != VoxelType.Air;
+    }
+
+    public bool IsBlocked(Vector3Int worldPos)
+    {
+        return GetVoxel(worldPos).Type != VoxelType.Air;
+    }
+
+    public bool IsLethal(Vector3Int worldPos)
+    {
+        var type = GetVoxel(worldPos).Type;
+
+        return type == VoxelType.Lava;
+    }
+
+    public bool IsFluid(Vector3Int worldPos)
+    {
+        var type = GetVoxel(worldPos).Type;
+
+        return type == VoxelType.Water;
+    }
+
+    public bool IsWalkable(Vector3Int worldPos)
+    {
+        if (IsBlocked(worldPos))
+            return false;
+
+        if (IsLethal(worldPos))
+            return false;
+
+        return true;
+    }
+
+    public Vector3Int GetSpawnPoint(int index = 0)
+    {
+        if (spawnPoints.Count == 0)
+            return Vector3Int.zero;
+
+        return spawnPoints[index % spawnPoints.Count];
+    }
+
+    public IReadOnlyList<Vector3Int> GetSpawnPoints()
+    {
+        return spawnPoints;
     }
 }

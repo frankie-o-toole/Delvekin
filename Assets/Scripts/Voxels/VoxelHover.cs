@@ -158,6 +158,12 @@ public class VoxelHover : MonoBehaviour
             Debug.Log("Selected Bubblegum");
         }
 
+        if (Keyboard.current.digit8Key.wasPressedThisFrame)
+        {
+            selectedVoxelType = VoxelType.SpawnPoint;
+            Debug.Log("Selected SpawnPoint");
+        }
+
         if (Mouse.current.leftButton.wasPressedThisFrame)
         {
             voxelWorld.SetVoxel(

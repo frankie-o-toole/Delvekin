@@ -211,6 +211,7 @@ public class ChunkRenderer : MonoBehaviour
             VoxelType.Vine => new Color(0, 0.25f, 0),
             VoxelType.Snow => Color.white,
             VoxelType.Bubblegum => Color.pink,
+            VoxelType.SpawnPoint => Color.lightGreen,
 
             _ => Color.magenta
         };
