@@ -166,7 +166,22 @@ public class VoxelWorld : MonoBehaviour
         }
 
         // 4. visibility setup AFTER renderers exist
-        VoxelVisibilitySystem.SetBounds(0, Chunk.ChunkSize * 10);
+
+        int maxDepth = 0;
+
+        foreach (Vector3Int chunkCoord in chunks.Keys)
+        {
+            int chunkMaxX =
+                (chunkCoord.x + 1) * Chunk.ChunkSize;
+
+            int chunkMaxZ =
+                (chunkCoord.z + 1) * Chunk.ChunkSize;
+
+            maxDepth = Mathf.Max(maxDepth, chunkMaxX, chunkMaxZ);
+        }
+
+        VoxelVisibilitySystem.SetBounds(0, maxDepth - 1);
+
         VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
         VoxelVisibilitySystem.ResetVisibility();
 
@@ -326,9 +341,9 @@ public class VoxelWorld : MonoBehaviour
     // DWARF-SAFE WRAPPERS
     // =========================
 
-    public bool HasSupport(Vector3Int worldPos)
+    public bool HasSupport(Vector3Int voxel)
     {
-        return GetVoxel(worldPos + Vector3Int.down).Type != VoxelType.Air;
+        return GetVoxel(voxel).Type != VoxelType.Air;
     }
 
     public bool IsBlocked(Vector3Int worldPos)

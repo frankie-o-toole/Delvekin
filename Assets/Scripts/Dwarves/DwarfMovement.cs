@@ -3,10 +3,11 @@ using UnityEngine;
 [RequireComponent(typeof(DwarfAgent))]
 public class DwarfMovement : MonoBehaviour
 {
-    private enum MovementState
+    public enum MovementState
     {
         Idle,
-        Moving
+        Walking,
+        Falling
     }
 
     [SerializeField] private float moveSpeed = 2f;
@@ -18,7 +19,7 @@ public class DwarfMovement : MonoBehaviour
 
     private float moveProgress;
 
-    private int fallDistance;
+    private int fallStartY;
 
     private Vector3 startWorldPos;
     private Vector3 targetWorldPos;
@@ -35,7 +36,8 @@ public class DwarfMovement : MonoBehaviour
 
     private void Update()
     {
-        if (state == MovementState.Moving)
+        if (state == MovementState.Walking ||
+            state == MovementState.Falling)
         {
             UpdateMovement();
             return;
@@ -62,14 +64,16 @@ public class DwarfMovement : MonoBehaviour
         // snap at end
         transform.position = targetWorldPos;
 
-        // commit voxel
         agent.SetCurrentVoxel(pendingTargetVoxel);
-
         moveProgress = 0f;
-        state = MovementState.Idle;
 
         // AFTER ARRIVAL: resolve gravity
         ResolvePostMove();
+
+        if (state != MovementState.Falling)
+        {
+            state = MovementState.Idle;
+        }
     }
 
     // --------------------------------------------------
@@ -82,7 +86,7 @@ public class DwarfMovement : MonoBehaviour
         // no support -> start falling sequence
         if (!world.HasSupport(below))
         {
-            BeginFall();
+            BeginFall(below);
             return;
         }
 
@@ -96,18 +100,19 @@ public class DwarfMovement : MonoBehaviour
             return;
         }
 
-        MoveToVoxel(forward);
+        MoveToVoxel(forward, MovementState.Walking);
     }
 
     // --------------------------------------------------
     // FALL START
     // --------------------------------------------------
-    private void BeginFall()
+    private void BeginFall(Vector3Int fallTarget)
     {
-        fallDistance = 0;
+        fallStartY = agent.CurrentVoxel.y;
 
-        Vector3Int below = agent.CurrentVoxel + Vector3Int.down;
-        MoveToVoxel(below);
+        state = MovementState.Falling;
+
+        MoveToVoxel(fallTarget, MovementState.Falling);
     }
 
     // --------------------------------------------------
@@ -117,18 +122,35 @@ public class DwarfMovement : MonoBehaviour
     {
         Vector3Int below = agent.CurrentVoxel + Vector3Int.down;
 
-        if (!world.HasSupport(below))
+        // still standing on something
+        if (world.HasSupport(below))
         {
-            fallDistance++;
-            MoveToVoxel(below);
+            if (state == MovementState.Falling)
+            {
+                int fallDistance = fallStartY - agent.CurrentVoxel.y;
+
+                Debug.Log($"Fall distance: {fallDistance}");
+
+                if (fallDistance >= 5)
+                {
+                    Die();
+                    return;
+                }
+
+                fallStartY = agent.CurrentVoxel.y;
+            }
+
+            state = MovementState.Idle;
             return;
         }
 
-        // landed
-        if (fallDistance > 5)
-            Die();
+        // no support below -> gravity starts
+        if (state != MovementState.Falling)
+        {
+            fallStartY = agent.CurrentVoxel.y;
+        }
 
-        fallDistance = 0;
+        MoveToVoxel(below, MovementState.Falling);
     }
 
     // --------------------------------------------------
@@ -142,18 +164,15 @@ public class DwarfMovement : MonoBehaviour
     // --------------------------------------------------
     // MOVE REQUEST
     // --------------------------------------------------
-    public void MoveToVoxel(Vector3Int targetVoxel)
+    public void MoveToVoxel(Vector3Int targetVoxel, MovementState moveState)
     {
-        if (state == MovementState.Moving)
-            return;
-
         pendingTargetVoxel = targetVoxel;
 
         startWorldPos = transform.position;
         targetWorldPos = VoxelToWorld(targetVoxel);
 
         moveProgress = 0f;
-        state = MovementState.Moving;
+        state = moveState;
     }
 
     // --------------------------------------------------
