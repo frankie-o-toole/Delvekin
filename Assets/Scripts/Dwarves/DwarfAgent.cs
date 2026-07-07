@@ -8,7 +8,9 @@ public class DwarfAgent : MonoBehaviour
     public Vector3Int TargetVoxel { get; private set; }
 
     public PuzzleSide Facing { get; private set; }
-    
+
+    public bool IsFrozen { get; private set; }
+
     private Renderer[] renderers;
 
     private void Awake()
@@ -51,6 +53,11 @@ public class DwarfAgent : MonoBehaviour
         if (!IsActive) return;
 
         // movement/AI later
+    }
+
+    public void Freeze()
+    {
+        IsFrozen = true;
     }
 
     public void SetCurrentVoxel(Vector3Int voxel)

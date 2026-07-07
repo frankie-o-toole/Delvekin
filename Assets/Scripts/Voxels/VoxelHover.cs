@@ -43,6 +43,18 @@ public class VoxelHover : MonoBehaviour
         if (cam == null || voxelWorld == null || highlight == null)
             return;
 
+        if (InteractionState.IsHoveringDwarf)
+        {
+            hoveredVoxel = new Vector3Int(int.MinValue, int.MinValue, int.MinValue);
+            placementVoxel = hoveredVoxel;
+            lastVoxel = hoveredVoxel;
+
+            if (highlight.gameObject.activeSelf)
+                highlight.gameObject.SetActive(false);
+
+            return;
+        }
+
         if (!TryGetMousePosition(out Vector2 mousePos))
             return;
 
@@ -114,6 +126,9 @@ public class VoxelHover : MonoBehaviour
         }
 
         if (voxelWorld == null)
+            return;
+
+        if (InteractionState.IsHoveringDwarf)
             return;
 
         if (Keyboard.current.digit1Key.wasPressedThisFrame)

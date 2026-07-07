@@ -14,6 +14,7 @@ public class DwarfMovement : MonoBehaviour
 
     private VoxelWorld world;
     private DwarfAgent agent;
+    private DwarfAbilityController abilityController;
 
     private MovementState state;
 
@@ -30,12 +31,15 @@ public class DwarfMovement : MonoBehaviour
     {
         agent = GetComponent<DwarfAgent>();
         world = FindFirstObjectByType<VoxelWorld>();
-
+        abilityController = GetComponent<DwarfAbilityController>();
         state = MovementState.Idle;
     }
 
     private void Update()
     {
+        if (agent.IsFrozen)
+            return;
+
         if (state == MovementState.Walking ||
             state == MovementState.Falling)
         {
@@ -64,8 +68,11 @@ public class DwarfMovement : MonoBehaviour
         // snap at end
         transform.position = targetWorldPos;
 
+
         agent.SetCurrentVoxel(pendingTargetVoxel);
         moveProgress = 0f;
+
+        abilityController.ActivatePendingAbility();
 
         // AFTER ARRIVAL: resolve gravity
         ResolvePostMove();
@@ -81,6 +88,11 @@ public class DwarfMovement : MonoBehaviour
     // --------------------------------------------------
     private void DecideNextMove()
     {
+        if (abilityController.ControlsMovement)
+        {
+            return;
+        }
+
         Vector3Int below = agent.CurrentVoxel + Vector3Int.down;
 
         // no support -> start falling sequence
@@ -164,6 +176,7 @@ public class DwarfMovement : MonoBehaviour
     // --------------------------------------------------
     // MOVE REQUEST
     // --------------------------------------------------
+
     public void MoveToVoxel(Vector3Int targetVoxel, MovementState moveState)
     {
         pendingTargetVoxel = targetVoxel;
