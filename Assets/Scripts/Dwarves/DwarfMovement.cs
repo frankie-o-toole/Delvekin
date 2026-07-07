@@ -18,8 +18,12 @@ public class DwarfMovement : MonoBehaviour
 
     private float moveProgress;
 
+    private int fallDistance;
+
     private Vector3 startWorldPos;
     private Vector3 targetWorldPos;
+
+    private Vector3Int pendingTargetVoxel;
 
     private void Awake()
     {
@@ -40,6 +44,9 @@ public class DwarfMovement : MonoBehaviour
         DecideNextMove();
     }
 
+    // --------------------------------------------------
+    // CORE MOVEMENT (shared for walking + falling)
+    // --------------------------------------------------
     private void UpdateMovement()
     {
         moveProgress += Time.deltaTime * moveSpeed;
@@ -49,24 +56,39 @@ public class DwarfMovement : MonoBehaviour
             targetWorldPos,
             moveProgress);
 
-        if (moveProgress >= 1f)
-        {
-            transform.position = targetWorldPos;
+        if (moveProgress < 1f)
+            return;
 
-            agent.SetCurrentVoxel(agent.TargetVoxel);
+        // snap at end
+        transform.position = targetWorldPos;
 
-            state = MovementState.Idle;
-        }
+        // commit voxel
+        agent.SetCurrentVoxel(pendingTargetVoxel);
+
+        moveProgress = 0f;
+        state = MovementState.Idle;
+
+        // AFTER ARRIVAL: resolve gravity
+        ResolvePostMove();
     }
 
+    // --------------------------------------------------
+    // DECISION PHASE
+    // --------------------------------------------------
     private void DecideNextMove()
     {
+        Vector3Int below = agent.CurrentVoxel + Vector3Int.down;
+
+        // no support -> start falling sequence
+        if (!world.HasSupport(below))
+        {
+            BeginFall();
+            return;
+        }
+
         Vector3Int forward =
             agent.CurrentVoxel +
             DirectionUtility.ToVector(agent.Facing);
-
-        Vector3Int support =
-            forward + Vector3Int.down;
 
         if (world.GetVoxel(forward).Type != VoxelType.Air)
         {
@@ -74,26 +96,58 @@ public class DwarfMovement : MonoBehaviour
             return;
         }
 
-        if (world.GetVoxel(support).Type == VoxelType.Air)
-        {
-            // falling not implemented yet
-            return;
-        }
-
         MoveToVoxel(forward);
     }
 
+    // --------------------------------------------------
+    // FALL START
+    // --------------------------------------------------
+    private void BeginFall()
+    {
+        fallDistance = 0;
+
+        Vector3Int below = agent.CurrentVoxel + Vector3Int.down;
+        MoveToVoxel(below);
+    }
+
+    // --------------------------------------------------
+    // AFTER EACH MOVE (critical gravity logic)
+    // --------------------------------------------------
+    private void ResolvePostMove()
+    {
+        Vector3Int below = agent.CurrentVoxel + Vector3Int.down;
+
+        if (!world.HasSupport(below))
+        {
+            fallDistance++;
+            MoveToVoxel(below);
+            return;
+        }
+
+        // landed
+        if (fallDistance > 5)
+            Die();
+
+        fallDistance = 0;
+    }
+
+    // --------------------------------------------------
+    // TURNING
+    // --------------------------------------------------
     private void TurnAround()
     {
         agent.SetFacing(DirectionUtility.Opposite(agent.Facing));
     }
 
+    // --------------------------------------------------
+    // MOVE REQUEST
+    // --------------------------------------------------
     public void MoveToVoxel(Vector3Int targetVoxel)
     {
         if (state == MovementState.Moving)
             return;
 
-        agent.SetTargetVoxel(targetVoxel);
+        pendingTargetVoxel = targetVoxel;
 
         startWorldPos = transform.position;
         targetWorldPos = VoxelToWorld(targetVoxel);
@@ -102,6 +156,18 @@ public class DwarfMovement : MonoBehaviour
         state = MovementState.Moving;
     }
 
+    // --------------------------------------------------
+    // DEATH
+    // --------------------------------------------------
+    private void Die()
+    {
+        Debug.Log("Dwarf died from fall damage");
+        gameObject.SetActive(false);
+    }
+
+    // --------------------------------------------------
+    // VOXEL -> WORLD
+    // --------------------------------------------------
     private static Vector3 VoxelToWorld(Vector3Int voxel)
     {
         return new Vector3(
