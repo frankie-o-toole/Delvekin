@@ -8,7 +8,21 @@ public class DwarfAgent : MonoBehaviour
     public Vector3Int TargetVoxel { get; private set; }
 
     public PuzzleSide Facing { get; private set; }
+    
+    private Renderer[] renderers;
 
+    private void Awake()
+    {
+        renderers = GetComponentsInChildren<Renderer>();
+        DwarfVisibilitySystem.Register(this);
+    }
+    public void SetVisibility(bool visible)
+    {
+        foreach (Renderer renderer in renderers)
+        {
+            renderer.enabled = visible;
+        }
+    }
     public void SetFacing(PuzzleSide facing)
     {
         Facing = facing;
@@ -22,6 +36,8 @@ public class DwarfAgent : MonoBehaviour
         Facing = PuzzleSide.North;
 
         transform.position = VoxelMath.VoxelCenter(spawnVoxel);
+
+        DwarfVisibilitySystem.RefreshDwarf(this);
     }
 
     public void Deactivate()
@@ -41,6 +57,8 @@ public class DwarfAgent : MonoBehaviour
     {
         CurrentVoxel = voxel;
         transform.position = VoxelToWorld(voxel);
+
+        DwarfVisibilitySystem.RefreshDwarf(this);
     }
 
     public void SetTargetVoxel(Vector3Int voxel)

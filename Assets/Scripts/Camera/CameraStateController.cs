@@ -139,6 +139,7 @@ public class CameraStateController : MonoBehaviour
         PuzzleSliceMapping.GetSlice(side, out SliceAxis axis, out int sign);
 
         VoxelVisibilitySystem.SetView(axis, sign);
+        DwarfVisibilitySystem.SetView(axis, sign);
 
         transitionStartPos = transform.position;
         transitionStartRot = transform.rotation;

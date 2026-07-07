@@ -29,6 +29,8 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
     public void Enter()
     {
         VoxelVisibilitySystem.SetToInitialPuzzleState();
+        DwarfVisibilitySystem.Reset();
+
         panOffset = Vector3.zero;
         isPanning = false;
 
@@ -69,10 +71,11 @@ public class PuzzleCameraMode : MonoBehaviour, ICameraMode
 
         if (Mathf.Abs(scroll) > 0.01f)
         {
-            SliceAxis axis = GetSliceAxis();
-
             int delta = scroll > 0 ? 1 : -1;
+
             VoxelVisibilitySystem.ChangeLayer(delta);
+            DwarfVisibilitySystem.ChangeLayer(delta);
+
             ChunkRefreshSystem.RequestFullRefresh();
         }
     }
