@@ -328,7 +328,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 04a411daa0b6a924db1926e4672e9675, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::VoxelWorld
-  orbitCamera: {fileID: 961739755}
+  cameraStateController: {fileID: 961739754}
   voxelMaterial: {fileID: 2100000, guid: 32c9940a1410c38449ca19225ae3b6ae, type: 2}
 --- !u!4 &889704568
 Transform:
@@ -538,8 +538,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 1c7bc76880a88d846b2bf77c0dce957d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PuzzleCameraMode
-  puzzleDistance: 30
+  startDistance: 40
+  minimumDistance: 20
+  maximumDistance: 80
+  zoomSpeed: 0.005
+  invertZoom: 0
   panSpeed: 0.02
+  invertPanX: 0
+  invertPanY: 0
 --- !u!1 &1243763344
 GameObject:
   m_ObjectHideFlags: 0

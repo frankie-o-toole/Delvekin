@@ -6,7 +6,10 @@ public class LevelData
 {
     public int seed;
     public int chunkSize;
-    public int worldSizeInChunks;
+
+    public int widthInChunks;
+    public int heightInChunks;
+    public int depthInChunks;
 
     public VoxelType[,,][,,] chunks;
 }

@@ -3,49 +3,133 @@ using UnityEngine;
 
 public class VoxelWorld : MonoBehaviour
 {
-    [SerializeField] private OrbitCameraMode orbitCamera;
+    [Header("Camera")]
+    [SerializeField]
+    private CameraStateController cameraStateController;
 
-    private Dictionary<Vector3Int, Chunk> chunks = new();
-    private Dictionary<Vector3Int, ChunkRenderer> chunkRenderers = new();
-    private List<Vector3Int>  spawnPoints = new();
-
+    [Header("Rendering")]
     public Material voxelMaterial;
 
+    private readonly Dictionary<Vector3Int, Chunk> chunks =
+        new();
+
+    private readonly Dictionary<Vector3Int, ChunkRenderer> chunkRenderers =
+        new();
+
+    private readonly List<Vector3Int> spawnPoints =
+        new();
+
     private LevelData currentLevel;
-    private string fileName = "TestLevel";
+
+    private string fileName =
+        "TestLevel";
+
+    // =====================================================
+    // GENERATOR UI VALUES
+    // =====================================================
+
+    private string generationWidth =
+        "1";
+
+    private string generationHeight =
+        "1";
+
+    private string generationDepth =
+        "1";
+
+    private void Awake()
+    {
+        if (cameraStateController == null)
+        {
+            cameraStateController =
+                FindFirstObjectByType<CameraStateController>();
+        }
+    }
 
     private void Start()
     {
-        ChunkRefreshSystem.OnRefreshRequested += RebuildAllChunks;
-        LoadGeneratedLevel(1234, 1);
+        ChunkRefreshSystem.OnRefreshRequested +=
+            RebuildAllChunks;
+
+        LoadGeneratedLevel(
+            1234,
+            1,
+            1,
+            1);
     }
+
+    private void OnDestroy()
+    {
+        ChunkRefreshSystem.OnRefreshRequested -=
+            RebuildAllChunks;
+    }
+
+    // =====================================================
+    // SAVE
+    // =====================================================
+
     public SavedLevel CreateSaveData()
     {
-        SavedLevel save = new();
+        SavedLevel save =
+            new();
 
         foreach (var pair in chunks)
         {
-            Vector3Int chunkCoord = pair.Key;
-            Chunk chunk = pair.Value;
+            Vector3Int chunkCoord =
+                pair.Key;
 
-            for (int x = 0; x < Chunk.ChunkSize; x++)
+            Chunk chunk =
+                pair.Value;
+
+            for (
+                int x = 0;
+                x < Chunk.ChunkSize;
+                x++)
             {
-                for (int y = 0; y < Chunk.ChunkSize; y++)
+                for (
+                    int y = 0;
+                    y < Chunk.ChunkSize;
+                    y++)
                 {
-                    for (int z = 0; z < Chunk.ChunkSize; z++)
+                    for (
+                        int z = 0;
+                        z < Chunk.ChunkSize;
+                        z++)
                     {
-                        Voxel voxel = chunk.GetVoxel(x, y, z);
+                        Voxel voxel =
+                            chunk.GetVoxel(
+                                x,
+                                y,
+                                z);
 
-                        if (voxel.Type == VoxelType.Air)
-                            continue;
-
-                        save.voxels.Add(new SavedVoxel
+                        if (
+                            voxel.Type ==
+                            VoxelType.Air)
                         {
-                            x = chunkCoord.x * Chunk.ChunkSize + x,
-                            y = y,
-                            z = chunkCoord.z * Chunk.ChunkSize + z,
-                            type = voxel.Type
-                        });
+                            continue;
+                        }
+
+                        save.voxels.Add(
+                            new SavedVoxel
+                            {
+                                x =
+                                    chunkCoord.x *
+                                    Chunk.ChunkSize +
+                                    x,
+
+                                y =
+                                    chunkCoord.y *
+                                    Chunk.ChunkSize +
+                                    y,
+
+                                z =
+                                    chunkCoord.z *
+                                    Chunk.ChunkSize +
+                                    z,
+
+                                type =
+                                    voxel.Type
+                            });
                     }
                 }
             }
@@ -53,338 +137,936 @@ public class VoxelWorld : MonoBehaviour
 
         return save;
     }
-    public void SaveLevel(string name)
+
+    public void SaveLevel(
+        string name)
     {
-        SavedLevel save = CreateSaveData();
+        SavedLevel save =
+            CreateSaveData();
 
-        LevelSerializer.Save(save, name);
+        LevelSerializer.Save(
+            save,
+            name);
 
-        Debug.Log($"Saved: {name}");
+        Debug.Log(
+            $"Saved: {name}");
     }
-    public void LoadSavedLevel(string fileName)
+
+    public void LoadSavedLevel(
+        string fileName)
     {
-        SavedLevel save = LevelSerializer.Load(fileName);
+        SavedLevel save =
+            LevelSerializer.Load(
+                fileName);
 
         if (save == null)
             return;
 
-        ClearWorld();
-
-        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
-
-        BuildFromSavedLevel(save);
-
-        VoxelVisibilitySystem.ResetVisibility();
-        ChunkRefreshSystem.RequestFullRefresh();
+        BuildFromSavedLevel(
+            save);
     }
+
+    // =====================================================
+    // WORLD CLEARING
+    // =====================================================
 
     public void ClearWorld()
     {
-        foreach (var renderer in chunkRenderers.Values)
+        foreach (
+            ChunkRenderer renderer
+            in chunkRenderers.Values)
         {
-            Destroy(renderer.gameObject);
+            if (renderer != null)
+            {
+                Destroy(
+                    renderer.gameObject);
+            }
         }
-        
+
         spawnPoints.Clear();
+
         chunks.Clear();
+
         chunkRenderers.Clear();
     }
-    public void LoadGeneratedLevel(int seed, int worldSize)
+
+    // =====================================================
+    // GENERATION
+    // =====================================================
+
+    public void LoadGeneratedLevel(
+        int seed,
+        int widthInChunks,
+        int heightInChunks,
+        int depthInChunks)
     {
         ClearWorld();
 
-        currentLevel = LevelGenerator.Generate(seed, worldSize);
+        currentLevel =
+            LevelGenerator.Generate(
+                seed,
+                widthInChunks,
+                heightInChunks,
+                depthInChunks);
 
-        VoxelVisibilitySystem.ResetVisibility();
-        ChunkRefreshSystem.RequestFullRefresh();
-
-        BuildFromLevel(currentLevel);
+        BuildFromLevel(
+            currentLevel);
     }
+
+    // =====================================================
+    // SPAWN POINTS
+    // =====================================================
+
     public void ScanSpawnPoints()
     {
         spawnPoints.Clear();
 
         foreach (var pair in chunks)
         {
-            Vector3Int chunkCoord = pair.Key;
-            Chunk chunk = pair.Value;
+            Vector3Int chunkCoord =
+                pair.Key;
 
-            for (int x = 0; x < Chunk.ChunkSize; x++)
+            Chunk chunk =
+                pair.Value;
+
+            for (
+                int x = 0;
+                x < Chunk.ChunkSize;
+                x++)
             {
-                for (int y = 0; y < Chunk.ChunkSize; y++)
+                for (
+                    int y = 0;
+                    y < Chunk.ChunkSize;
+                    y++)
                 {
-                    for (int z = 0; z < Chunk.ChunkSize; z++)
+                    for (
+                        int z = 0;
+                        z < Chunk.ChunkSize;
+                        z++)
                     {
-                        Voxel voxel = chunk.GetVoxel(x, y, z);
+                        Voxel voxel =
+                            chunk.GetVoxel(
+                                x,
+                                y,
+                                z);
 
-                        if (voxel.Type != VoxelType.SpawnPoint)
+                        if (
+                            voxel.Type !=
+                            VoxelType.SpawnPoint)
+                        {
                             continue;
+                        }
 
-                        Vector3Int worldPos = new(
-                            chunkCoord.x * Chunk.ChunkSize + x,
-                            y,
-                            chunkCoord.z * Chunk.ChunkSize + z);
+                        Vector3Int worldPos =
+                            new(
+                                chunkCoord.x *
+                                Chunk.ChunkSize +
+                                x,
 
-                        spawnPoints.Add(worldPos);
+                                chunkCoord.y *
+                                Chunk.ChunkSize +
+                                y,
 
-                        Debug.Log(worldPos + "is where the spawnPoint is");
+                                chunkCoord.z *
+                                Chunk.ChunkSize +
+                                z);
+
+                        spawnPoints.Add(
+                            worldPos);
+
+                        Debug.Log(
+                            worldPos +
+                            " is where the spawnPoint is");
                     }
                 }
             }
         }
 
-        Debug.Log($"Found {spawnPoints.Count} spawn point(s).");
+        Debug.Log(
+            $"Found {spawnPoints.Count} spawn point(s).");
     }
-    private void BuildFromSavedLevel(SavedLevel save)
+
+    // =====================================================
+    // BUILD SAVED LEVEL
+    // =====================================================
+
+    private void BuildFromSavedLevel(
+        SavedLevel save)
     {
         ClearWorld();
 
-        // 1. disable systems that react to visuals
-        VoxelVisibilitySystem.SetToInitialPuzzleState();
+        VoxelVisibilitySystem
+            .SetToInitialPuzzleState();
 
-        // 2. PURE DATA BUILD (NO renderers, NO GetOrCreateChunk)
-        foreach (SavedVoxel voxel in save.voxels)
+        // -------------------------
+        // DATA PASS
+        // -------------------------
+
+        foreach (
+            SavedVoxel voxel
+            in save.voxels)
         {
-            Vector3Int worldPos = new(voxel.x, voxel.y, voxel.z);
+            Vector3Int worldPos =
+                new(
+                    voxel.x,
+                    voxel.y,
+                    voxel.z);
 
-            Vector3Int chunkCoord = VoxelMath.WorldToChunkCoord(worldPos);
-            Vector3Int localPos = VoxelMath.WorldToLocalVoxel(worldPos);
+            Vector3Int chunkCoord =
+                VoxelMath.WorldToChunkCoord(
+                    worldPos);
 
-            if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))
+            Vector3Int localPos =
+                VoxelMath.WorldToLocalVoxel(
+                    worldPos);
+
+            if (
+                !chunks.TryGetValue(
+                    chunkCoord,
+                    out Chunk chunk))
             {
-                chunk = new Chunk(chunkCoord);
-                chunks.Add(chunkCoord, chunk);
+                chunk =
+                    new Chunk(
+                        chunkCoord);
+
+                chunks.Add(
+                    chunkCoord,
+                    chunk);
             }
 
-            chunk.SetVoxel(localPos.x, localPos.y, localPos.z, new Voxel(voxel.type));
+            chunk.SetVoxel(
+                localPos.x,
+                localPos.y,
+                localPos.z,
+                new Voxel(
+                    voxel.type));
         }
 
-        // 3. NOW create renderers AFTER ALL DATA EXISTS
-        foreach (var kvp in chunks)
+        // -------------------------
+        // RENDERER PASS
+        // -------------------------
+
+        foreach (
+            var pair
+            in chunks)
         {
-            CreateChunkRenderer(kvp.Value);
+            CreateChunkRenderer(
+                pair.Value);
         }
 
-        // 4. visibility setup AFTER renderers exist
+        RefreshWorldSpatialState();
 
-        int maxDepth = 0;
+        VoxelVisibilitySystem.SetView(
+            SliceAxis.Z,
+            +1);
 
-        foreach (Vector3Int chunkCoord in chunks.Keys)
-        {
-            int chunkMaxX =
-                (chunkCoord.x + 1) * Chunk.ChunkSize;
+        VoxelVisibilitySystem
+            .ResetVisibility();
 
-            int chunkMaxZ =
-                (chunkCoord.z + 1) * Chunk.ChunkSize;
-
-            maxDepth = Mathf.Max(maxDepth, chunkMaxX, chunkMaxZ);
-        }
-
-        VoxelVisibilitySystem.SetBounds(0, maxDepth - 1);
-
-        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
-        VoxelVisibilitySystem.ResetVisibility();
-
-        // 5. final mesh pass
-        ChunkRefreshSystem.RequestFullRefresh();
+        ChunkRefreshSystem
+            .RequestFullRefresh();
     }
-    private void BuildFromLevel(LevelData data)
+
+    // =====================================================
+    // BUILD GENERATED LEVEL
+    // =====================================================
+
+    private void BuildFromLevel(
+        LevelData data)
     {
         ClearWorld();
 
-        for (int x = 0; x < data.worldSizeInChunks; x++)
-            for (int z = 0; z < data.worldSizeInChunks; z++)
+        for (
+            int cx = 0;
+            cx < data.widthInChunks;
+            cx++)
+        {
+            for (
+                int cy = 0;
+                cy < data.heightInChunks;
+                cy++)
             {
-                Chunk chunk = new(new Vector3Int(x, 0, z));
+                for (
+                    int cz = 0;
+                    cz < data.depthInChunks;
+                    cz++)
+                {
+                    Vector3Int chunkCoord =
+                        new(
+                            cx,
+                            cy,
+                            cz);
 
-                for (int lx = 0; lx < Chunk.ChunkSize; lx++)
-                    for (int ly = 0; ly < Chunk.ChunkSize; ly++)
-                        for (int lz = 0; lz < Chunk.ChunkSize; lz++)
+                    Chunk chunk =
+                        new(
+                            chunkCoord);
+
+                    for (
+                        int lx = 0;
+                        lx < Chunk.ChunkSize;
+                        lx++)
+                    {
+                        for (
+                            int ly = 0;
+                            ly < Chunk.ChunkSize;
+                            ly++)
                         {
-                            VoxelType type = data.chunks[x, 0, z][lx, ly, lz];
+                            for (
+                                int lz = 0;
+                                lz < Chunk.ChunkSize;
+                                lz++)
+                            {
+                                VoxelType type =
+                                    data.chunks[
+                                        cx,
+                                        cy,
+                                        cz]
+                                    [
+                                        lx,
+                                        ly,
+                                        lz
+                                    ];
 
-                            Vector3Int worldPos = new(
-                                x * Chunk.ChunkSize + lx,
-                                ly,
-                                z * Chunk.ChunkSize + lz
-                            );
+                                chunk.SetVoxel(
+                                    lx,
+                                    ly,
+                                    lz,
+                                    new Voxel(
+                                        type));
+                            }
+                        }
+                    }
 
-                            chunk.SetVoxel(lx, ly, lz, new Voxel(type));
+                    chunks[
+                        chunkCoord] =
+                        chunk;
+
+                    CreateChunkRenderer(
+                        chunk);
+                }
+            }
+        }
+
+        RefreshWorldSpatialState();
+
+        VoxelVisibilitySystem.SetView(
+            SliceAxis.Z,
+            +1);
+
+        VoxelVisibilitySystem
+            .ResetVisibility();
+
+        ChunkRefreshSystem
+            .RequestFullRefresh();
+    }
+
+    // =====================================================
+    // CHUNK RENDERING
+    // =====================================================
+
+    private void CreateChunkRenderer(
+        Chunk chunk)
+    {
+        GameObject go =
+            new(
+                $"Chunk {chunk.ChunkCoordinate}");
+
+        go.transform.position =
+            new Vector3(
+                chunk.ChunkCoordinate.x *
+                Chunk.ChunkSize,
+
+                chunk.ChunkCoordinate.y *
+                Chunk.ChunkSize,
+
+                chunk.ChunkCoordinate.z *
+                Chunk.ChunkSize);
+
+        ChunkRenderer renderer =
+            go.AddComponent<ChunkRenderer>();
+
+        MeshRenderer meshRenderer =
+            go.GetComponent<MeshRenderer>();
+
+        meshRenderer.material =
+            voxelMaterial;
+
+        renderer.Initialize(
+            chunk,
+            this);
+
+        chunkRenderers.Add(
+            chunk.ChunkCoordinate,
+            renderer);
+    }
+
+    // =====================================================
+    // WORLD SPATIAL STATE
+    // =====================================================
+
+    private void RefreshWorldSpatialState()
+    {
+        if (chunks.Count == 0)
+            return;
+
+        Vector3 levelCenter =
+            LevelBoundsUtility.CalculateCenter(
+                chunks.Keys,
+                Chunk.ChunkSize);
+
+        if (
+            cameraStateController !=
+            null)
+        {
+            cameraStateController
+                .SetLevelCenter(
+                    levelCenter);
+        }
+
+        if (
+            TryCalculateOccupiedHorizontalBounds(
+                out int minX,
+                out int maxX,
+                out int minZ,
+                out int maxZ))
+        {
+            VoxelVisibilitySystem
+                .SetBounds(
+                    minX,
+                    maxX,
+                    minZ,
+                    maxZ);
+        }
+    }
+
+    private bool
+        TryCalculateOccupiedHorizontalBounds(
+            out int minX,
+            out int maxX,
+            out int minZ,
+            out int maxZ)
+    {
+        bool foundVoxel =
+            false;
+
+        minX = 0;
+        maxX = 0;
+
+        minZ = 0;
+        maxZ = 0;
+
+        foreach (
+            var pair
+            in chunks)
+        {
+            Vector3Int chunkCoord =
+                pair.Key;
+
+            Chunk chunk =
+                pair.Value;
+
+            for (
+                int x = 0;
+                x < Chunk.ChunkSize;
+                x++)
+            {
+                for (
+                    int y = 0;
+                    y < Chunk.ChunkSize;
+                    y++)
+                {
+                    for (
+                        int z = 0;
+                        z < Chunk.ChunkSize;
+                        z++)
+                    {
+                        Voxel voxel =
+                            chunk.GetVoxel(
+                                x,
+                                y,
+                                z);
+
+                        if (
+                            voxel.Type ==
+                            VoxelType.Air)
+                        {
+                            continue;
                         }
 
-                chunks[new Vector3Int(x, 0, z)] = chunk;
-                CreateChunkRenderer(chunk);
+                        int worldX =
+                            chunkCoord.x *
+                            Chunk.ChunkSize +
+                            x;
+
+                        int worldZ =
+                            chunkCoord.z *
+                            Chunk.ChunkSize +
+                            z;
+
+                        if (!foundVoxel)
+                        {
+                            minX =
+                                worldX;
+
+                            maxX =
+                                worldX;
+
+                            minZ =
+                                worldZ;
+
+                            maxZ =
+                                worldZ;
+
+                            foundVoxel =
+                                true;
+                        }
+                        else
+                        {
+                            minX =
+                                Mathf.Min(
+                                    minX,
+                                    worldX);
+
+                            maxX =
+                                Mathf.Max(
+                                    maxX,
+                                    worldX);
+
+                            minZ =
+                                Mathf.Min(
+                                    minZ,
+                                    worldZ);
+
+                            maxZ =
+                                Mathf.Max(
+                                    maxZ,
+                                    worldZ);
+                        }
+                    }
+                }
             }
+        }
 
-        // 1. compute center AFTER chunks exist
-        Vector3 levelCenter =
-            LevelBoundsUtility.CalculateCenter(chunks.Keys, Chunk.ChunkSize);
-
-        orbitCamera.SetOrbitCenter(levelCenter);
-
-        int maxDepth = data.worldSizeInChunks * Chunk.ChunkSize;
-        VoxelVisibilitySystem.SetBounds(0, maxDepth - 1);
-
-        // 2. IMPORTANT: set view BEFORE refresh
-        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
-
-        // 3. now safe
-        VoxelVisibilitySystem.ResetVisibility();
-        ChunkRefreshSystem.RequestFullRefresh();
+        return foundVoxel;
     }
 
-    private void CreateChunkRenderer(Chunk chunk)
-    {
-        GameObject go = new($"Chunk {chunk.ChunkCoordinate}");
+    // =====================================================
+    // REFRESH
+    // =====================================================
 
-        ChunkRenderer renderer = go.AddComponent<ChunkRenderer>();
-
-        MeshRenderer meshRenderer = go.GetComponent<MeshRenderer>();
-        meshRenderer.material = voxelMaterial;
-
-        renderer.Initialize(chunk);
-
-        chunkRenderers.Add(chunk.ChunkCoordinate, renderer);
-    }
     private void RebuildAllChunks()
     {
-        foreach (var renderer in chunkRenderers.Values)
+        foreach (
+            ChunkRenderer renderer
+            in chunkRenderers.Values)
         {
             renderer.RebuildMesh();
         }
     }
-    public Voxel GetVoxel(Vector3Int worldPos)
+
+    private void RebuildChunkAndNeighbors(
+        Vector3Int chunkCoord)
     {
-        Vector3Int chunkCoord = VoxelMath.WorldToChunkCoord(worldPos);
-        Vector3Int local = VoxelMath.WorldToLocalVoxel(worldPos);
+        RebuildChunk(
+            chunkCoord);
 
-        if (chunks.TryGetValue(chunkCoord, out Chunk chunk))
-        {
-            return chunk.GetVoxel(local.x, local.y, local.z);
-        }
+        RebuildChunk(
+            chunkCoord +
+            Vector3Int.right);
 
-        return new Voxel(VoxelType.Air);
+        RebuildChunk(
+            chunkCoord +
+            Vector3Int.left);
+
+        RebuildChunk(
+            chunkCoord +
+            Vector3Int.up);
+
+        RebuildChunk(
+            chunkCoord +
+            Vector3Int.down);
+
+        RebuildChunk(
+            chunkCoord +
+            new Vector3Int(
+                0,
+                0,
+                1));
+
+        RebuildChunk(
+            chunkCoord +
+            new Vector3Int(
+                0,
+                0,
+                -1));
     }
 
-    public void SetVoxel(Vector3Int worldPos, VoxelType type)
+    private void RebuildChunk(
+        Vector3Int chunkCoord)
+    {
+        if (
+            chunkRenderers.TryGetValue(
+                chunkCoord,
+                out ChunkRenderer renderer))
+        {
+            renderer.RebuildMesh();
+        }
+    }
+
+    // =====================================================
+    // VOXEL ACCESS
+    // =====================================================
+
+    public Voxel GetVoxel(
+        Vector3Int worldPos)
     {
         Vector3Int chunkCoord =
-            VoxelMath.WorldToChunkCoord(worldPos);
+            VoxelMath.WorldToChunkCoord(
+                worldPos);
+
+        Vector3Int local =
+            VoxelMath.WorldToLocalVoxel(
+                worldPos);
+
+        if (
+            chunks.TryGetValue(
+                chunkCoord,
+                out Chunk chunk))
+        {
+            return chunk.GetVoxel(
+                local.x,
+                local.y,
+                local.z);
+        }
+
+        return new Voxel(
+            VoxelType.Air);
+    }
+
+    public void SetVoxel(
+        Vector3Int worldPos,
+        VoxelType type)
+    {
+        if (
+            worldPos.x ==
+                int.MinValue ||
+            worldPos.y ==
+                int.MinValue ||
+            worldPos.z ==
+                int.MinValue ||
+            worldPos.x ==
+                int.MaxValue ||
+            worldPos.y ==
+                int.MaxValue ||
+            worldPos.z ==
+                int.MaxValue)
+        {
+            Debug.LogWarning(
+                $"Rejected invalid voxel edit position: {worldPos}");
+
+            return;
+        }
+
+        Vector3Int chunkCoord =
+            VoxelMath.WorldToChunkCoord(
+                worldPos);
 
         Vector3Int localPos =
-            VoxelMath.WorldToLocalVoxel(worldPos);
+            VoxelMath.WorldToLocalVoxel(
+                worldPos);
 
-        Debug.Log($"World: {worldPos} -> Chunk: {chunkCoord}");
+        Debug.Log(
+            $"World: {worldPos} -> Chunk: {chunkCoord}");
 
-        Chunk chunk = GetOrCreateChunk(chunkCoord);
+        if (
+            type ==
+                VoxelType.Air &&
+            !chunks.ContainsKey(
+                chunkCoord))
+        {
+            return;
+        }
+
+        Chunk chunk =
+            GetOrCreateChunk(
+                chunkCoord);
 
         chunk.SetVoxel(
             localPos.x,
             localPos.y,
             localPos.z,
-            new Voxel(type));
+            new Voxel(
+                type));
 
-        chunkRenderers[chunkCoord].RebuildMesh();
+        RefreshWorldSpatialState();
+
+        RebuildChunkAndNeighbors(
+            chunkCoord);
     }
-    private Chunk GetOrCreateChunk(Vector3Int chunkCoord)
+
+    private Chunk GetOrCreateChunk(
+        Vector3Int chunkCoord)
     {
-        if (!chunks.TryGetValue(chunkCoord, out Chunk chunk))
+        if (
+            !chunks.TryGetValue(
+                chunkCoord,
+                out Chunk chunk))
         {
-            chunk = new Chunk(chunkCoord);
-            chunks.Add(chunkCoord, chunk);
-            CreateChunkRenderer(chunk);
+            chunk =
+                new Chunk(
+                    chunkCoord);
+
+            chunks.Add(
+                chunkCoord,
+                chunk);
+
+            CreateChunkRenderer(
+                chunk);
+
+            RefreshWorldSpatialState();
         }
 
         return chunk;
     }
-    public IEnumerable<Vector3Int> GetChunkCoordinates()
+
+    public IEnumerable<Vector3Int>
+        GetChunkCoordinates()
     {
         return chunks.Keys;
     }
+
+    // =====================================================
+    // GENERATION UI HELPERS
+    // =====================================================
+
+    private int ParseChunkCount(
+        string value)
+    {
+        if (
+            !int.TryParse(
+                value,
+                out int result))
+        {
+            return 1;
+        }
+
+        return Mathf.Max(
+            1,
+            result);
+    }
+
+    // =====================================================
+    // EDITOR UI
+    // =====================================================
+
     private void OnGUI()
     {
-        GUI.matrix = Matrix4x4.TRS(
-            Vector3.zero,
-            Quaternion.identity,
-            Vector3.one * 2.5f
-        );
+        GUI.matrix =
+            Matrix4x4.TRS(
+                Vector3.zero,
+                Quaternion.identity,
+                Vector3.one * 2.5f);
 
-        GUILayout.BeginArea(new Rect(10, 10, 220, 200));
+        GUILayout.BeginArea(
+            new Rect(
+                10,
+                10,
+                260,
+                330));
 
-        GUILayout.Label("Level Save/Load");
+        GUILayout.Label(
+            "Level Save/Load");
 
-        fileName = GUILayout.TextField(fileName);
+        fileName =
+            GUILayout.TextField(
+                fileName);
 
-        GUILayout.Space(10);
+        GUILayout.Space(
+            10);
 
-        if (GUILayout.Button("Save"))
+        if (
+            GUILayout.Button(
+                "Save"))
         {
-            SaveLevel(fileName);
+            SaveLevel(
+                fileName);
         }
 
-        if (GUILayout.Button("Load"))
+        if (
+            GUILayout.Button(
+                "Load"))
         {
-            LoadSavedLevel(fileName);
+            LoadSavedLevel(
+                fileName);
         }
 
-        GUILayout.Space(10);
+        GUILayout.Space(
+            12);
 
-        if (GUILayout.Button("Generate Random"))
+        GUILayout.Label(
+            "Generated Level Size");
+
+        GUILayout.BeginHorizontal();
+
+        GUILayout.Label(
+            "Width",
+            GUILayout.Width(70));
+
+        generationWidth =
+            GUILayout.TextField(
+                generationWidth,
+                GUILayout.Width(60));
+
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
+
+        GUILayout.Label(
+            "Height",
+            GUILayout.Width(70));
+
+        generationHeight =
+            GUILayout.TextField(
+                generationHeight,
+                GUILayout.Width(60));
+
+        GUILayout.EndHorizontal();
+
+        GUILayout.BeginHorizontal();
+
+        GUILayout.Label(
+            "Depth",
+            GUILayout.Width(70));
+
+        generationDepth =
+            GUILayout.TextField(
+                generationDepth,
+                GUILayout.Width(60));
+
+        GUILayout.EndHorizontal();
+
+        GUILayout.Space(
+            8);
+
+        if (
+            GUILayout.Button(
+                "Generate Random"))
         {
-            LoadGeneratedLevel(Random.Range(0, 99999), 1);
+            int width =
+                ParseChunkCount(
+                    generationWidth);
+
+            int height =
+                ParseChunkCount(
+                    generationHeight);
+
+            int depth =
+                ParseChunkCount(
+                    generationDepth);
+
+            // Normalize displayed values too.
+            generationWidth =
+                width.ToString();
+
+            generationHeight =
+                height.ToString();
+
+            generationDepth =
+                depth.ToString();
+
+            LoadGeneratedLevel(
+                Random.Range(
+                    0,
+                    99999),
+                width,
+                height,
+                depth);
         }
 
         GUILayout.EndArea();
     }
 
-    // =========================
+    // =====================================================
     // DWARF-SAFE WRAPPERS
-    // =========================
+    // =====================================================
 
-    public bool HasSupport(Vector3Int voxel)
+    public bool HasSupport(
+        Vector3Int voxel)
     {
-        return GetVoxel(voxel).Type != VoxelType.Air;
+        return
+            GetVoxel(voxel).Type !=
+            VoxelType.Air;
     }
 
-    public bool IsBlocked(Vector3Int worldPos)
+    public bool IsBlocked(
+        Vector3Int worldPos)
     {
-        return GetVoxel(worldPos).Type != VoxelType.Air;
+        return
+            GetVoxel(worldPos).Type !=
+            VoxelType.Air;
     }
 
-    public bool IsLethal(Vector3Int worldPos)
+    public bool IsLethal(
+        Vector3Int worldPos)
     {
-        var type = GetVoxel(worldPos).Type;
+        VoxelType type =
+            GetVoxel(
+                worldPos).Type;
 
-        return type == VoxelType.Lava;
+        return
+            type ==
+            VoxelType.Lava;
     }
 
-    public bool IsFluid(Vector3Int worldPos)
+    public bool IsFluid(
+        Vector3Int worldPos)
     {
-        var type = GetVoxel(worldPos).Type;
+        VoxelType type =
+            GetVoxel(
+                worldPos).Type;
 
-        return type == VoxelType.Water;
+        return
+            type ==
+            VoxelType.Water;
     }
 
-    public bool IsWalkable(Vector3Int worldPos)
+    public bool IsWalkable(
+        Vector3Int worldPos)
     {
-        if (IsBlocked(worldPos))
+        if (
+            IsBlocked(
+                worldPos))
+        {
             return false;
+        }
 
-        if (IsLethal(worldPos))
+        if (
+            IsLethal(
+                worldPos))
+        {
             return false;
+        }
 
         return true;
     }
 
-    public Vector3Int GetSpawnPoint(int index = 0)
+    public Vector3Int GetSpawnPoint(
+        int index = 0)
     {
-        if (spawnPoints.Count == 0)
+        if (
+            spawnPoints.Count == 0)
+        {
             return Vector3Int.zero;
+        }
 
-        return spawnPoints[index % spawnPoints.Count];
+        return
+            spawnPoints[
+                index %
+                spawnPoints.Count];
     }
 
-    public IReadOnlyList<Vector3Int> GetSpawnPoints()
+    public IReadOnlyList<Vector3Int>
+        GetSpawnPoints()
     {
         return spawnPoints;
     }
