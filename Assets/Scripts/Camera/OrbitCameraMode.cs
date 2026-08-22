@@ -28,9 +28,11 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     private float pitch = 45f;
 
     private Vector2 lastMousePos;
+
     private bool isRotating;
     private bool isPanning;
     private bool justEntered;
+
     public bool IsRotating => isRotating;
 
     private OrbitSnapshot savedState;
@@ -39,12 +41,18 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     {
         if (target == null)
         {
-            GameObject pivot = new GameObject("Camera Pivot");
-            pivot.transform.position = Vector3.zero;
+            GameObject pivot =
+                new GameObject("Camera Pivot");
+
+            pivot.transform.position =
+                Vector3.zero;
+
             target = pivot.transform;
         }
 
-        Vector3 angles = transform.eulerAngles;
+        Vector3 angles =
+            transform.eulerAngles;
+
         yaw = angles.y;
         pitch = angles.x;
     }
@@ -54,8 +62,6 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
         RestoreState();
 
         VoxelVisibilitySystem.ResetVisibility();
-
-        //ChunkRefreshSystem.RequestFullRefresh();
 
         justEntered = true;
 
@@ -69,9 +75,9 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
     public void HandleInput()
     {
-        Vector2 mousePos = Mouse.current.position.ReadValue();
+        Vector2 mousePos =
+            Mouse.current.position.ReadValue();
 
-        // RIGHT MOUSE = ROTATE
         if (Mouse.current.rightButton.isPressed)
         {
             if (!isRotating)
@@ -80,11 +86,24 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
                 lastMousePos = mousePos;
             }
 
-            Vector2 delta = mousePos - lastMousePos;
+            Vector2 delta =
+                mousePos - lastMousePos;
 
-            yaw += delta.x * rotationSpeed * Time.deltaTime;
-            pitch -= delta.y * rotationSpeed * Time.deltaTime;
-            pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
+            yaw +=
+                delta.x *
+                rotationSpeed *
+                Time.deltaTime;
+
+            pitch -=
+                delta.y *
+                rotationSpeed *
+                Time.deltaTime;
+
+            pitch =
+                Mathf.Clamp(
+                    pitch,
+                    minPitch,
+                    maxPitch);
 
             lastMousePos = mousePos;
         }
@@ -93,7 +112,6 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
             isRotating = false;
         }
 
-        // MIDDLE MOUSE = PAN
         if (Mouse.current.middleButton.isPressed)
         {
             if (!isPanning)
@@ -102,12 +120,19 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
                 lastMousePos = mousePos;
             }
 
-            Vector2 delta = mousePos - lastMousePos;
+            Vector2 delta =
+                mousePos - lastMousePos;
 
-            Vector3 right = transform.right;
-            Vector3 up = transform.up;
+            Vector3 right =
+                transform.right;
 
-            target.position += (-right * delta.x + -up * delta.y) * panSpeed;
+            Vector3 up =
+                transform.up;
+
+            target.position +=
+                (-right * delta.x +
+                 -up * delta.y)
+                * panSpeed;
 
             lastMousePos = mousePos;
         }
@@ -116,13 +141,21 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
             isPanning = false;
         }
 
-        // SCROLL = ZOOM
-        float scroll = Mouse.current.scroll.ReadValue().y;
+        float scroll =
+            Mouse.current.scroll.ReadValue().y;
 
         if (Mathf.Abs(scroll) > 0.01f)
         {
-            distance -= scroll * zoomSpeed * Time.deltaTime;
-            distance = Mathf.Clamp(distance, minDistance, maxDistance);
+            distance -=
+                scroll *
+                zoomSpeed *
+                Time.deltaTime;
+
+            distance =
+                Mathf.Clamp(
+                    distance,
+                    minDistance,
+                    maxDistance);
         }
     }
 
@@ -134,40 +167,84 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
             return;
         }
 
-        Quaternion rotation = Quaternion.Euler(pitch, yaw, 0f);
+        Quaternion rotation =
+            Quaternion.Euler(
+                pitch,
+                yaw,
+                0f);
 
-        Vector3 desiredPosition = target.position + rotation * new Vector3(0, 0, -distance);
+        Vector3 desiredPosition =
+            target.position +
+            rotation *
+            new Vector3(
+                0,
+                0,
+                -distance);
 
-        // VOXEL-SAFE COLLISION
-        Vector3 direction = (desiredPosition - target.position).normalized;
-        float desiredDistance = distance;
+        Vector3 direction =
+            (desiredPosition - target.position)
+            .normalized;
 
-        if (Physics.Raycast(target.position, direction, out RaycastHit hit, distance, collisionMask))
+        float desiredDistance =
+            distance;
+
+        if (Physics.Raycast(
+                target.position,
+                direction,
+                out RaycastHit hit,
+                distance,
+                collisionMask))
         {
-            desiredDistance = Mathf.Max(minDistance, hit.distance - collisionPadding);
+            desiredDistance =
+                Mathf.Max(
+                    minDistance,
+                    hit.distance -
+                    collisionPadding);
         }
 
-        Vector3 finalPosition = target.position + direction * desiredDistance;
+        Vector3 finalPosition =
+            target.position +
+            direction * desiredDistance;
 
-        transform.SetPositionAndRotation(finalPosition, rotation);
+        transform.SetPositionAndRotation(
+            finalPosition,
+            rotation);
     }
+
     public void SetOrbitCenter(Vector3 center)
     {
         if (target == null)
         {
-            GameObject pivot = new GameObject("Camera Pivot");
+            GameObject pivot =
+                new GameObject("Camera Pivot");
+
             target = pivot.transform;
         }
 
         target.position = center;
+
+        // Keep the stored Orbit state synchronized too.
+        // Otherwise returning from Puzzle mode could restore
+        // the old center after a chunk expansion.
+        if (savedState.Distance > 0.01f)
+        {
+            savedState.TargetPosition = center;
+        }
     }
 
     public void SaveState()
     {
-        savedState.TargetPosition = target.position;
-        savedState.Yaw = yaw;
-        savedState.Pitch = pitch;
-        savedState.Distance = distance;
+        savedState.TargetPosition =
+            target.position;
+
+        savedState.Yaw =
+            yaw;
+
+        savedState.Pitch =
+            pitch;
+
+        savedState.Distance =
+            distance;
     }
 
     public void RestoreState()
@@ -175,10 +252,17 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
         if (savedState.Distance <= 0.01f)
             return;
 
-        target.position = savedState.TargetPosition;
-        yaw = savedState.Yaw;
-        pitch = savedState.Pitch;
-        distance = savedState.Distance;
+        target.position =
+            savedState.TargetPosition;
+
+        yaw =
+            savedState.Yaw;
+
+        pitch =
+            savedState.Pitch;
+
+        distance =
+            savedState.Distance;
     }
 
     public Vector3 GetCurrentPosition()
@@ -194,6 +278,7 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     private struct OrbitSnapshot
     {
         public Vector3 TargetPosition;
+
         public float Yaw;
         public float Pitch;
         public float Distance;

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -28,9 +29,6 @@ public class CameraStateController : MonoBehaviour
     private Vector3 orbitReturnPosition;
     private Quaternion orbitReturnRotation;
 
-    // -------------------------------------------------
-    // Shared level anchor (single source of truth)
-    // -------------------------------------------------
     private Vector3 levelCenter;
 
     private void Start()
@@ -41,18 +39,14 @@ public class CameraStateController : MonoBehaviour
 
         currentState = CameraState.Orbit;
 
+        Vector3 initialCenter =
+            LevelBoundsUtility.CalculateCenter(
+                voxelWorld.GetChunkCoordinates(),
+                Chunk.ChunkSize);
+
+        SetLevelCenter(initialCenter);
+
         orbitMode.UpdateCamera();
-
-        // IMPORTANT: centralize level reference once
-        levelCenter = LevelBoundsUtility.CalculateCenter(
-            voxelWorld.GetChunkCoordinates(),
-            Chunk.ChunkSize);
-
-        orbitMode.SetOrbitCenter(levelCenter);
-        puzzleMode.SetLevelCenter(levelCenter);
-
-        //VoxelVisibilitySystem.SetView(SliceAxis.X, +1);
-        //VoxelVisibilitySystem.SetVisibleLayer(0);
     }
 
     private void Update()
@@ -76,129 +70,417 @@ public class CameraStateController : MonoBehaviour
         activeMode?.UpdateCamera();
     }
 
+    // =====================================================
+    // LEVEL CENTER
+    // =====================================================
+
+    public void SetLevelCenter(Vector3 newCenter)
+    {
+        Vector3 centerDelta =
+            newCenter - levelCenter;
+
+        levelCenter =
+            newCenter;
+
+        orbitMode.SetOrbitCenter(
+            levelCenter);
+
+        // Puzzle mode uses occupied voxel bounds,
+        // so update those whenever the world changes.
+        if (TryCalculateOccupiedBounds(
+                out Bounds occupiedBounds))
+        {
+            puzzleMode.SetOccupiedBounds(
+                occupiedBounds);
+        }
+
+        if (currentState != CameraState.Orbit)
+        {
+            orbitReturnPosition +=
+                centerDelta;
+        }
+    }
+
+    // =====================================================
+    // OCCUPIED VOXEL BOUNDS
+    // =====================================================
+
+    private bool TryCalculateOccupiedBounds(
+        out Bounds occupiedBounds)
+    {
+        bool foundVoxel = false;
+
+        Vector3 min =
+            Vector3.zero;
+
+        Vector3 max =
+            Vector3.zero;
+
+        IEnumerable<Vector3Int> chunkCoordinates =
+            voxelWorld.GetChunkCoordinates();
+
+        foreach (
+            Vector3Int chunkCoord
+            in chunkCoordinates)
+        {
+            Vector3Int chunkOrigin =
+                chunkCoord *
+                Chunk.ChunkSize;
+
+            for (
+                int x = 0;
+                x < Chunk.ChunkSize;
+                x++)
+            {
+                for (
+                    int y = 0;
+                    y < Chunk.ChunkSize;
+                    y++)
+                {
+                    for (
+                        int z = 0;
+                        z < Chunk.ChunkSize;
+                        z++)
+                    {
+                        Vector3Int worldPos =
+                            chunkOrigin +
+                            new Vector3Int(
+                                x,
+                                y,
+                                z);
+
+                        Voxel voxel =
+                            voxelWorld.GetVoxel(
+                                worldPos);
+
+                        if (
+                            voxel.Type ==
+                            VoxelType.Air)
+                        {
+                            continue;
+                        }
+
+                        // A voxel occupies:
+                        //
+                        // worldPos
+                        // through
+                        // worldPos + (1,1,1)
+                        //
+                        // So bounds describe actual
+                        // voxel surfaces, not centers.
+                        Vector3 voxelMin =
+                            worldPos;
+
+                        Vector3 voxelMax =
+                            (Vector3)worldPos +
+                            Vector3.one;
+
+                        if (!foundVoxel)
+                        {
+                            min =
+                                voxelMin;
+
+                            max =
+                                voxelMax;
+
+                            foundVoxel =
+                                true;
+                        }
+                        else
+                        {
+                            min =
+                                Vector3.Min(
+                                    min,
+                                    voxelMin);
+
+                            max =
+                                Vector3.Max(
+                                    max,
+                                    voxelMax);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!foundVoxel)
+        {
+            occupiedBounds =
+                new Bounds(
+                    Vector3.zero,
+                    Vector3.zero);
+
+            return false;
+        }
+
+        Vector3 center =
+            (min + max) *
+            0.5f;
+
+        Vector3 size =
+            max - min;
+
+        occupiedBounds =
+            new Bounds(
+                center,
+                size);
+
+        return true;
+    }
+
+    // =====================================================
+    // MODE SWITCHING
+    // =====================================================
+
     private void HandleTab()
     {
-        if (!Keyboard.current.tabKey.wasPressedThisFrame)
+        if (
+            !Keyboard.current.tabKey
+                .wasPressedThisFrame)
+        {
             return;
+        }
 
-        if (currentState == CameraState.Orbit)
+        if (
+            currentState ==
+            CameraState.Orbit)
         {
             BeginTransitionToPuzzle();
         }
-        else if (currentState == CameraState.Puzzle)
+        else if (
+            currentState ==
+            CameraState.Puzzle)
         {
             BeginTransitionToOrbit();
         }
-        else if (currentState == CameraState.Transition)
+        else if (
+            currentState ==
+            CameraState.Transition)
         {
             ReverseTransition();
         }
     }
 
-    // -------------------------------------------------
+    // =====================================================
     // SIDE DETECTION
-    // -------------------------------------------------
+    // =====================================================
+
     private PuzzleSide DetermineClosestSide()
     {
-        Vector3 offset = transform.position - levelCenter;
+        Vector3 offset =
+            transform.position -
+            levelCenter;
+
         offset.y = 0f;
 
-        if (offset.sqrMagnitude < 0.0001f)
+        if (
+            offset.sqrMagnitude <
+            0.0001f)
+        {
             return PuzzleSide.North;
+        }
 
         offset.Normalize();
 
-        float east = Vector3.Dot(offset, Vector3.right);
-        float west = Vector3.Dot(offset, Vector3.left);
-        float north = Vector3.Dot(offset, Vector3.forward);
-        float south = Vector3.Dot(offset, Vector3.back);
+        float east =
+            Vector3.Dot(
+                offset,
+                Vector3.right);
 
-        float max = east;
-        PuzzleSide side = PuzzleSide.East;
+        float west =
+            Vector3.Dot(
+                offset,
+                Vector3.left);
 
-        if (west > max) { max = west; side = PuzzleSide.West; }
-        if (north > max) { max = north; side = PuzzleSide.North; }
-        if (south > max) { max = south; side = PuzzleSide.South; }
+        float north =
+            Vector3.Dot(
+                offset,
+                Vector3.forward);
+
+        float south =
+            Vector3.Dot(
+                offset,
+                Vector3.back);
+
+        float max =
+            east;
+
+        PuzzleSide side =
+            PuzzleSide.East;
+
+        if (west > max)
+        {
+            max =
+                west;
+
+            side =
+                PuzzleSide.West;
+        }
+
+        if (north > max)
+        {
+            max =
+                north;
+
+            side =
+                PuzzleSide.North;
+        }
+
+        if (south > max)
+        {
+            side =
+                PuzzleSide.South;
+        }
 
         return side;
     }
 
-    // -------------------------------------------------
-    // TRANSITIONS
-    // -------------------------------------------------
+    // =====================================================
+    // TRANSITION TO PUZZLE
+    // =====================================================
+
     private void BeginTransitionToPuzzle()
     {
         orbitMode.Exit();
 
-        orbitReturnPosition = transform.position;
-        orbitReturnRotation = transform.rotation;
+        orbitReturnPosition =
+            transform.position;
 
-        PuzzleSide side = DetermineClosestSide();
-        puzzleMode.SetSide(side);
+        orbitReturnRotation =
+            transform.rotation;
 
-        PuzzleSliceMapping.GetSlice(side, out SliceAxis axis, out int sign);
+        PuzzleSide side =
+            DetermineClosestSide();
 
-        VoxelVisibilitySystem.SetView(axis, sign);
-        DwarfVisibilitySystem.SetView(axis, sign);
+        // Refresh occupied bounds immediately
+        // before calculating the Puzzle camera.
+        if (TryCalculateOccupiedBounds(
+                out Bounds occupiedBounds))
+        {
+            puzzleMode.SetOccupiedBounds(
+                occupiedBounds);
+        }
 
-        transitionStartPos = transform.position;
-        transitionStartRot = transform.rotation;
+        puzzleMode.SetSide(
+            side);
 
-        transitionTargetPos = puzzleMode.GetPuzzlePosition(side);
-        transitionTargetRot = puzzleMode.GetPuzzleRotation(side);
+        PuzzleSliceMapping.GetSlice(
+            side,
+            out SliceAxis axis,
+            out int sign);
 
-        transitionDestination = CameraState.Puzzle;
+        VoxelVisibilitySystem.SetView(
+            axis,
+            sign);
 
-        transitionProgress = 0f;
+        DwarfVisibilitySystem.SetView(
+            axis,
+            sign);
 
-        currentState = CameraState.Transition;
-        isTransitioning = true;
+        transitionStartPos =
+            transform.position;
+
+        transitionStartRot =
+            transform.rotation;
+
+        transitionTargetPos =
+            puzzleMode.GetPuzzlePosition(
+                side);
+
+        transitionTargetRot =
+            puzzleMode.GetPuzzleRotation(
+                side);
+
+        transitionDestination =
+            CameraState.Puzzle;
+
+        transitionProgress =
+            0f;
+
+        currentState =
+            CameraState.Transition;
+
+        isTransitioning =
+            true;
     }
+
+    // =====================================================
+    // TRANSITION TO ORBIT
+    // =====================================================
 
     private void BeginTransitionToOrbit()
     {
-        transitionStartPos = transform.position;
-        transitionStartRot = transform.rotation;
+        transitionStartPos =
+            transform.position;
 
-        PuzzleSide side = DetermineClosestSide();
+        transitionStartRot =
+            transform.rotation;
 
-        puzzleMode.SetSide(side);
+        PuzzleSide side =
+            DetermineClosestSide();
 
-        transitionStartPos = transform.position;
-        transitionStartRot = transform.rotation;
+        puzzleMode.SetSide(
+            side);
 
-        transitionTargetPos = orbitReturnPosition;
-        transitionTargetRot = orbitReturnRotation;
+        transitionTargetPos =
+            orbitReturnPosition;
 
-        transitionDestination = CameraState.Orbit;
+        transitionTargetRot =
+            orbitReturnRotation;
 
-        transitionProgress = 0f;
+        transitionDestination =
+            CameraState.Orbit;
 
-        currentState = CameraState.Transition;
-        isTransitioning = true;
+        transitionProgress =
+            0f;
+
+        currentState =
+            CameraState.Transition;
+
+        isTransitioning =
+            true;
     }
 
     private void ReverseTransition()
     {
-        (transitionStartPos, transitionTargetPos) =
-            (transitionTargetPos, transitionStartPos);
+        (
+            transitionStartPos,
+            transitionTargetPos
+        ) =
+        (
+            transitionTargetPos,
+            transitionStartPos
+        );
 
-        (transitionStartRot, transitionTargetRot) =
-            (transitionTargetRot, transitionStartRot);
+        (
+            transitionStartRot,
+            transitionTargetRot
+        ) =
+        (
+            transitionTargetRot,
+            transitionStartRot
+        );
 
-        transitionProgress = 1f - transitionProgress;
+        transitionProgress =
+            1f -
+            transitionProgress;
 
         transitionDestination =
-            transitionDestination == CameraState.Puzzle
+            transitionDestination ==
+            CameraState.Puzzle
                 ? CameraState.Orbit
                 : CameraState.Puzzle;
     }
 
     private void UpdateTransition()
     {
-        transitionProgress += Time.deltaTime * transitionSpeed;
+        transitionProgress +=
+            Time.deltaTime *
+            transitionSpeed;
 
-        float t = Mathf.Clamp01(transitionProgress);
+        float t =
+            Mathf.Clamp01(
+                transitionProgress);
 
         transform.position =
             Vector3.Lerp(
@@ -220,40 +502,61 @@ public class CameraStateController : MonoBehaviour
 
     private void FinishTransition()
     {
-        isTransitioning = false;
+        isTransitioning =
+            false;
 
         activeMode.Exit();
 
-        if (transitionDestination == CameraState.Puzzle)
+        if (
+            transitionDestination ==
+            CameraState.Puzzle)
         {
-            activeMode = puzzleMode;
-            currentState = CameraState.Puzzle;
+            activeMode =
+                puzzleMode;
+
+            currentState =
+                CameraState.Puzzle;
         }
         else
         {
-            activeMode = orbitMode;
-            currentState = CameraState.Orbit;
+            activeMode =
+                orbitMode;
 
-            VoxelVisibilitySystem.ResetVisibility();
-            ChunkRefreshSystem.RequestFullRefresh();
+            currentState =
+                CameraState.Orbit;
+
+            VoxelVisibilitySystem
+                .ResetVisibility();
+
+            ChunkRefreshSystem
+                .RequestFullRefresh();
         }
 
         activeMode.Enter();
     }
 
-    // -------------------------------------------------
-    // TEMP helper: replace later with proper chunk registry
-    // -------------------------------------------------
+    // =====================================================
+    // TEMP HELPER
+    // =====================================================
+
     private Transform[] FindChunkRoots()
     {
         ChunkRenderer[] chunks =
             FindObjectsByType<ChunkRenderer>(
                 FindObjectsSortMode.None);
 
-        Transform[] result = new Transform[chunks.Length];
+        Transform[] result =
+            new Transform[
+                chunks.Length];
 
-        for (int i = 0; i < chunks.Length; i++)
-            result[i] = chunks[i].transform;
+        for (
+            int i = 0;
+            i < chunks.Length;
+            i++)
+        {
+            result[i] =
+                chunks[i].transform;
+        }
 
         return result;
     }
