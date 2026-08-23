@@ -63,6 +63,8 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
         VoxelVisibilitySystem.ResetVisibility();
 
+        DwarfVisibilitySystem.ShowAll();
+
         justEntered = true;
 
         UpdateCamera();

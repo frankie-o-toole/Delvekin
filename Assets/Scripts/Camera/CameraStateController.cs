@@ -74,7 +74,9 @@ public class CameraStateController : MonoBehaviour
     // LEVEL CENTER
     // =====================================================
 
-    public void SetLevelCenter(Vector3 newCenter)
+    public void SetLevelCenter(
+    Vector3 newCenter,
+    bool recenterOrbit = true)
     {
         Vector3 centerDelta =
             newCenter - levelCenter;
@@ -82,22 +84,25 @@ public class CameraStateController : MonoBehaviour
         levelCenter =
             newCenter;
 
-        orbitMode.SetOrbitCenter(
-            levelCenter);
+        if (recenterOrbit)
+        {
+            orbitMode.SetOrbitCenter(
+                levelCenter);
 
-        // Puzzle mode uses occupied voxel bounds,
-        // so update those whenever the world changes.
+            if (currentState != CameraState.Orbit)
+            {
+                orbitReturnPosition +=
+                    centerDelta;
+            }
+        }
+
+        // Puzzle mode still needs current occupied bounds,
+        // even when the Orbit camera must remain untouched.
         if (TryCalculateOccupiedBounds(
                 out Bounds occupiedBounds))
         {
             puzzleMode.SetOccupiedBounds(
                 occupiedBounds);
-        }
-
-        if (currentState != CameraState.Orbit)
-        {
-            orbitReturnPosition +=
-                centerDelta;
         }
     }
 

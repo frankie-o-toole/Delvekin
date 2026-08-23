@@ -354,7 +354,7 @@ public class VoxelWorld : MonoBehaviour
                 pair.Value);
         }
 
-        RefreshWorldSpatialState();
+        RefreshWorldSpatialState(recenterCamera: true);
 
         VoxelVisibilitySystem.SetView(
             SliceAxis.Z,
@@ -447,7 +447,7 @@ public class VoxelWorld : MonoBehaviour
             }
         }
 
-        RefreshWorldSpatialState();
+        RefreshWorldSpatialState(recenterCamera: true);
 
         VoxelVisibilitySystem.SetView(
             SliceAxis.Z,
@@ -504,38 +504,37 @@ public class VoxelWorld : MonoBehaviour
     // WORLD SPATIAL STATE
     // =====================================================
 
-    private void RefreshWorldSpatialState()
+    private void RefreshWorldSpatialState(
+    bool recenterCamera)
     {
         if (chunks.Count == 0)
+        {
             return;
+        }
 
         Vector3 levelCenter =
             LevelBoundsUtility.CalculateCenter(
                 chunks.Keys,
                 Chunk.ChunkSize);
 
-        if (
-            cameraStateController !=
-            null)
+        if (cameraStateController != null)
         {
-            cameraStateController
-                .SetLevelCenter(
-                    levelCenter);
+            cameraStateController.SetLevelCenter(
+                levelCenter,
+                recenterCamera);
         }
 
-        if (
-            TryCalculateOccupiedHorizontalBounds(
+        if (TryCalculateOccupiedHorizontalBounds(
                 out int minX,
                 out int maxX,
                 out int minZ,
                 out int maxZ))
         {
-            VoxelVisibilitySystem
-                .SetBounds(
-                    minX,
-                    maxX,
-                    minZ,
-                    maxZ);
+            VoxelVisibilitySystem.SetBounds(
+                minX,
+                maxX,
+                minZ,
+                maxZ);
         }
     }
 
@@ -798,17 +797,16 @@ public class VoxelWorld : MonoBehaviour
             new Voxel(
                 type));
 
-        RefreshWorldSpatialState();
+        RefreshWorldSpatialState(recenterCamera: false);
 
         RebuildChunkAndNeighbors(
             chunkCoord);
     }
 
     private Chunk GetOrCreateChunk(
-        Vector3Int chunkCoord)
+    Vector3Int chunkCoord)
     {
-        if (
-            !chunks.TryGetValue(
+        if (!chunks.TryGetValue(
                 chunkCoord,
                 out Chunk chunk))
         {
@@ -822,8 +820,6 @@ public class VoxelWorld : MonoBehaviour
 
             CreateChunkRenderer(
                 chunk);
-
-            RefreshWorldSpatialState();
         }
 
         return chunk;

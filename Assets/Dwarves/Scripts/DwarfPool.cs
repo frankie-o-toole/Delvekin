@@ -3,37 +3,88 @@ using UnityEngine;
 
 public class DwarfPool : MonoBehaviour
 {
-    [SerializeField] private DwarfAgent prefab;
-    [SerializeField] private int poolSize = 50;
+    [SerializeField]
+    private DwarfAgent prefab;
 
-    private Queue<DwarfAgent> pool = new();
+    [SerializeField]
+    private int poolSize = 50;
+
+    private readonly Queue<DwarfAgent> availableDwarves =
+        new();
+
+    private readonly HashSet<DwarfAgent> activeDwarves =
+        new();
+
+    public IReadOnlyCollection<DwarfAgent> ActiveDwarves =>
+        activeDwarves;
+
+    public int AvailableCount =>
+        availableDwarves.Count;
+
+    public int ActiveCount =>
+        activeDwarves.Count;
 
     private void Awake()
     {
         for (int i = 0; i < poolSize; i++)
         {
-            DwarfAgent dwarf = Instantiate(prefab, transform);
-            dwarf.gameObject.SetActive(false);
-            pool.Enqueue(dwarf);
+            DwarfAgent dwarf =
+                CreateDwarf();
+
+            availableDwarves.Enqueue(dwarf);
         }
     }
 
     public DwarfAgent Get()
     {
-        if (pool.Count == 0)
+        if (availableDwarves.Count == 0)
         {
-            Debug.LogWarning("Dwarf pool exhausted, expanding.");
-            var extra = Instantiate(prefab, transform);
-            extra.gameObject.SetActive(false);
-            pool.Enqueue(extra);
+            Debug.LogWarning(
+                "Dwarf pool exhausted. Expanding pool.");
+
+            DwarfAgent extra =
+                CreateDwarf();
+
+            availableDwarves.Enqueue(extra);
         }
 
-        return pool.Dequeue();
+        DwarfAgent dwarf =
+            availableDwarves.Dequeue();
+
+        activeDwarves.Add(dwarf);
+
+        return dwarf;
     }
 
     public void Release(DwarfAgent dwarf)
     {
+        if (dwarf == null)
+        {
+            return;
+        }
+
+        if (!activeDwarves.Remove(dwarf))
+        {
+            Debug.LogWarning(
+                $"Attempted to release {dwarf.name}, "
+                + "but it was not registered as active.");
+
+            return;
+        }
+
         dwarf.Deactivate();
-        pool.Enqueue(dwarf);
+        availableDwarves.Enqueue(dwarf);
+    }
+
+    private DwarfAgent CreateDwarf()
+    {
+        DwarfAgent dwarf =
+            Instantiate(
+                prefab,
+                transform);
+
+        dwarf.gameObject.SetActive(false);
+
+        return dwarf;
     }
 }

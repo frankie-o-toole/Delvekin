@@ -1,19 +1,29 @@
 using System.Collections.Generic;
 using UnityEngine;
 
+/// <summary>
+/// Controls dwarf visibility using the same slicing rules as voxels.
+///
+/// A dwarf remains completely visible while at least one voxel in its
+/// 3x5x3 occupied volume is visible. The model itself is never clipped
+/// into separate pieces.
+/// </summary>
 public static class DwarfVisibilitySystem
 {
-    private static readonly List<DwarfAgent> dwarves = new();
+    private static readonly List<DwarfAgent> dwarves =
+        new();
 
-    private static SliceAxis axis;
-    private static int directionSign;
-
-    private static int peelDepth;
+    private static bool puzzleVisibilityActive;
 
     public static void Register(DwarfAgent dwarf)
     {
-        if (!dwarves.Contains(dwarf))
-            dwarves.Add(dwarf);
+        if (dwarf == null ||
+            dwarves.Contains(dwarf))
+        {
+            return;
+        }
+
+        dwarves.Add(dwarf);
     }
 
     public static void Unregister(DwarfAgent dwarf)
@@ -21,99 +31,104 @@ public static class DwarfVisibilitySystem
         dwarves.Remove(dwarf);
     }
 
-    public static void SetView(SliceAxis newAxis, int sign)
+    /// <summary>
+    /// Enables Puzzle-mode slicing for dwarves.
+    ///
+    /// The actual axis, direction and peel depth remain owned by
+    /// VoxelVisibilitySystem.
+    /// </summary>
+    public static void SetView(
+        SliceAxis newAxis,
+        int sign)
     {
-        axis = newAxis;
-        directionSign = sign;
-
+        puzzleVisibilityActive = true;
         Refresh();
     }
 
+    /// <summary>
+    /// Called after VoxelVisibilitySystem changes its peel depth.
+    /// </summary>
     public static void ChangeLayer(int delta)
     {
-        peelDepth = Mathf.Max(0, peelDepth + delta);
-
         Refresh();
     }
 
+    /// <summary>
+    /// Refreshes dwarves after the voxel peel depth returns to zero.
+    /// </summary>
     public static void Reset()
     {
-        peelDepth = 0;
+        Refresh();
+    }
+
+    /// <summary>
+    /// Disables Puzzle slicing and shows every active dwarf.
+    /// </summary>
+    public static void ShowAll()
+    {
+        puzzleVisibilityActive = false;
         Refresh();
     }
 
     public static void Refresh()
     {
-        foreach (DwarfAgent dwarf in dwarves)
+        for (int i = dwarves.Count - 1;
+             i >= 0;
+             i--)
         {
-            if (!dwarf.IsActive)
+            DwarfAgent dwarf =
+                dwarves[i];
+
+            if (dwarf == null)
+            {
+                dwarves.RemoveAt(i);
                 continue;
+            }
 
-            bool visible = IsVisible(dwarf.CurrentVoxel);
-
-            dwarf.SetVisibility(visible);
+            RefreshDwarf(dwarf);
         }
     }
 
-    private static bool IsVisible(Vector3Int worldPos)
+    public static void RefreshDwarf(
+        DwarfAgent dwarf)
     {
-        int coord = GetAxisCoordinate(worldPos);
-
-        // Same logic as VoxelVisibilitySystem
-        // front side depends on camera side
-        int start = directionSign > 0
-            ? int.MaxValue
-            : int.MinValue;
-
-        int distance;
-
-        if (directionSign > 0)
-            distance = start - coord;
-        else
-            distance = coord - start;
-
-        // replace infinite distance with actual behaviour
-        // by calculating relative to current peel depth
-        return Mathf.Abs(coord - GetFrontLayer()) >= peelDepth;
-    }
-
-    private static int GetFrontLayer()
-    {
-        return directionSign > 0
-            ? GetMaxCoordinate()
-            : GetMinCoordinate();
-    }
-
-
-    // Temporary until we share bounds with VoxelVisibilitySystem
-    private static int GetMaxCoordinate()
-    {
-        return VoxelVisibilitySystem.maxLayer;
-    }
-
-    private static int GetMinCoordinate()
-    {
-        return VoxelVisibilitySystem.minLayer;
-    }
-
-
-    private static int GetAxisCoordinate(Vector3Int pos)
-    {
-        return axis switch
+        if (dwarf == null)
         {
-            SliceAxis.X => pos.x,
-            SliceAxis.Z => pos.z,
-            _ => pos.x
-        };
-    }
-
-    public static void RefreshDwarf(DwarfAgent dwarf)
-    {
-        if (!dwarf.IsActive)
             return;
+        }
 
-        bool visible = IsVisible(dwarf.CurrentVoxel);
+        if (!dwarf.IsActive)
+        {
+            dwarf.SetVisibility(false);
+            return;
+        }
+
+        if (!puzzleVisibilityActive)
+        {
+            dwarf.SetVisibility(true);
+            return;
+        }
+
+        bool visible =
+            IsAnyOccupiedVoxelVisible(dwarf);
 
         dwarf.SetVisibility(visible);
+    }
+
+    private static bool IsAnyOccupiedVoxelVisible(
+        DwarfAgent dwarf)
+    {
+        foreach (Vector3Int occupiedVoxel
+                 in DwarfSpatialRules.GetOccupiedVoxels(
+                     dwarf.CurrentVoxel))
+        {
+            if (VoxelVisibilitySystem.IsVoxelVisible(
+                    occupiedVoxel))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

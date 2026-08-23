@@ -1,13 +1,26 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
+[DefaultExecutionOrder(0)]
 public class VoxelHover : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private Camera cam;
-    [SerializeField] private VoxelWorld voxelWorld;
-    [SerializeField] private Transform highlight;
-    [SerializeField] private OrbitCameraMode orbitCamera;
+    [SerializeField]
+    private Camera cam;
+
+    [SerializeField]
+    private VoxelWorld voxelWorld;
+
+    [SerializeField]
+    private Transform highlight;
+
+    [SerializeField]
+    private OrbitCameraMode orbitCamera;
+
+    [Header("Raycast")]
+    [SerializeField]
+    private float maximumRayDistance = 1000f;
 
     private Vector2 rightMouseStart;
     private bool rightMouseDragged;
@@ -33,35 +46,33 @@ public class VoxelHover : MonoBehaviour
     }
 
     private bool TryGetMousePosition(
-        out Vector2 pos)
+        out Vector2 position)
     {
-        pos = default;
+        position = default;
 
         if (Mouse.current == null)
-            return false;
-
-        pos =
-            Mouse.current.position.ReadValue();
-
-        if (
-            float.IsNaN(pos.x) ||
-            float.IsNaN(pos.y))
         {
             return false;
         }
 
-        // Don't raycast if the mouse is outside
-        // this camera's rendered viewport.
+        position =
+            Mouse.current.position.ReadValue();
+
+        if (float.IsNaN(position.x) ||
+            float.IsNaN(position.y))
+        {
+            return false;
+        }
+
         if (cam != null)
         {
             Rect pixelRect =
                 cam.pixelRect;
 
-            if (
-                pos.x < pixelRect.xMin ||
-                pos.x > pixelRect.xMax ||
-                pos.y < pixelRect.yMin ||
-                pos.y > pixelRect.yMax)
+            if (position.x < pixelRect.xMin ||
+                position.x > pixelRect.xMax ||
+                position.y < pixelRect.yMin ||
+                position.y > pixelRect.yMax)
             {
                 return false;
             }
@@ -72,76 +83,77 @@ public class VoxelHover : MonoBehaviour
 
     private void UpdateHover()
     {
-        if (
-            cam == null ||
+        if (cam == null ||
             voxelWorld == null ||
-            highlight == null)
+            highlight == null ||
+            IsPointerOverUI() ||
+            InteractionState.IsHoveringDwarf)
         {
             ClearHover();
             return;
         }
 
-        if (InteractionState.IsHoveringDwarf)
-        {
-            ClearHover();
-            return;
-        }
-
-        if (
-            !TryGetMousePosition(
-                out Vector2 mousePos))
+        if (!TryGetMousePosition(
+                out Vector2 mousePosition))
         {
             ClearHover();
             return;
         }
 
         Ray ray =
-            cam.ScreenPointToRay(mousePos);
+            cam.ScreenPointToRay(
+                mousePosition);
 
-        if (
-            Physics.Raycast(
+        if (!Physics.Raycast(
                 ray,
                 out RaycastHit hit,
-                100f))
+                maximumRayDistance,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore))
         {
-            Vector3 insidePoint =
-                hit.point -
-                hit.normal * 0.01f;
-
-            Vector3 outsidePoint =
-                hit.point +
-                hit.normal * 0.01f;
-
-            hoveredVoxel =
-                Vector3Int.FloorToInt(
-                    insidePoint);
-
-            placementVoxel =
-                Vector3Int.FloorToInt(
-                    outsidePoint);
-
-            hasValidVoxelTarget = true;
-
-            if (hoveredVoxel != lastVoxel)
-            {
-                lastVoxel =
-                    hoveredVoxel;
-
-                MoveHighlight(
-                    hoveredVoxel);
-            }
-
-            if (
-                !highlight.gameObject.activeSelf)
-            {
-                highlight.gameObject.SetActive(
-                    true);
-            }
-
+            ClearHover();
             return;
         }
 
-        ClearHover();
+        // Defensive fallback. DwarfSelectionManager should already
+        // have claimed the pointer due to its earlier execution order.
+        if (hit.collider.GetComponentInParent<DwarfAgent>() != null)
+        {
+            ClearHover();
+            return;
+        }
+
+        Vector3 insidePoint =
+            hit.point -
+            hit.normal * 0.01f;
+
+        Vector3 outsidePoint =
+            hit.point +
+            hit.normal * 0.01f;
+
+        hoveredVoxel =
+            Vector3Int.FloorToInt(
+                insidePoint);
+
+        placementVoxel =
+            Vector3Int.FloorToInt(
+                outsidePoint);
+
+        hasValidVoxelTarget = true;
+
+        if (hoveredVoxel != lastVoxel)
+        {
+            lastVoxel =
+                hoveredVoxel;
+
+            MoveHighlight(
+                hoveredVoxel);
+        }
+
+        if (!highlight.gameObject.activeSelf)
+        {
+            highlight.gameObject.SetActive(true);
+        }
     }
 
     private void ClearHover()
@@ -160,181 +172,168 @@ public class VoxelHover : MonoBehaviour
                 int.MinValue,
                 int.MinValue);
 
-        if (
-            highlight != null &&
+        if (highlight != null &&
             highlight.gameObject.activeSelf)
         {
-            highlight.gameObject.SetActive(
-                false);
+            highlight.gameObject.SetActive(false);
         }
     }
 
     private void MoveHighlight(
-        Vector3Int voxelPos)
+        Vector3Int voxelPosition)
     {
-        Vector3 worldPos =
-            new(
-                voxelPos.x + 0.5f,
-                voxelPos.y + 0.5f,
-                voxelPos.z + 0.5f);
-
         highlight.position =
-            worldPos;
+            new Vector3(
+                voxelPosition.x + 0.5f,
+                voxelPosition.y + 0.5f,
+                voxelPosition.z + 0.5f);
     }
 
     private void UpdateEditing()
     {
         if (Mouse.current == null)
+        {
             return;
+        }
 
-        Vector2 mousePos =
+        Vector2 mousePosition =
             Mouse.current.position.ReadValue();
 
-        if (
-            Mouse.current.rightButton
-                .wasPressedThisFrame)
+        if (Mouse.current.rightButton
+            .wasPressedThisFrame)
         {
             rightMouseStart =
-                mousePos;
+                mousePosition;
 
-            rightMouseDragged =
-                false;
+            rightMouseDragged = false;
         }
 
-        if (
-            Mouse.current.rightButton.isPressed)
+        if (Mouse.current.rightButton.isPressed &&
+            Vector2.Distance(
+                mousePosition,
+                rightMouseStart) > 5f)
         {
-            if (
-                Vector2.Distance(
-                    mousePos,
-                    rightMouseStart) > 5f)
-            {
-                rightMouseDragged = true;
-            }
+            rightMouseDragged = true;
         }
 
-        if (voxelWorld == null)
+        if (voxelWorld == null ||
+            IsPointerOverUI() ||
+            InteractionState.IsHoveringDwarf)
+        {
             return;
-
-        if (InteractionState.IsHoveringDwarf)
-            return;
-
-        if (
-            Keyboard.current.digit1Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.Dirt;
-
-            Debug.Log(
-                "Selected Dirt");
         }
 
-        if (
-            Keyboard.current.digit2Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.Granite;
-
-            Debug.Log(
-                "Selected Granite");
-        }
-
-        if (
-            Keyboard.current.digit3Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.Lava;
-
-            Debug.Log(
-                "Selected Lava");
-        }
-
-        if (
-            Keyboard.current.digit4Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.Water;
-
-            Debug.Log(
-                "Selected Water");
-        }
-
-        if (
-            Keyboard.current.digit5Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.Vine;
-
-            Debug.Log(
-                "Selected Vine");
-        }
-
-        if (
-            Keyboard.current.digit6Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.Snow;
-
-            Debug.Log(
-                "Selected Snow");
-        }
-
-        if (
-            Keyboard.current.digit7Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.Bubblegum;
-
-            Debug.Log(
-                "Selected Bubblegum");
-        }
-
-        if (
-            Keyboard.current.digit8Key
-                .wasPressedThisFrame)
-        {
-            selectedVoxelType =
-                VoxelType.SpawnPoint;
-
-            Debug.Log(
-                "Selected SpawnPoint");
-        }
-
-        // -----------------------------------------
-        // EDITING REQUIRES A VALID VOXEL TARGET
-        // -----------------------------------------
+        UpdateSelectedVoxelType();
 
         if (!hasValidVoxelTarget)
+        {
             return;
+        }
 
-        // LMB = REMOVE
-        if (
-            Mouse.current.leftButton
-                .wasPressedThisFrame)
+        if (Mouse.current.leftButton
+            .wasPressedThisFrame)
         {
             voxelWorld.SetVoxel(
                 hoveredVoxel,
                 VoxelType.Air);
         }
 
-        // RMB = PLACE
-        if (
-            Mouse.current.rightButton
-                .wasReleasedThisFrame)
+        if (Mouse.current.rightButton
+            .wasReleasedThisFrame &&
+            !rightMouseDragged)
         {
-            if (!rightMouseDragged)
-            {
-                voxelWorld.SetVoxel(
-                    placementVoxel,
-                    selectedVoxelType);
-            }
+            voxelWorld.SetVoxel(
+                placementVoxel,
+                selectedVoxelType);
         }
+    }
+
+    private void UpdateSelectedVoxelType()
+    {
+        if (Keyboard.current == null)
+        {
+            return;
+        }
+
+        if (Keyboard.current.digit1Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.Dirt,
+                "Dirt");
+        }
+
+        if (Keyboard.current.digit2Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.Granite,
+                "Granite");
+        }
+
+        if (Keyboard.current.digit3Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.Lava,
+                "Lava");
+        }
+
+        if (Keyboard.current.digit4Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.Water,
+                "Water");
+        }
+
+        if (Keyboard.current.digit5Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.Vine,
+                "Vine");
+        }
+
+        if (Keyboard.current.digit6Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.Snow,
+                "Snow");
+        }
+
+        if (Keyboard.current.digit7Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.Bubblegum,
+                "Bubblegum");
+        }
+
+        if (Keyboard.current.digit8Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.SpawnPoint,
+                "SpawnPoint");
+        }
+    }
+
+    private void SelectVoxelType(
+        VoxelType type,
+        string displayName)
+    {
+        selectedVoxelType = type;
+
+        Debug.Log(
+            $"Selected {displayName}");
+    }
+
+    private static bool IsPointerOverUI()
+    {
+        return
+            EventSystem.current != null &&
+            EventSystem.current.IsPointerOverGameObject();
     }
 }
