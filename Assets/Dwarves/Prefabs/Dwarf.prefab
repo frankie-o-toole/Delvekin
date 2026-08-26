@@ -190,8 +190,10 @@ GameObject:
   m_Component:
   - component: {fileID: 8607271086155748065}
   - component: {fileID: 6180873439788686627}
+  - component: {fileID: 9171445606711302696}
+  - component: {fileID: 5254519139175233143}
   m_Layer: 0
-  m_Name: DwarfAbilityController
+  m_Name: DwarfJobController
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -224,6 +226,62 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d6b3d2af73ce9f64a9a49554a742ad46, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DwarfAbilityController
+--- !u!114 &9171445606711302696
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3682565679809075285}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3273080187a71444daab464664b46cb1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DwarfAgent
+  visualRoot: {fileID: 1777590733198407056}
+  selectionCollider: {fileID: 1345415858226632762}
+--- !u!114 &5254519139175233143
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3682565679809075285}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f7cb07c40a0bbd2479d7a6af7e31b68a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DwarfMovement
+  moveSpeed: 2
+  stepVerticalCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    - serializedVersion: 3
+      time: 1
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0
+      outWeight: 0
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  turnSpeed: 540
+  initialFallSpeed: 1.5
+  fallAcceleration: 12
+  maximumFallSpeed: 20
+  fatalFallDistance: 5
 --- !u!1 &4601826550340801268
 GameObject:
   m_ObjectHideFlags: 0
@@ -416,6 +474,7 @@ GameObject:
   - component: {fileID: 3751887130687700524}
   - component: {fileID: 2500360877337539038}
   - component: {fileID: 7551256768974609170}
+  - component: {fileID: 6166814433374196138}
   m_Layer: 0
   m_Name: Dwarf
   m_TagString: Untagged
@@ -470,7 +529,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f7cb07c40a0bbd2479d7a6af7e31b68a, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DwarfMovement
-  moveSpeed: 2
+  moveSpeed: 3
   stepVerticalCurve:
     serializedVersion: 2
     m_Curve:
@@ -499,7 +558,7 @@ MonoBehaviour:
   initialFallSpeed: 1.5
   fallAcceleration: 12
   maximumFallSpeed: 20
-  fatalFallDistance: 5
+  fatalFallDistance: 15
 --- !u!114 &7551256768974609170
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -512,6 +571,19 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d6b3d2af73ce9f64a9a49554a742ad46, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DwarfAbilityController
+--- !u!114 &6166814433374196138
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5814004054160008839}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66f9921a0756c28409fa02b4f7cb3f3c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DwarfJobTuning
+  tunnelDepthCycleDuration: 0.65
 --- !u!1 &5825757476974601510
 GameObject:
   m_ObjectHideFlags: 0
@@ -545,6 +617,7 @@ Transform:
   - {fileID: 7199646200917808029}
   - {fileID: 1409928423031071882}
   - {fileID: 1749664780191545485}
+  - {fileID: 8828429398982267588}
   m_Father: {fileID: 1027987258759335687}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7522537952168896619
@@ -701,10 +774,14 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DwarfHighlight
   visualRoot: {fileID: 1777590733198407056}
-  hoverColour: {r: 0.68235296, g: 1, b: 0, a: 1}
+  hoverColour: {r: 0.1992631, g: 1, b: 0, a: 1}
   hoverStrength: 0.55
-  selectedColour: {r: 1, g: 0.49956828, b: 0.10196078, a: 1}
+  selectedColour: {r: 0.10196078, g: 0.5285169, b: 1, a: 1}
   selectedStrength: 0.7
+  validTargetColour: {r: 0.15, g: 1, b: 0.25, a: 1}
+  validTargetStrength: 0.7
+  invalidTargetColour: {r: 1, g: 0.1, b: 0.1, a: 1}
+  invalidTargetStrength: 0.75
 --- !u!1 &8565664616100615709
 GameObject:
   m_ObjectHideFlags: 0
@@ -795,3 +872,81 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1001 &9011237477822330159
+PrefabInstance:
+  m_ObjectHideFlags: 0
+  serializedVersion: 2
+  m_Modification:
+    serializedVersion: 3
+    m_TransformParent: {fileID: 1777590733198407056}
+    m_Modifications:
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalScale.x
+      value: 0.33
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalScale.y
+      value: 0.33
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalScale.z
+      value: 0.33
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -1.81
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: 0.8
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalPosition.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalRotation.w
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalRotation.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalRotation.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalRotation.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_LocalEulerAnglesHint.z
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_ConstrainProportionsScale
+      value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 919132149155446097, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+      propertyPath: m_Name
+      value: simple_pickaxe
+      objectReference: {fileID: 0}
+    m_RemovedComponents: []
+    m_RemovedGameObjects: []
+    m_AddedGameObjects: []
+    m_AddedComponents: []
+  m_SourcePrefab: {fileID: 100100000, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+--- !u!4 &8828429398982267588 stripped
+Transform:
+  m_CorrespondingSourceObject: {fileID: -8679921383154817045, guid: 15595aaed4f3a394898f081449b38228, type: 3}
+  m_PrefabInstance: {fileID: 9011237477822330159}
+  m_PrefabAsset: {fileID: 0}

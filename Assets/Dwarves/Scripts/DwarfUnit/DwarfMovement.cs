@@ -1,7 +1,7 @@
 using UnityEngine;
 
 [RequireComponent(typeof(DwarfAgent))]
-[RequireComponent(typeof(DwarfAbilityController))]
+[RequireComponent(typeof(DwarfJobController))]
 public class DwarfMovement : MonoBehaviour
 {
     public enum MovementState
@@ -22,10 +22,8 @@ public class DwarfMovement : MonoBehaviour
     [SerializeField]
     private AnimationCurve stepVerticalCurve =
         AnimationCurve.EaseInOut(
-            0f,
-            0f,
-            1f,
-            1f);
+            0f, 0f,
+            1f, 1f);
 
     [Header("Turning")]
     [SerializeField]
@@ -48,7 +46,7 @@ public class DwarfMovement : MonoBehaviour
     private DwarfPool pool;
 
     private DwarfAgent agent;
-    private DwarfAbilityController abilityController;
+    private DwarfJobController jobController;
 
     private MovementState state =
         MovementState.Idle;
@@ -76,8 +74,8 @@ public class DwarfMovement : MonoBehaviour
         agent =
             GetComponent<DwarfAgent>();
 
-        abilityController =
-            GetComponent<DwarfAbilityController>();
+        jobController =
+            GetComponent<DwarfJobController>();
 
         world =
             FindFirstObjectByType<VoxelWorld>();
@@ -95,12 +93,8 @@ public class DwarfMovement : MonoBehaviour
     {
         if (agent == null ||
             !agent.IsActive ||
-            agent.IsFrozen)
-        {
-            return;
-        }
-
-        if (world == null)
+            agent.IsFrozen ||
+            world == null)
         {
             return;
         }
@@ -129,17 +123,17 @@ public class DwarfMovement : MonoBehaviour
 
     private void DecideNextMove()
     {
-        if (abilityController != null &&
-            abilityController.ControlsMovement)
+        if (DwarfWorldQueries.HasNoSupport(
+            world,
+            agent.CurrentVoxel))
         {
+            BeginFall();
             return;
         }
 
-        if (DwarfWorldQueries.HasNoSupport(
-                world,
-                agent.CurrentVoxel))
+        if (jobController != null &&
+            jobController.ControlsMovement)
         {
-            BeginFall();
             return;
         }
 
@@ -150,6 +144,30 @@ public class DwarfMovement : MonoBehaviour
         Vector3Int forwardAnchor =
             agent.CurrentVoxel +
             direction;
+
+        if (DirectionAltererRegistry.TryGetRedirect(
+                agent,
+                forwardAnchor,
+                out PuzzleSide outputDirection))
+        {
+            BeginTurnTo(
+                outputDirection);
+
+            return;
+        }
+
+        if (jobController != null &&
+            jobController.TryHandleMovementDecision())
+        {
+            return;
+        }
+
+        if (jobController != null &&
+            jobController.ControlsMovement)
+        {
+            return;
+        }
+
 
         if (DwarfWorldQueries.CanOccupy(
                 world,
@@ -223,21 +241,22 @@ public class DwarfMovement : MonoBehaviour
             Time.deltaTime *
             moveSpeed;
 
-        float normalizedProgress =
-            Mathf.Clamp01(moveProgress);
+        float progress =
+            Mathf.Clamp01(
+                moveProgress);
 
         Vector3 position =
             Vector3.Lerp(
                 startWorldPosition,
                 targetWorldPosition,
-                normalizedProgress);
+                progress);
 
         if (state == MovementState.SteppingUp ||
             state == MovementState.SteppingDown)
         {
             float verticalProgress =
                 stepVerticalCurve.Evaluate(
-                    normalizedProgress);
+                    progress);
 
             position.y =
                 Mathf.Lerp(
@@ -266,27 +285,34 @@ public class DwarfMovement : MonoBehaviour
         moveProgress = 0f;
         state = MovementState.Idle;
 
-        if (abilityController != null)
-        {
-            abilityController.ActivatePendingAbility();
-        }
-
+        // A job must not activate in mid-air. It remains pending
+        // throughout the fall and is tested again after landing.
         if (DwarfWorldQueries.HasNoSupport(
                 world,
                 agent.CurrentVoxel))
         {
             BeginFall();
+            return;
+        }
+
+        if (jobController != null)
+        {
+            jobController.ActivatePendingJob();
         }
     }
 
     private void BeginTurnAround()
     {
-        PuzzleSide opposite =
+        BeginTurnTo(
             DirectionUtility.Opposite(
-                agent.Facing);
+                agent.Facing));
+    }
 
+    private void BeginTurnTo(
+        PuzzleSide newFacing)
+    {
         agent.SetFacing(
-            opposite,
+            newFacing,
             snapVisual: false);
 
         if (agent.VisualRoot == null)
@@ -319,8 +345,7 @@ public class DwarfMovement : MonoBehaviour
 
         if (Quaternion.Angle(
                 agent.VisualRoot.rotation,
-                turnTargetRotation) >
-            0.1f)
+                turnTargetRotation) > 0.1f)
         {
             return;
         }
@@ -343,12 +368,9 @@ public class DwarfMovement : MonoBehaviour
                 initialFallSpeed;
         }
 
-        Vector3Int fallTarget =
-            agent.CurrentVoxel +
-            Vector3Int.down;
-
         BeginFallToVoxel(
-            fallTarget);
+            agent.CurrentVoxel +
+            Vector3Int.down);
     }
 
     private void BeginFallToVoxel(
@@ -383,8 +405,7 @@ public class DwarfMovement : MonoBehaviour
             Vector3.MoveTowards(
                 transform.position,
                 targetWorldPosition,
-                currentFallSpeed *
-                Time.deltaTime);
+                currentFallSpeed * Time.deltaTime);
 
         if ((transform.position - targetWorldPosition)
             .sqrMagnitude > 0.0001f)
@@ -411,12 +432,9 @@ public class DwarfMovement : MonoBehaviour
             return;
         }
 
-        Vector3Int nextFallTarget =
-            agent.CurrentVoxel +
-            Vector3Int.down;
-
         BeginFallToVoxel(
-            nextFallTarget);
+            agent.CurrentVoxel +
+            Vector3Int.down);
     }
 
     private void Land()
@@ -438,9 +456,9 @@ public class DwarfMovement : MonoBehaviour
         currentFallSpeed = 0f;
         state = MovementState.Idle;
 
-        if (abilityController != null)
+        if (jobController != null)
         {
-            abilityController.ActivatePendingAbility();
+            jobController.ActivatePendingJob();
         }
     }
 
@@ -495,10 +513,7 @@ public class DwarfMovement : MonoBehaviour
             transform.position;
 
         pendingTargetVoxel = default;
-
-        turnTargetRotation =
-            Quaternion.identity;
-
+        turnTargetRotation = Quaternion.identity;
         fallStartY = 0;
     }
 }

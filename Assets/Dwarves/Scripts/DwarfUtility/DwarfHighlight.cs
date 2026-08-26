@@ -1,12 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-/// <summary>
-/// Highlights every compatible material beneath VisualRoot.
-///
-/// Runtime material instances allow each pooled dwarf to have its own
-/// hover and selected colours without changing the shared source materials.
-/// </summary>
 public class DwarfHighlight : MonoBehaviour
 {
     [Header("References")]
@@ -16,11 +10,7 @@ public class DwarfHighlight : MonoBehaviour
     [Header("Hover")]
     [SerializeField]
     private Color hoverColour =
-        new Color(
-            0f,
-            0.9f,
-            1f,
-            1f);
+        new Color(0f, 0.9f, 1f, 1f);
 
     [SerializeField]
     [Range(0f, 1f)]
@@ -29,15 +19,29 @@ public class DwarfHighlight : MonoBehaviour
     [Header("Selected")]
     [SerializeField]
     private Color selectedColour =
-        new Color(
-            1f,
-            0.8f,
-            0.1f,
-            1f);
+        new Color(1f, 0.8f, 0.1f, 1f);
 
     [SerializeField]
     [Range(0f, 1f)]
     private float selectedStrength = 0.7f;
+
+    [Header("Valid Job Target")]
+    [SerializeField]
+    private Color validTargetColour =
+        new Color(0.15f, 1f, 0.25f, 1f);
+
+    [SerializeField]
+    [Range(0f, 1f)]
+    private float validTargetStrength = 0.7f;
+
+    [Header("Invalid Job Target")]
+    [SerializeField]
+    private Color invalidTargetColour =
+        new Color(1f, 0.1f, 0.1f, 1f);
+
+    [SerializeField]
+    [Range(0f, 1f)]
+    private float invalidTargetStrength = 0.75f;
 
     private static readonly int BaseColourProperty =
         Shader.PropertyToID("_BaseColor");
@@ -45,7 +49,7 @@ public class DwarfHighlight : MonoBehaviour
     private static readonly int ColourProperty =
         Shader.PropertyToID("_Color");
 
-    private static readonly int ShaderGraphBaseColourProperty =
+    private static readonly int ShaderGraphColourProperty =
         Shader.PropertyToID("_Base_Color");
 
     private readonly List<MaterialData> materials =
@@ -53,6 +57,9 @@ public class DwarfHighlight : MonoBehaviour
 
     private bool isHovered;
     private bool isSelected;
+
+    private bool hasJobTargetState;
+    private bool isValidJobTarget;
 
     private void Awake()
     {
@@ -65,7 +72,7 @@ public class DwarfHighlight : MonoBehaviour
         if (visualRoot == null)
         {
             Debug.LogError(
-                $"{name} has no VisualRoot for highlighting.",
+                $"{name} has no VisualRoot.",
                 this);
 
             return;
@@ -80,115 +87,55 @@ public class DwarfHighlight : MonoBehaviour
         isHovered = false;
         isSelected = false;
 
+        hasJobTargetState = false;
+        isValidJobTarget = false;
+
         RestoreOriginalColours();
     }
 
     public void SetHovered(bool hovered)
     {
-        if (isHovered == hovered)
-        {
-            return;
-        }
-
         isHovered = hovered;
         RefreshHighlight();
     }
 
     public void SetSelected(bool selected)
     {
-        if (isSelected == selected)
-        {
-            return;
-        }
-
         isSelected = selected;
         RefreshHighlight();
     }
 
-    private void CacheRuntimeMaterials()
+    public void SetJobTargetState(
+        bool active,
+        bool valid)
     {
-        materials.Clear();
+        hasJobTargetState = active;
+        isValidJobTarget = valid;
 
-        Renderer[] renderers =
-            visualRoot.GetComponentsInChildren<Renderer>(
-                includeInactive: true);
-
-        foreach (Renderer renderer in renderers)
-        {
-            // Accessing renderer.materials creates instances belonging
-            // specifically to this renderer and dwarf.
-            Material[] runtimeMaterials =
-                renderer.materials;
-
-            foreach (Material material in runtimeMaterials)
-            {
-                if (material == null)
-                {
-                    continue;
-                }
-
-                int colourProperty =
-                    FindColourProperty(material);
-
-                if (colourProperty == -1)
-                {
-                    Debug.LogWarning(
-                        $"Material '{material.name}' on {renderer.name} "
-                        + $"uses shader '{material.shader.name}', but no "
-                        + "supported colour property was found. "
-                        + "Expected _BaseColor, _Color or _Base_Color.",
-                        renderer);
-
-                    continue;
-                }
-
-                Color originalColour =
-                    material.GetColor(
-                        colourProperty);
-
-                materials.Add(
-                    new MaterialData(
-                        material,
-                        colourProperty,
-                        originalColour));
-            }
-        }
-
-        if (materials.Count == 0)
-        {
-            Debug.LogError(
-                $"{name} found no highlight-compatible materials "
-                + $"beneath VisualRoot.",
-                this);
-        }
-    }
-
-    private static int FindColourProperty(
-        Material material)
-    {
-        if (material.HasProperty(
-                BaseColourProperty))
-        {
-            return BaseColourProperty;
-        }
-
-        if (material.HasProperty(
-                ColourProperty))
-        {
-            return ColourProperty;
-        }
-
-        if (material.HasProperty(
-                ShaderGraphBaseColourProperty))
-        {
-            return ShaderGraphBaseColourProperty;
-        }
-
-        return -1;
+        RefreshHighlight();
     }
 
     private void RefreshHighlight()
     {
+        if (hasJobTargetState &&
+            isHovered)
+        {
+            if (isValidJobTarget)
+            {
+                ApplyTint(
+                    validTargetColour,
+                    validTargetStrength);
+            }
+            else
+            {
+                ApplyTint(
+                    invalidTargetColour,
+                    invalidTargetStrength);
+            }
+
+            return;
+        }
+
         if (isSelected)
         {
             ApplyTint(
@@ -210,6 +157,67 @@ public class DwarfHighlight : MonoBehaviour
         RestoreOriginalColours();
     }
 
+    private void CacheRuntimeMaterials()
+    {
+        materials.Clear();
+
+        Renderer[] renderers =
+            visualRoot.GetComponentsInChildren<Renderer>(
+                includeInactive: true);
+
+        foreach (Renderer renderer in renderers)
+        {
+            Material[] runtimeMaterials =
+                renderer.materials;
+
+            foreach (Material material in runtimeMaterials)
+            {
+                if (material == null)
+                {
+                    continue;
+                }
+
+                int property =
+                    FindColourProperty(material);
+
+                if (property == -1)
+                {
+                    continue;
+                }
+
+                materials.Add(
+                    new MaterialData(
+                        material,
+                        property,
+                        material.GetColor(property)));
+            }
+        }
+    }
+
+    private static int FindColourProperty(
+        Material material)
+    {
+        if (material.HasProperty(
+                BaseColourProperty))
+        {
+            return BaseColourProperty;
+        }
+
+        if (material.HasProperty(
+                ColourProperty))
+        {
+            return ColourProperty;
+        }
+
+        if (material.HasProperty(
+                ShaderGraphColourProperty))
+        {
+            return ShaderGraphColourProperty;
+        }
+
+        return -1;
+    }
+
     private void ApplyTint(
         Color tint,
         float strength)
@@ -217,22 +225,20 @@ public class DwarfHighlight : MonoBehaviour
         foreach (MaterialData data in materials)
         {
             if (data.Material == null)
-            {
                 continue;
-            }
 
-            Color highlightedColour =
+            Color result =
                 Color.Lerp(
                     data.OriginalColour,
                     tint,
                     strength);
 
-            highlightedColour.a =
+            result.a =
                 data.OriginalColour.a;
 
             data.Material.SetColor(
                 data.ColourProperty,
-                highlightedColour);
+                result);
         }
     }
 
@@ -241,9 +247,7 @@ public class DwarfHighlight : MonoBehaviour
         foreach (MaterialData data in materials)
         {
             if (data.Material == null)
-            {
                 continue;
-            }
 
             data.Material.SetColor(
                 data.ColourProperty,
@@ -266,42 +270,5 @@ public class DwarfHighlight : MonoBehaviour
             ColourProperty = colourProperty;
             OriginalColour = originalColour;
         }
-    }
-
-    [ContextMenu("Debug/Apply Hover Highlight")]
-    private void DebugApplyHoverHighlight()
-    {
-        Debug.Log(
-            $"{name}: manually applying hover to "
-            + $"{materials.Count} cached material(s).",
-            this);
-
-        isHovered = true;
-        isSelected = false;
-
-        RefreshHighlight();
-    }
-
-    [ContextMenu("Debug/Apply Selected Highlight")]
-    private void DebugApplySelectedHighlight()
-    {
-        Debug.Log(
-            $"{name}: manually applying selection to "
-            + $"{materials.Count} cached material(s).",
-            this);
-
-        isHovered = false;
-        isSelected = true;
-
-        RefreshHighlight();
-    }
-
-    [ContextMenu("Debug/Clear Highlight")]
-    private void DebugClearHighlight()
-    {
-        isHovered = false;
-        isSelected = false;
-
-        RefreshHighlight();
     }
 }
