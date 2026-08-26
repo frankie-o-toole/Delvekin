@@ -803,6 +803,79 @@ public class VoxelWorld : MonoBehaviour
             chunkCoord);
     }
 
+    public int SetVoxels(
+    IEnumerable<Vector3Int> worldPositions,
+    VoxelType type)
+    {
+        if (worldPositions == null)
+        {
+            return 0;
+        }
+
+        HashSet<Vector3Int> affectedChunks =
+            new();
+
+        int changedCount = 0;
+
+        foreach (Vector3Int worldPos in worldPositions)
+        {
+            Vector3Int chunkCoord =
+                VoxelMath.WorldToChunkCoord(
+                    worldPos);
+
+            Vector3Int localPos =
+                VoxelMath.WorldToLocalVoxel(
+                    worldPos);
+
+            if (type == VoxelType.Air &&
+                !chunks.ContainsKey(chunkCoord))
+            {
+                continue;
+            }
+
+            Chunk chunk =
+                GetOrCreateChunk(
+                    chunkCoord);
+
+            Voxel existing =
+                chunk.GetVoxel(
+                    localPos.x,
+                    localPos.y,
+                    localPos.z);
+
+            if (existing.Type == type)
+            {
+                continue;
+            }
+
+            chunk.SetVoxel(
+                localPos.x,
+                localPos.y,
+                localPos.z,
+                new Voxel(type));
+
+            affectedChunks.Add(
+                chunkCoord);
+
+            changedCount++;
+        }
+
+        if (changedCount == 0)
+        {
+            return 0;
+        }
+
+        RefreshWorldSpatialState(
+            recenterCamera: false);
+
+        foreach (Vector3Int chunkCoord in affectedChunks)
+        {
+            RebuildChunkAndNeighbors(
+                chunkCoord);
+        }
+
+        return changedCount;
+    }
     private Chunk GetOrCreateChunk(
     Vector3Int chunkCoord)
     {
