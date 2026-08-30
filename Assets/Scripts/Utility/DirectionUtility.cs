@@ -25,4 +25,34 @@ public static class DirectionUtility
             _ => side,
         };
     }
+
+    public static PuzzleSide ApplyTurn(
+        PuzzleSide approachDirection,
+        DirectionAltererTurn turn)
+    {
+        return turn switch
+        {
+            DirectionAltererTurn.Left =>
+                approachDirection switch
+                {
+                    PuzzleSide.North => PuzzleSide.West,
+                    PuzzleSide.West => PuzzleSide.South,
+                    PuzzleSide.South => PuzzleSide.East,
+                    PuzzleSide.East => PuzzleSide.North,
+                    _ => approachDirection
+                },
+
+            DirectionAltererTurn.Right =>
+                approachDirection switch
+                {
+                    PuzzleSide.North => PuzzleSide.East,
+                    PuzzleSide.East => PuzzleSide.South,
+                    PuzzleSide.South => PuzzleSide.West,
+                    PuzzleSide.West => PuzzleSide.North,
+                    _ => approachDirection
+                },
+
+            _ => Opposite(approachDirection)
+        };
+    }
 }

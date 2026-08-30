@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public sealed class TunnellerJob : 
+public sealed class TunnellerJob :
     IDwarfJob,
     IDwarfMovementDecisionJob
 {
@@ -139,7 +139,7 @@ public sealed class TunnellerJob :
         {
             return;
         }
-        
+
         if (phase == TunnellerPhase.SeekingWall)
         {
             return;
@@ -230,9 +230,11 @@ public sealed class TunnellerJob :
                 immediateOpening);
 
         bool foundNonDiggableMaterial =
-            ContainsNonDiggableVoxel(
+            TryFindNonDiggableVoxel(
                 context.World,
-                immediateOpening);
+                immediateOpening,
+                out Vector3Int immediateBlockedPosition,
+                out VoxelType immediateBlockedType);
 
 
         /*
@@ -257,8 +259,10 @@ public sealed class TunnellerJob :
         {
 
             Debug.LogWarning(
-                "[Tunneller] Immediate opening contains "
-                + "a non-diggable voxel. Job ending.");
+                $"[Tunneller] {context.Agent.name} stopped before "
+                + $"digging: {immediateBlockedType} at "
+                + $"{immediateBlockedPosition} blocks the immediate opening.",
+                context.Agent);
 
             IsComplete = true;
             return true;
@@ -274,10 +278,18 @@ public sealed class TunnellerJob :
          * the complete arch may contain granite, fluid or another
          * protected material.
          */
-        if (ContainsNonDiggableVoxel(
+        if (TryFindNonDiggableVoxel(
                 context.World,
-                eventualFinishedArch))
-        {            
+                eventualFinishedArch,
+                out Vector3Int blockedPosition,
+                out VoxelType blockedType))
+        {
+            Debug.LogWarning(
+                $"[Tunneller] {context.Agent.name} stopped before "
+                + $"digging: {blockedType} at {blockedPosition} blocks "
+                + "the completed tunnel arch.",
+                context.Agent);
+
             IsComplete = true;
             return true;
         }
@@ -286,6 +298,11 @@ public sealed class TunnellerJob :
                 context.World,
                 nextAnchor))
         {
+            Debug.LogWarning(
+                $"[Tunneller] {context.Agent.name} stopped before "
+                + $"digging: next anchor {nextAnchor} has no support.",
+                context.Agent);
+
             IsComplete = true;
             return true;
         }
@@ -331,7 +348,7 @@ public sealed class TunnellerJob :
 
         Vector3Int cuttingLayer =
             nextAnchor +
-            forward;    
+            forward;
         /*
          * Validate the eventual finished arch before beginning
          * the narrow opening. This prevents discovering granite
@@ -403,7 +420,9 @@ public sealed class TunnellerJob :
         }
 
         context.World.SetVoxels(
-            excavation,
+            BuildExcavationTargets(
+                context.World,
+                excavation),
             VoxelType.Air);
 
         completedAdvances++;
@@ -470,7 +489,9 @@ public sealed class TunnellerJob :
         }
 
         context.World.SetVoxels(
-            excavation,
+            BuildExcavationTargets(
+                context.World,
+                excavation),
             VoxelType.Air);
 
         phase =
@@ -497,7 +518,9 @@ public sealed class TunnellerJob :
         }
 
         context.World.SetVoxels(
-            excavation,
+            BuildExcavationTargets(
+                context.World,
+                excavation),
             VoxelType.Air);
 
         IsComplete = true;
@@ -540,6 +563,8 @@ public sealed class TunnellerJob :
             case VoxelType.Dirt:
             case VoxelType.Vine:
             case VoxelType.Snow:
+            case VoxelType.Stair:
+            case VoxelType.Ladder:
                 return true;
 
             default:
@@ -551,7 +576,31 @@ public sealed class TunnellerJob :
         VoxelType type)
     {
         return type == VoxelType.Air ||
+               type == VoxelType.SpawnPoint ||
                IsDiggableMaterial(type);
+    }
+
+    private static HashSet<Vector3Int> BuildExcavationTargets(
+        VoxelWorld world,
+        IEnumerable<Vector3Int> positions)
+    {
+        HashSet<Vector3Int> targets =
+            new();
+
+        foreach (Vector3Int position in positions)
+        {
+            // SpawnPoint is non-physical level metadata. It permits the
+            // tunnel but must survive excavation for later restarts/saves.
+            if (world.GetVoxel(position).Type ==
+                VoxelType.SpawnPoint)
+            {
+                continue;
+            }
+
+            targets.Add(position);
+        }
+
+        return targets;
     }
 
     private static bool ContainsDiggableMaterial(
@@ -574,6 +623,19 @@ public sealed class TunnellerJob :
         VoxelWorld world,
         IEnumerable<Vector3Int> positions)
     {
+        return TryFindNonDiggableVoxel(
+            world,
+            positions,
+            out _,
+            out _);
+    }
+
+    private static bool TryFindNonDiggableVoxel(
+        VoxelWorld world,
+        IEnumerable<Vector3Int> positions,
+        out Vector3Int blockedPosition,
+        out VoxelType blockedType)
+    {
         foreach (Vector3Int position in positions)
         {
             VoxelType type =
@@ -581,10 +643,14 @@ public sealed class TunnellerJob :
 
             if (!IsPermittedInTunnel(type))
             {
+                blockedPosition = position;
+                blockedType = type;
                 return true;
             }
         }
 
+        blockedPosition = default;
+        blockedType = VoxelType.Air;
         return false;
     }
 

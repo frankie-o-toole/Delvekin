@@ -8,6 +8,8 @@ public enum VoxelType
     Vine,
     Snow,
     Bubblegum,
-    SpawnPoint
+    SpawnPoint,
+    Stair,
+    Ladder
 }
 

@@ -64,13 +64,33 @@ public static class VoxelVisibilitySystem
         peelDepth = 0;
     }
 
-    public static void ChangeLayer(int delta)
+    public static bool ChangeLayer(
+        int delta,
+        out int oldVisibleBoundary,
+        out int newVisibleBoundary)
     {
+        oldVisibleBoundary =
+            GetVisibleBoundary();
+
+        int oldPeelDepth = peelDepth;
+
         peelDepth = Mathf.Clamp(
             peelDepth + delta,
             0,
             maxLayer - minLayer
         );
+
+        newVisibleBoundary =
+            GetVisibleBoundary();
+
+        return peelDepth != oldPeelDepth;
+    }
+
+    private static int GetVisibleBoundary()
+    {
+        return directionSign > 0
+            ? maxLayer - peelDepth
+            : minLayer + peelDepth;
     }
 
     public static bool IsVoxelVisible(Vector3Int worldPos)

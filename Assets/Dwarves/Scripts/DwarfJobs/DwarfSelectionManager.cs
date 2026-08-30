@@ -47,6 +47,9 @@ public class DwarfSelectionManager : MonoBehaviour
 
         assignmentManager.SelectedJobChanged +=
             HandleSelectedJobChanged;
+
+        assignmentManager.StopJobSelectionChanged +=
+            HandleStopJobSelectionChanged;
     }
 
     private void OnDisable()
@@ -58,6 +61,9 @@ public class DwarfSelectionManager : MonoBehaviour
 
             assignmentManager.SelectedJobChanged -=
                 HandleSelectedJobChanged;
+
+            assignmentManager.StopJobSelectionChanged -=
+                HandleStopJobSelectionChanged;
         }
 
         SetHoveredDwarf(null);
@@ -173,43 +179,8 @@ public class DwarfSelectionManager : MonoBehaviour
         if (Keyboard.current.xKey
             .wasPressedThisFrame)
         {
-            CancelSelectedDwarfJob();
+            assignmentManager.ToggleStopJob();
         }
-    }
-
-    private void CancelSelectedDwarfJob()
-    {
-        DwarfAgent selected =
-            assignmentManager.SelectedDwarf;
-
-        if (selected == null)
-        {
-            return;
-        }
-
-        DwarfJobController controller =
-            selected.GetComponent<DwarfJobController>();
-
-        if (controller == null)
-        {
-            return;
-        }
-
-        if (controller.TryCancelActiveJob(
-                out string failureReason))
-        {
-            Debug.Log(
-                $"Cancelled active job on "
-                + $"{selected.name}.");
-        }
-        else
-        {
-            Debug.LogWarning(
-                $"Could not cancel job: "
-                + failureReason);
-        }
-
-        assignmentManager.ClearSelectedDwarf();
     }
 
     private void SetHoveredDwarf(
@@ -249,7 +220,7 @@ public class DwarfSelectionManager : MonoBehaviour
             return;
         }
 
-        if (!assignmentManager.HasSelectedJob)
+        if (!assignmentManager.HasSelectedAction)
         {
             highlight.SetJobTargetState(
                 false,
@@ -259,9 +230,13 @@ public class DwarfSelectionManager : MonoBehaviour
         }
 
         bool valid =
-            assignmentManager.CanAssignSelectedJob(
-                hoveredDwarf,
-                out _);
+            assignmentManager.IsStopJobSelected
+                ? assignmentManager.CanStopJob(
+                    hoveredDwarf,
+                    out _)
+                : assignmentManager.CanAssignSelectedJob(
+                    hoveredDwarf,
+                    out _);
 
         highlight.SetJobTargetState(
             true,
@@ -277,6 +252,12 @@ public class DwarfSelectionManager : MonoBehaviour
 
     private void HandleSelectedJobChanged(
         DwarfJobType jobType)
+    {
+        RefreshHoveredTargetState();
+    }
+
+    private void HandleStopJobSelectionChanged(
+        bool selected)
     {
         RefreshHoveredTargetState();
     }

@@ -12,6 +12,12 @@ public class ChunkRenderer : MonoBehaviour
     private Chunk chunk;
     private VoxelWorld voxelWorld;
 
+    // Mesh rebuilds happen frequently while scrolling Puzzle slices. Reusing
+    // these buffers avoids allocating several arrays and lists per chunk.
+    private readonly List<Color> colors = new();
+    private readonly List<Vector3> vertices = new();
+    private readonly List<int> triangles = new();
+
     public void Initialize(
         Chunk chunk,
         VoxelWorld voxelWorld)
@@ -41,9 +47,9 @@ public class ChunkRenderer : MonoBehaviour
     {
         mesh.Clear();
 
-        List<Color> colors = new();
-        List<Vector3> vertices = new();
-        List<int> triangles = new();
+        colors.Clear();
+        vertices.Clear();
+        triangles.Clear();
 
         for (int x = 0; x < Chunk.ChunkSize; x++)
         {
@@ -76,9 +82,9 @@ public class ChunkRenderer : MonoBehaviour
             }
         }
 
-        mesh.vertices = vertices.ToArray();
-        mesh.triangles = triangles.ToArray();
-        mesh.colors = colors.ToArray();
+        mesh.SetVertices(vertices);
+        mesh.SetTriangles(triangles, 0);
+        mesh.SetColors(colors);
 
         mesh.RecalculateNormals();
         mesh.RecalculateBounds();
@@ -265,6 +271,12 @@ public class ChunkRenderer : MonoBehaviour
 
             VoxelType.Snow =>
                 Color.white,
+
+            VoxelType.Stair =>
+                new Color(0.62f, 0.38f, 0.16f),
+
+            VoxelType.Ladder =>
+                new Color(0.78f, 0.58f, 0.22f),
 
             VoxelType.Bubblegum =>
                 Color.pink,

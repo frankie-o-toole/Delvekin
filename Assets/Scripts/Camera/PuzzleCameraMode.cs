@@ -157,14 +157,21 @@ public class PuzzleCameraMode :
                 ? 1
                 : -1;
 
-        VoxelVisibilitySystem
-            .ChangeLayer(delta);
+        if (!VoxelVisibilitySystem.ChangeLayer(
+                delta,
+                out int oldVisibleBoundary,
+                out int newVisibleBoundary))
+        {
+            return;
+        }
 
         DwarfVisibilitySystem
             .ChangeLayer(delta);
 
-        ChunkRefreshSystem
-            .RequestFullRefresh();
+        ChunkRefreshSystem.RequestSliceRefresh(
+            GetSliceAxis(),
+            oldVisibleBoundary,
+            newVisibleBoundary);
     }
 
     // =====================================================

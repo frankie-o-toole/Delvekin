@@ -1,11 +1,10 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 public static class LevelGenerator
 {
-    // =====================================================
-    // GENERATION ENTRY POINT
-    // =====================================================
+    private const int BoundaryThickness = 1;
+    private const int BaseFloorHeight = 9;
+    private const int MainCeilingHeight = 38;
 
     public static LevelData Generate(
         int seed,
@@ -13,1295 +12,569 @@ public static class LevelGenerator
         int heightInChunks,
         int depthInChunks)
     {
-        Random.InitState(seed);
-
-        widthInChunks =
-            Mathf.Max(1, widthInChunks);
-
-        heightInChunks =
-            Mathf.Max(1, heightInChunks);
-
-        depthInChunks =
-            Mathf.Max(1, depthInChunks);
+        widthInChunks = Mathf.Max(1, widthInChunks);
+        heightInChunks = Mathf.Max(1, heightInChunks);
+        depthInChunks = Mathf.Max(1, depthInChunks);
 
         LevelData data =
-            new LevelData
+            new()
             {
                 seed = seed,
-
-                chunkSize =
-                    Chunk.ChunkSize,
-
-                widthInChunks =
+                chunkSize = Chunk.ChunkSize,
+                widthInChunks = widthInChunks,
+                heightInChunks = heightInChunks,
+                depthInChunks = depthInChunks,
+                chunks = new VoxelType[
                     widthInChunks,
-
-                heightInChunks =
                     heightInChunks,
-
-                depthInChunks =
-                    depthInChunks,
-
-                chunks =
-                    new VoxelType[
-                        widthInChunks,
-                        heightInChunks,
-                        depthInChunks][,,]
+                    depthInChunks][,,]
             };
 
-        // 1. Solid base volume.
-        LayoutPass(data);
+        CreateChunks(data);
+        FillTerrain(data);
+        CarveMainCave(data);
+        AddGameplayFormations(data);
+        AddRooftopEntry(data);
 
-        // 2. Authored procedural features.
-        FeaturePass(data);
-
-        // 3. Future rule verification / repairs.
-        ValidationPass(data);
-
-        // 4. Future material variation.
-        MaterialPass(data);
+        Debug.Log(
+            $"Generated connected cave {GetWorldWidth(data)}x"
+            + $"{GetWorldHeight(data)}x{GetWorldDepth(data)} "
+            + $"from seed {seed}. No fluids were generated.");
 
         return data;
     }
 
-    // =====================================================
-    // LAYOUT
-    // =====================================================
-
-    private static void LayoutPass(
-        LevelData data)
+    private static void CreateChunks(LevelData data)
     {
-        for (
-            int cx = 0;
-            cx < data.widthInChunks;
-            cx++)
+        for (int cx = 0; cx < data.widthInChunks; cx++)
         {
-            for (
-                int cy = 0;
-                cy < data.heightInChunks;
-                cy++)
+            for (int cy = 0; cy < data.heightInChunks; cy++)
             {
-                for (
-                    int cz = 0;
-                    cz < data.depthInChunks;
-                    cz++)
+                for (int cz = 0; cz < data.depthInChunks; cz++)
                 {
-                    VoxelType[,,] chunk =
-                        CreateEmptyChunk();
-
-                    for (
-                        int x = 0;
-                        x < Chunk.ChunkSize;
-                        x++)
-                    {
-                        for (
-                            int y = 0;
-                            y < Chunk.ChunkSize;
-                            y++)
-                        {
-                            for (
-                                int z = 0;
-                                z < Chunk.ChunkSize;
-                                z++)
-                            {
-                                chunk[x, y, z] =
-                                    VoxelType.Granite;
-                            }
-                        }
-                    }
-
-                    data.chunks[
-                        cx,
-                        cy,
-                        cz] =
-                        chunk;
+                    data.chunks[cx, cy, cz] =
+                        new VoxelType[
+                            Chunk.ChunkSize,
+                            Chunk.ChunkSize,
+                            Chunk.ChunkSize];
                 }
             }
         }
     }
 
-    // =====================================================
-    // FEATURE PASS
-    // =====================================================
-
-    private static void FeaturePass(
-        LevelData data)
+    private static void FillTerrain(LevelData data)
     {
-        HashSet<Vector3Int> reserved =
-            new();
+        int worldWidth = GetWorldWidth(data);
+        int worldHeight = GetWorldHeight(data);
+        int worldDepth = GetWorldDepth(data);
 
-        GenerateWaterPool(
-            data,
-            reserved);
-
-        GenerateLavaPool(
-            data,
-            reserved);
-
-        GenerateHiddenCave(
-            data,
-            reserved);
-    }
-
-    // =====================================================
-    // WATER POOL
-    // =====================================================
-
-    private static void GenerateWaterPool(
-        LevelData data,
-        HashSet<Vector3Int> reserved)
-    {
-        int worldWidth =
-            GetWorldWidth(data);
-
-        int worldHeight =
-            GetWorldHeight(data);
-
-        int worldDepth =
-            GetWorldDepth(data);
-
-        // Need enough room for an organic pool
-        // plus its Vine border.
-        if (
-            worldWidth < 9 ||
-            worldDepth < 9 ||
-            worldHeight < 3)
+        for (int x = 0; x < worldWidth; x++)
         {
-            Debug.LogWarning(
-                "Level too small for water pool.");
-
-            return;
-        }
-
-        const int maxAttempts = 50;
-
-        for (
-            int attempt = 0;
-            attempt < maxAttempts;
-            attempt++)
-        {
-            // At least 5 voxels across.
-            int radiusX =
-                Random.Range(3, 6);
-
-            int radiusZ =
-                Random.Range(2, 5);
-
-            // Encourage an oblong shape rather than
-            // a roughly circular one.
-            if (radiusX == radiusZ)
+            for (int y = 0; y < worldHeight; y++)
             {
-                if (radiusX < 5)
-                    radiusX++;
-                else
-                    radiusZ--;
-            }
-
-            int depth =
-                Random.Range(2, 5);
-
-            int marginX =
-                radiusX + 2;
-
-            int marginZ =
-                radiusZ + 2;
-
-            if (
-                worldWidth <= marginX * 2 ||
-                worldDepth <= marginZ * 2 ||
-                worldHeight <= depth)
-            {
-                continue;
-            }
-
-            int centerX =
-                Random.Range(
-                    marginX,
-                    worldWidth - marginX);
-
-            int centerZ =
-                Random.Range(
-                    marginZ,
-                    worldDepth - marginZ);
-
-            int topY =
-                worldHeight - 1;
-
-            HashSet<Vector2Int> footprint =
-                CreateOrganicEllipseFootprint(
-                    radiusX,
-                    radiusZ);
-
-            List<Vector3Int> waterVoxels =
-                new();
-
-            foreach (
-                Vector2Int offset
-                in footprint)
-            {
-                for (
-                    int yOffset = 0;
-                    yOffset < depth;
-                    yOffset++)
+                for (int z = 0; z < worldDepth; z++)
                 {
-                    Vector3Int pos =
-                        new(
-                            centerX + offset.x,
-                            topY - yOffset,
-                            centerZ + offset.y);
+                    bool openTop =
+                        y >= worldHeight - 2;
 
-                    waterVoxels.Add(
-                        pos);
-                }
-            }
+                    VoxelType type = openTop
+                        ? VoxelType.Air
+                        : IsBoundaryVoxel(
+                                x,
+                                y,
+                                z,
+                                worldWidth,
+                                worldHeight,
+                                worldDepth)
+                            ? VoxelType.Granite
+                            : VoxelType.Dirt;
 
-            // Reserve the water volume plus a one-voxel
-            // horizontal border around it.
-            if (
-                ConflictsWithReserved(
-                    waterVoxels,
-                    reserved,
-                    horizontalPadding: 1,
-                    verticalPadding: 0))
-            {
-                continue;
-            }
-
-            foreach (
-                Vector3Int pos
-                in waterVoxels)
-            {
-                SetVoxel(
-                    data,
-                    pos,
-                    VoxelType.Water);
-
-                reserved.Add(
-                    pos);
-            }
-
-            // -----------------------------------------
-            // VINE BANK
-            // -----------------------------------------
-            //
-            // "Surrounding" is interpreted as the
-            // exposed ground immediately bordering the
-            // surface of the pool.
-            //
-            // We do not create a subterranean Vine shell.
-
-            HashSet<Vector3Int> vinePositions =
-                new();
-
-            foreach (
-                Vector2Int waterOffset
-                in footprint)
-            {
-                for (
-                    int dx = -1;
-                    dx <= 1;
-                    dx++)
-                {
-                    for (
-                        int dz = -1;
-                        dz <= 1;
-                        dz++)
-                    {
-                        if (
-                            dx == 0 &&
-                            dz == 0)
-                        {
-                            continue;
-                        }
-
-                        Vector2Int neighborOffset =
-                            waterOffset +
-                            new Vector2Int(
-                                dx,
-                                dz);
-
-                        if (
-                            footprint.Contains(
-                                neighborOffset))
-                        {
-                            continue;
-                        }
-
-                        Vector3Int vinePos =
-                            new(
-                                centerX +
-                                neighborOffset.x,
-
-                                topY,
-
-                                centerZ +
-                                neighborOffset.y);
-
-                        if (
-                            IsInsideWorld(
-                                data,
-                                vinePos))
-                        {
-                            vinePositions.Add(
-                                vinePos);
-                        }
-                    }
-                }
-            }
-
-            foreach (
-                Vector3Int vinePos
-                in vinePositions)
-            {
-                // Don't overwrite water itself or
-                // another reserved feature.
-                if (
-                    GetVoxel(
+                    SetVoxel(
                         data,
-                        vinePos) ==
-                    VoxelType.Water)
+                        new Vector3Int(x, y, z),
+                        type);
+                }
+            }
+        }
+    }
+
+    private static void CarveMainCave(LevelData data)
+    {
+        int worldWidth = GetWorldWidth(data);
+        int worldHeight = GetWorldHeight(data);
+        int worldDepth = GetWorldDepth(data);
+
+        for (int x = 0; x < worldWidth; x++)
+        {
+            for (int z = 0; z < worldDepth; z++)
+            {
+                if (!IsInsideCaveFootprint(data, x, z))
                 {
                     continue;
                 }
 
-                SetVoxel(
-                    data,
-                    vinePos,
-                    VoxelType.Vine);
+                int floorHeight =
+                    GetFloorHeight(data, x, z);
 
-                reserved.Add(
-                    vinePos);
-            }
-
-            Debug.Log(
-                $"Generated Water Pool at " +
-                $"({centerX}, {topY}, {centerZ}), " +
-                $"depth {depth}.");
-
-            return;
-        }
-
-        Debug.LogWarning(
-            "Could not find valid placement for water pool.");
-    }
-
-    // =====================================================
-    // LAVA POOL
-    // =====================================================
-
-    private static void GenerateLavaPool(
-        LevelData data,
-        HashSet<Vector3Int> reserved)
-    {
-        int worldWidth =
-            GetWorldWidth(data);
-
-        int worldHeight =
-            GetWorldHeight(data);
-
-        int worldDepth =
-            GetWorldDepth(data);
-
-        // Lava requires:
-        // at least 5 Lava layers
-        // + one Granite layer underneath.
-        if (
-            worldWidth < 7 ||
-            worldDepth < 7 ||
-            worldHeight < 6)
-        {
-            Debug.LogWarning(
-                "Level too small for lava pool.");
-
-            return;
-        }
-
-        const int maxAttempts = 50;
-
-        for (
-            int attempt = 0;
-            attempt < maxAttempts;
-            attempt++)
-        {
-            int sizeX =
-                Random.Range(3, 7);
-
-            int sizeZ =
-                Random.Range(3, 7);
-
-            int lavaDepth =
-                Random.Range(5, 9);
-
-            if (
-                worldHeight <
-                lavaDepth + 1)
-            {
-                lavaDepth =
-                    worldHeight - 1;
-            }
-
-            int startX =
-                Random.Range(
-                    2,
-                    Mathf.Max(
-                        3,
-                        worldWidth -
-                        sizeX -
-                        1));
-
-            int startZ =
-                Random.Range(
-                    2,
-                    Mathf.Max(
-                        3,
-                        worldDepth -
-                        sizeZ -
-                        1));
-
-            if (
-                startX + sizeX >= worldWidth ||
-                startZ + sizeZ >= worldDepth)
-            {
-                continue;
-            }
-
-            int topY =
-                worldHeight - 1;
-
-            List<Vector3Int> featureVoxels =
-                new();
-
-            // Lava volume.
-            for (
-                int x = 0;
-                x < sizeX;
-                x++)
-            {
-                for (
-                    int z = 0;
-                    z < sizeZ;
-                    z++)
+                for (int y = floorHeight + 1;
+                     y < worldHeight;
+                     y++)
                 {
-                    for (
-                        int d = 0;
-                        d < lavaDepth;
-                        d++)
-                    {
-                        featureVoxels.Add(
-                            new Vector3Int(
-                                startX + x,
-                                topY - d,
-                                startZ + z));
-                    }
-
-                    // Explicit Granite floor underneath.
-                    featureVoxels.Add(
-                        new Vector3Int(
-                            startX + x,
-                            topY - lavaDepth,
-                            startZ + z));
-                }
-            }
-
-            if (
-                ConflictsWithReserved(
-                    featureVoxels,
-                    reserved,
-                    horizontalPadding: 2,
-                    verticalPadding: 1))
-            {
-                continue;
-            }
-
-            for (
-                int x = 0;
-                x < sizeX;
-                x++)
-            {
-                for (
-                    int z = 0;
-                    z < sizeZ;
-                    z++)
-                {
-                    for (
-                        int d = 0;
-                        d < lavaDepth;
-                        d++)
-                    {
-                        Vector3Int lavaPos =
-                            new(
-                                startX + x,
-                                topY - d,
-                                startZ + z);
-
-                        SetVoxel(
-                            data,
-                            lavaPos,
-                            VoxelType.Lava);
-
-                        reserved.Add(
-                            lavaPos);
-                    }
-
-                    Vector3Int floorPos =
-                        new(
-                            startX + x,
-                            topY - lavaDepth,
-                            startZ + z);
-
                     SetVoxel(
                         data,
-                        floorPos,
-                        VoxelType.Granite);
-
-                    reserved.Add(
-                        floorPos);
+                        new Vector3Int(x, y, z),
+                        VoxelType.Air);
                 }
             }
-
-            Debug.Log(
-                $"Generated Lava Pool at " +
-                $"({startX}, {topY}, {startZ}), " +
-                $"size {sizeX}x{sizeZ}, " +
-                $"depth {lavaDepth}.");
-
-            return;
         }
-
-        Debug.LogWarning(
-            "Could not find valid placement for lava pool.");
     }
 
-    // =====================================================
-    // HIDDEN CAVE
-    // =====================================================
-
-    private static void GenerateHiddenCave(
+    private static bool IsInsideCaveFootprint(
         LevelData data,
-        HashSet<Vector3Int> reserved)
+        int x,
+        int z)
     {
-        int worldWidth =
-            GetWorldWidth(data);
+        int worldWidth = GetWorldWidth(data);
+        int worldDepth = GetWorldDepth(data);
 
-        int worldHeight =
-            GetWorldHeight(data);
+        float centreX = (worldWidth - 1) * 0.5f;
+        float centreZ = (worldDepth - 1) * 0.5f;
 
-        int worldDepth =
-            GetWorldDepth(data);
+        float radiusX =
+            Mathf.Max(2f, centreX - 3f);
 
-        // Cave minimum:
-        //
-        // 7 wide
-        // 7 deep
-        // 5 high
-        //
-        // plus at least one solid layer
-        // around the outside.
-        if (
-            worldWidth < 9 ||
-            worldDepth < 9 ||
-            worldHeight < 7)
+        float radiusZ =
+            Mathf.Max(2f, centreZ - 3f);
+
+        float normalizedX =
+            Mathf.Abs(x - centreX) / radiusX;
+
+        float normalizedZ =
+            Mathf.Abs(z - centreZ) / radiusZ;
+
+        // A fourth-power superellipse creates a large, broadly rectangular
+        // cavern while retaining rounded, irregular outer walls.
+        float shape =
+            Mathf.Pow(normalizedX, 4f) +
+            Mathf.Pow(normalizedZ, 4f);
+
+        float seedOffset =
+            data.seed * 0.0137f;
+
+        float edgeNoise =
+            Mathf.PerlinNoise(
+                x * 0.09f + seedOffset,
+                z * 0.09f + seedOffset * 0.61f);
+
+        float threshold =
+            1f + (edgeNoise - 0.5f) * 0.10f;
+
+        return shape <= threshold;
+    }
+
+    private static int GetFloorHeight(
+        LevelData data,
+        int x,
+        int z)
+    {
+        int width = GetWorldWidth(data);
+        int depth = GetWorldDepth(data);
+
+        int baseFloor =
+            Mathf.Clamp(
+                BaseFloorHeight,
+                2,
+                GetWorldHeight(data) - 9);
+
+        int desiredFloor =
+            baseFloor;
+
+        // A six-voxel central plateau for Stair, Ladder and Digger tests.
+        if (IsInsideRectangle(
+                x,
+                z,
+                Mathf.RoundToInt(width * 0.38f),
+                Mathf.RoundToInt(width * 0.68f),
+                Mathf.RoundToInt(depth * 0.17f),
+                Mathf.RoundToInt(depth * 0.49f)))
         {
-            Debug.LogWarning(
-                "Level too small for hidden cave.");
+            desiredFloor = baseFloor + 6;
+        }
+        else if (IsInsideRectangle(
+                x,
+                z,
+                Mathf.RoundToInt(width * 0.62f),
+                Mathf.RoundToInt(width * 0.88f),
+                Mathf.RoundToInt(depth * 0.62f),
+                Mathf.RoundToInt(depth * 0.86f)))
+        {
+            desiredFloor = baseFloor + 4;
+        }
+        else if (IsInsideRectangle(
+                x,
+                z,
+                Mathf.RoundToInt(width * 0.11f),
+                Mathf.RoundToInt(width * 0.34f),
+                Mathf.RoundToInt(depth * 0.58f),
+                Mathf.RoundToInt(depth * 0.84f)))
+        {
+            desiredFloor = baseFloor - 3;
+        }
 
+        return Mathf.Clamp(
+            desiredFloor,
+            2,
+            GetWorldHeight(data) - 9);
+    }
+
+    private static int GetCeilingHeight(
+        LevelData data,
+        int x,
+        int z)
+    {
+        int maximumCeiling =
+            GetWorldHeight(data) -
+            BoundaryThickness - 2;
+
+        float seedOffset =
+            data.seed * 0.0091f;
+
+        float noise =
+            Mathf.PerlinNoise(
+                x * 0.055f + seedOffset,
+                z * 0.055f + seedOffset * 1.37f);
+
+        int variation =
+            Mathf.RoundToInt(
+                Mathf.Lerp(-2f, 2f, noise));
+
+        int minimumCeiling =
+            GetFloorHeight(data, x, z) + 7;
+
+        return Mathf.Clamp(
+            MainCeilingHeight + variation,
+            minimumCeiling,
+            maximumCeiling);
+    }
+
+    private static void AddGameplayFormations(LevelData data)
+    {
+        int width = GetWorldWidth(data);
+        int depth = GetWorldDepth(data);
+
+        AddFormation(
+            data,
+            Mathf.RoundToInt(width * 0.18f),
+            Mathf.RoundToInt(width * 0.29f),
+            Mathf.RoundToInt(depth * 0.23f),
+            Mathf.RoundToInt(depth * 0.39f),
+            12,
+            VoxelType.Dirt);
+
+        AddFormation(
+            data,
+            Mathf.RoundToInt(width * 0.72f),
+            Mathf.RoundToInt(width * 0.82f),
+            Mathf.RoundToInt(depth * 0.29f),
+            Mathf.RoundToInt(depth * 0.46f),
+            15,
+            VoxelType.Dirt);
+
+        // One limited Granite landmark provides protected-material feedback
+        // without making most generated terrain unusable by jobs.
+        AddFormation(
+            data,
+            Mathf.RoundToInt(width * 0.79f),
+            Mathf.RoundToInt(width * 0.87f),
+            Mathf.RoundToInt(depth * 0.70f),
+            Mathf.RoundToInt(depth * 0.79f),
+            8,
+            VoxelType.Granite);
+    }
+
+    private static void AddFormation(
+        LevelData data,
+        int minimumX,
+        int maximumX,
+        int minimumZ,
+        int maximumZ,
+        int height,
+        VoxelType type)
+    {
+        for (int x = minimumX; x <= maximumX; x++)
+        {
+            for (int z = minimumZ; z <= maximumZ; z++)
+            {
+                if (!IsInsideCaveFootprint(data, x, z))
+                {
+                    continue;
+                }
+
+                int floorHeight = GetFloorHeight(data, x, z);
+                int ceilingHeight = GetCeilingHeight(data, x, z);
+
+                int top =
+                    Mathf.Min(
+                        floorHeight + height,
+                        ceilingHeight);
+
+                for (int y = floorHeight + 1; y <= top; y++)
+                {
+                    SetVoxel(
+                        data,
+                        new Vector3Int(x, y, z),
+                        type);
+                }
+            }
+        }
+    }
+
+    private static void AddRooftopEntry(LevelData data)
+    {
+        int width = GetWorldWidth(data);
+        int height = GetWorldHeight(data);
+        int depth = GetWorldDepth(data);
+
+        // Small custom generations do not have enough room for the elevated
+        // entrance route. Keep them usable with an interior spawn instead.
+        if (height < 40 || width < 15 || depth < 56)
+        {
+            AddInteriorSpawnPoint(data);
             return;
         }
 
-        const int maxAttempts = 75;
-
-        for (
-            int attempt = 0;
-            attempt < maxAttempts;
-            attempt++)
+        int centreX = width / 2;
+        int spawnZ = Mathf.Clamp(depth / 8, 5, depth - 18);
+        int holeCentreZ = Mathf.Min(spawnZ + 12, depth - 8);
+        int spawnY = height - 1;
+        // The cave itself has no ceiling. This elevated deck preserves the
+        // opening sequence without covering or visually enclosing the level.
+        for (int x = centreX - 8; x <= centreX + 8; x++)
         {
-            int caveWidth =
-                Random.Range(7, 13);
-
-            int caveDepth =
-                Random.Range(7, 13);
-
-            int caveHeight =
-                Random.Range(5, 9);
-
-            caveWidth =
-                Mathf.Min(
-                    caveWidth,
-                    worldWidth - 2);
-
-            caveDepth =
-                Mathf.Min(
-                    caveDepth,
-                    worldDepth - 2);
-
-            caveHeight =
-                Mathf.Min(
-                    caveHeight,
-                    worldHeight - 2);
-
-            // -----------------------------------------
-            // CHOOSE A SIDE
-            // -----------------------------------------
-            //
-            // The chamber is deliberately placed near
-            // an outer wall, but remains hidden behind
-            // 1-3 solid voxel layers.
-            //
-            // This makes it discoverable by Puzzle
-            // layer scrolling without exposing it.
-
-            PuzzleSide side =
-                (PuzzleSide)Random.Range(
-                    0,
-                    4);
-
-            int shellThickness =
-                Random.Range(
-                    1,
-                    4);
-
-            int startX;
-            int startZ;
-
-            switch (side)
+            for (int z = spawnZ - 3; z <= holeCentreZ + 7; z++)
             {
-                case PuzzleSide.North:
-
-                    startZ =
-                        worldDepth -
-                        shellThickness -
-                        caveDepth;
-
-                    startX =
-                        Random.Range(
-                            1,
-                            worldWidth -
-                            caveWidth);
-
-                    break;
-
-                case PuzzleSide.South:
-
-                    startZ =
-                        shellThickness;
-
-                    startX =
-                        Random.Range(
-                            1,
-                            worldWidth -
-                            caveWidth);
-
-                    break;
-
-                case PuzzleSide.East:
-
-                    startX =
-                        worldWidth -
-                        shellThickness -
-                        caveWidth;
-
-                    startZ =
-                        Random.Range(
-                            1,
-                            worldDepth -
-                            caveDepth);
-
-                    break;
-
-                case PuzzleSide.West:
-
-                    startX =
-                        shellThickness;
-
-                    startZ =
-                        Random.Range(
-                            1,
-                            worldDepth -
-                            caveDepth);
-
-                    break;
-
-                default:
-
-                    startX = 1;
-                    startZ = 1;
-
-                    break;
+                SetVoxel(data, new Vector3Int(x, spawnY, z), VoxelType.Air);
+                SetVoxel(data, new Vector3Int(x, spawnY - 1, z), VoxelType.Dirt);
             }
+        }
 
-            // Keep at least one voxel above and below.
-            int startY =
-                Random.Range(
-                    1,
-                    worldHeight -
-                    caveHeight);
-
-            if (
-                startX < 1 ||
-                startZ < 1 ||
-                startY < 1)
-            {
-                continue;
-            }
-
-            if (
-                startX + caveWidth >
-                worldWidth - 1 ||
-                startZ + caveDepth >
-                worldDepth - 1 ||
-                startY + caveHeight >
-                worldHeight - 1)
-            {
-                continue;
-            }
-
-            List<Vector3Int> caveVoxels =
-                new();
-
-            // -----------------------------------------
-            // ROUNDED / IRREGULAR CHAMBER
-            // -----------------------------------------
-            //
-            // Start from a rounded rectangular volume.
-            // Boundary noise prevents every cave from
-            // looking like a clean cuboid.
-
-            Vector3 caveCenter =
-                new(
-                    startX +
-                    (caveWidth - 1) * 0.5f,
-
-                    startY +
-                    (caveHeight - 1) * 0.5f,
-
-                    startZ +
-                    (caveDepth - 1) * 0.5f);
-
-            float radiusX =
-                caveWidth * 0.5f;
-
-            float radiusY =
-                caveHeight * 0.5f;
-
-            float radiusZ =
-                caveDepth * 0.5f;
-
-            for (
-                int x = startX;
-                x < startX + caveWidth;
-                x++)
-            {
-                for (
-                    int y = startY;
-                    y < startY + caveHeight;
-                    y++)
-                {
-                    for (
-                        int z = startZ;
-                        z < startZ + caveDepth;
-                        z++)
-                    {
-                        float nx =
-                            Mathf.Abs(
-                                x - caveCenter.x) /
-                            radiusX;
-
-                        float ny =
-                            Mathf.Abs(
-                                y - caveCenter.y) /
-                            radiusY;
-
-                        float nz =
-                            Mathf.Abs(
-                                z - caveCenter.z) /
-                            radiusZ;
-
-                        // Squared ellipsoid distance.
-                        float distance =
-                            nx * nx +
-                            ny * ny +
-                            nz * nz;
-
-                        // Slight random boundary wobble.
-                        float threshold =
-                            Random.Range(
-                                0.85f,
-                                1.20f);
-
-                        if (
-                            distance <=
-                            threshold)
-                        {
-                            caveVoxels.Add(
-                                new Vector3Int(
-                                    x,
-                                    y,
-                                    z));
-                        }
-                    }
-                }
-            }
-
-            // Ensure a substantial central core exists,
-            // regardless of edge randomization.
-            AddCaveCore(
-                caveVoxels,
-                startX,
-                startY,
-                startZ,
-                caveWidth,
-                caveHeight,
-                caveDepth);
-
-            if (
-                ConflictsWithReserved(
-                    caveVoxels,
-                    reserved,
-                    horizontalPadding: 2,
-                    verticalPadding: 2))
-            {
-                continue;
-            }
-
-            foreach (
-                Vector3Int cavePos
-                in caveVoxels)
+        // An 11x11 opening comfortably clears the dwarf's 3x3 footprint.
+        for (int x = centreX - 5; x <= centreX + 5; x++)
+        {
+            for (int z = holeCentreZ - 5; z <= holeCentreZ + 5; z++)
             {
                 SetVoxel(
                     data,
-                    cavePos,
+                    new Vector3Int(x, spawnY - 1, z),
                     VoxelType.Air);
-
-                reserved.Add(
-                    cavePos);
-            }
-
-            Debug.Log(
-                $"Generated hidden cave near {side}, " +
-                $"shell thickness {shellThickness}, " +
-                $"nominal size " +
-                $"{caveWidth}x{caveHeight}x{caveDepth}.");
-
-            return;
-        }
-
-        Debug.LogWarning(
-            "Could not find valid placement for hidden cave.");
-    }
-
-    // =====================================================
-    // CAVE CORE
-    // =====================================================
-
-    private static void AddCaveCore(
-        List<Vector3Int> caveVoxels,
-        int startX,
-        int startY,
-        int startZ,
-        int width,
-        int height,
-        int depth)
-    {
-        HashSet<Vector3Int> unique =
-            new(
-                caveVoxels);
-
-        // Guarantee at least a 5x3x5 central open core.
-        //
-        // The full chamber remains at least nominally
-        // 7x7 horizontally and 5 high, while the edges
-        // retain their organic shape.
-
-        int coreWidth =
-            Mathf.Min(
-                5,
-                width);
-
-        int coreDepth =
-            Mathf.Min(
-                5,
-                depth);
-
-        int coreHeight =
-            Mathf.Min(
-                3,
-                height);
-
-        int coreStartX =
-            startX +
-            (width - coreWidth) / 2;
-
-        int coreStartZ =
-            startZ +
-            (depth - coreDepth) / 2;
-
-        int coreStartY =
-            startY +
-            (height - coreHeight) / 2;
-
-        for (
-            int x = 0;
-            x < coreWidth;
-            x++)
-        {
-            for (
-                int y = 0;
-                y < coreHeight;
-                y++)
-            {
-                for (
-                    int z = 0;
-                    z < coreDepth;
-                    z++)
-                {
-                    unique.Add(
-                        new Vector3Int(
-                            coreStartX + x,
-                            coreStartY + y,
-                            coreStartZ + z));
-                }
             }
         }
 
-        caveVoxels.Clear();
+        int generatedStepCount = AddGiantEntrySteps(
+            data,
+            centreX,
+            holeCentreZ,
+            spawnY);
 
-        caveVoxels.AddRange(
-            unique);
+        Vector3Int spawnAnchor = new(centreX, spawnY, spawnZ);
+
+        SetVoxel(
+            data,
+            spawnAnchor,
+            VoxelType.SpawnPoint);
+
+        Debug.Log(
+            $"Generated elevated SpawnPoint at {spawnAnchor}, facing "
+            + $"{generatedStepCount} descending Dirt platforms "
+            + "with eight-voxel drops.");
     }
 
-    // =====================================================
-    // ORGANIC WATER FOOTPRINT
-    // =====================================================
-
-    private static HashSet<Vector2Int>
-        CreateOrganicEllipseFootprint(
-            int radiusX,
-            int radiusZ)
+    private static int AddGiantEntrySteps(
+        LevelData data,
+        int centreX,
+        int holeCentreZ,
+        int spawnAnchorY)
     {
-        HashSet<Vector2Int> result =
-            new();
+        const int StepWidth = 11;
+        const int FirstStepDepth = 11;
+        const int StepDrop = 8;
+        int stepCount = Mathf.Max(
+            1,
+            Mathf.CeilToInt(
+                (spawnAnchorY -
+                 (BaseFloorHeight + 1) -
+                 StepDrop) /
+                (float)StepDrop));
 
-        for (
-            int x = -radiusX;
-            x <= radiusX;
-            x++)
+        int halfWidth = StepWidth / 2;
+        int stepStartZ = holeCentreZ - FirstStepDepth / 2;
+        int previousAnchorY = spawnAnchorY;
+
+        int remainingDepth =
+            GetWorldDepth(data) -
+            stepStartZ -
+            FirstStepDepth -
+            3;
+
+        int followingStepDepth =
+            stepCount > 1
+                ? Mathf.Clamp(
+                    remainingDepth / (stepCount - 1),
+                    5,
+                    9)
+                : FirstStepDepth;
+
+        for (int stepIndex = 0; stepIndex < stepCount; stepIndex++)
         {
-            for (
-                int z = -radiusZ;
-                z <= radiusZ;
-                z++)
+            int stepDepth =
+                stepIndex == 0
+                    ? FirstStepDepth
+                    : followingStepDepth;
+
+            int stepTopY =
+                spawnAnchorY -
+                ((stepIndex + 1) * StepDrop) -
+                1;
+
+            int stepEndZ = stepStartZ + stepDepth - 1;
+
+            for (int x = centreX - halfWidth;
+                 x <= centreX + halfWidth;
+                 x++)
             {
-                float nx =
-                    (float)x /
-                    radiusX;
-
-                float nz =
-                    (float)z /
-                    radiusZ;
-
-                float ellipseDistance =
-                    nx * nx +
-                    nz * nz;
-
-                // Interior is stable.
-                //
-                // Only the outer region gets noticeable
-                // random variation, producing an irregular
-                // pond edge without fragmenting the shape.
-                float threshold;
-
-                if (
-                    ellipseDistance <
-                    0.60f)
+                for (int z = stepStartZ; z <= stepEndZ; z++)
                 {
-                    threshold =
-                        1.0f;
-                }
-                else
-                {
-                    threshold =
-                        Random.Range(
-                            0.82f,
-                            1.18f);
-                }
+                    int localFloor = GetFloorHeight(data, x, z);
 
-                if (
-                    ellipseDistance <=
-                    threshold)
-                {
-                    result.Add(
-                        new Vector2Int(
-                            x,
-                            z));
-                }
-            }
-        }
-
-        // Guarantee useful dimensions through the center.
-        for (
-            int x = -2;
-            x <= 2;
-            x++)
-        {
-            result.Add(
-                new Vector2Int(
-                    x,
-                    0));
-        }
-
-        for (
-            int z = -2;
-            z <= 2;
-            z++)
-        {
-            result.Add(
-                new Vector2Int(
-                    0,
-                    z));
-        }
-
-        return result;
-    }
-
-    // =====================================================
-    // FEATURE RESERVATION
-    // =====================================================
-
-    private static bool ConflictsWithReserved(
-        IEnumerable<Vector3Int> positions,
-        HashSet<Vector3Int> reserved,
-        int horizontalPadding,
-        int verticalPadding)
-    {
-        foreach (
-            Vector3Int pos
-            in positions)
-        {
-            for (
-                int dx = -horizontalPadding;
-                dx <= horizontalPadding;
-                dx++)
-            {
-                for (
-                    int dy = -verticalPadding;
-                    dy <= verticalPadding;
-                    dy++)
-                {
-                    for (
-                        int dz = -horizontalPadding;
-                        dz <= horizontalPadding;
-                        dz++)
+                    // These are true pillars rather than floating platforms.
+                    for (int y = localFloor + 1; y <= stepTopY; y++)
                     {
-                        Vector3Int check =
-                            pos +
-                            new Vector3Int(
-                                dx,
-                                dy,
-                                dz);
+                        SetVoxel(
+                            data,
+                            new Vector3Int(x, y, z),
+                            VoxelType.Dirt);
+                    }
 
-                        if (
-                            reserved.Contains(
-                                check))
-                        {
-                            return true;
-                        }
+                    // Clear both the dwarf's standing volume and the vertical
+                    // fall path from the preceding, higher platform.
+                    for (int y = stepTopY + 1;
+                         y <= previousAnchorY + 4;
+                         y++)
+                    {
+                        SetVoxel(
+                            data,
+                            new Vector3Int(x, y, z),
+                            VoxelType.Air);
                     }
                 }
             }
+
+            previousAnchorY = stepTopY + 1;
+            stepStartZ = stepEndZ + 1;
         }
 
-        return false;
+        return stepCount;
     }
 
-    // =====================================================
-    // VALIDATION
-    // =====================================================
-
-    private static void ValidationPass(
-        LevelData data)
+    private static void AddInteriorSpawnPoint(LevelData data)
     {
-        // Future:
-        //
-        // - ensure caves have usable dimensions
-        // - ensure water has valid shoreline
-        // - ensure lava Granite floor is intact
-        // - ensure gameplay routes exist
-        // - ensure SpawnPoints remain reachable
-        // - repair invalid feature overlaps
+        int x = Mathf.Clamp(GetWorldWidth(data) / 2, 4, GetWorldWidth(data) - 5);
+        int z = Mathf.Clamp(GetWorldDepth(data) / 4, 4, GetWorldDepth(data) - 5);
+        int floorHeight = GetFloorHeight(data, x, z);
+        Vector3Int spawnAnchor = new(x, floorHeight + 1, z);
+
+        foreach (Vector3Int occupiedVoxel
+                 in DwarfSpatialRules.GetOccupiedVoxels(spawnAnchor))
+        {
+            SetVoxel(data, occupiedVoxel, VoxelType.Air);
+        }
+
+        SetVoxel(data, spawnAnchor, VoxelType.SpawnPoint);
+
+        Debug.Log(
+            $"Generated interior SpawnPoint at {spawnAnchor}; "
+            + "the level is too small for the rooftop entry.");
     }
 
-    // =====================================================
-    // MATERIALS
-    // =====================================================
-
-    private static void MaterialPass(
-        LevelData data)
+    private static bool IsBoundaryVoxel(
+        int x,
+        int y,
+        int z,
+        int worldWidth,
+        int worldHeight,
+        int worldDepth)
     {
-        // Future:
-        //
-        // Dirt distribution
-        // Granite formations
-        // Snow regions
-        // additional environmental decoration
+        return
+            x < BoundaryThickness ||
+            y < BoundaryThickness ||
+            z < BoundaryThickness ||
+            x >= worldWidth - BoundaryThickness ||
+            y >= worldHeight - BoundaryThickness ||
+            z >= worldDepth - BoundaryThickness;
     }
 
-    // =====================================================
-    // WORLD VOXEL ACCESS
-    // =====================================================
+    private static bool IsInsideRectangle(
+        int x,
+        int z,
+        int minimumX,
+        int maximumX,
+        int minimumZ,
+        int maximumZ)
+    {
+        return
+            x >= minimumX &&
+            x <= maximumX &&
+            z >= minimumZ &&
+            z <= maximumZ;
+    }
 
     private static void SetVoxel(
         LevelData data,
-        Vector3Int worldPos,
+        Vector3Int worldPosition,
         VoxelType type)
     {
-        if (
-            !IsInsideWorld(
-                data,
-                worldPos))
+        if (!IsInsideWorld(data, worldPosition))
         {
             return;
         }
 
-        int cx =
-            worldPos.x /
-            Chunk.ChunkSize;
+        int chunkX = worldPosition.x / Chunk.ChunkSize;
+        int chunkY = worldPosition.y / Chunk.ChunkSize;
+        int chunkZ = worldPosition.z / Chunk.ChunkSize;
 
-        int cy =
-            worldPos.y /
-            Chunk.ChunkSize;
+        int localX = worldPosition.x % Chunk.ChunkSize;
+        int localY = worldPosition.y % Chunk.ChunkSize;
+        int localZ = worldPosition.z % Chunk.ChunkSize;
 
-        int cz =
-            worldPos.z /
-            Chunk.ChunkSize;
-
-        int lx =
-            worldPos.x %
-            Chunk.ChunkSize;
-
-        int ly =
-            worldPos.y %
-            Chunk.ChunkSize;
-
-        int lz =
-            worldPos.z %
-            Chunk.ChunkSize;
-
-        data.chunks[
-            cx,
-            cy,
-            cz]
-        [
-            lx,
-            ly,
-            lz
-        ] =
-            type;
-    }
-
-    private static VoxelType GetVoxel(
-        LevelData data,
-        Vector3Int worldPos)
-    {
-        if (
-            !IsInsideWorld(
-                data,
-                worldPos))
-        {
-            return VoxelType.Air;
-        }
-
-        int cx =
-            worldPos.x /
-            Chunk.ChunkSize;
-
-        int cy =
-            worldPos.y /
-            Chunk.ChunkSize;
-
-        int cz =
-            worldPos.z /
-            Chunk.ChunkSize;
-
-        int lx =
-            worldPos.x %
-            Chunk.ChunkSize;
-
-        int ly =
-            worldPos.y %
-            Chunk.ChunkSize;
-
-        int lz =
-            worldPos.z %
-            Chunk.ChunkSize;
-
-        return
-            data.chunks[
-                cx,
-                cy,
-                cz]
-            [
-                lx,
-                ly,
-                lz
-            ];
+        data.chunks[chunkX, chunkY, chunkZ]
+            [localX, localY, localZ] = type;
     }
 
     private static bool IsInsideWorld(
         LevelData data,
-        Vector3Int pos)
+        Vector3Int position)
     {
         return
-            pos.x >= 0 &&
-            pos.y >= 0 &&
-            pos.z >= 0 &&
-
-            pos.x <
-            GetWorldWidth(data) &&
-
-            pos.y <
-            GetWorldHeight(data) &&
-
-            pos.z <
-            GetWorldDepth(data);
+            position.x >= 0 &&
+            position.y >= 0 &&
+            position.z >= 0 &&
+            position.x < GetWorldWidth(data) &&
+            position.y < GetWorldHeight(data) &&
+            position.z < GetWorldDepth(data);
     }
 
-    // =====================================================
-    // WORLD DIMENSIONS
-    // =====================================================
-
-    private static int GetWorldWidth(
-        LevelData data)
+    private static int GetWorldWidth(LevelData data)
     {
-        return
-            data.widthInChunks *
-            Chunk.ChunkSize;
+        return data.widthInChunks * Chunk.ChunkSize;
     }
 
-    private static int GetWorldHeight(
-        LevelData data)
+    private static int GetWorldHeight(LevelData data)
     {
-        return
-            data.heightInChunks *
-            Chunk.ChunkSize;
+        return data.heightInChunks * Chunk.ChunkSize;
     }
 
-    private static int GetWorldDepth(
-        LevelData data)
+    private static int GetWorldDepth(LevelData data)
     {
-        return
-            data.depthInChunks *
-            Chunk.ChunkSize;
-    }
-
-    // =====================================================
-    // CHUNK CREATION
-    // =====================================================
-
-    private static VoxelType[,,]
-        CreateEmptyChunk()
-    {
-        return new VoxelType[
-            Chunk.ChunkSize,
-            Chunk.ChunkSize,
-            Chunk.ChunkSize];
+        return data.depthInChunks * Chunk.ChunkSize;
     }
 }

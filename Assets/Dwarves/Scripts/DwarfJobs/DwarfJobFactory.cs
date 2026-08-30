@@ -3,6 +3,10 @@ public static class DwarfJobFactory
     private const float DefaultTunnelCycleDuration = 0.65f;
 
     private const float DefaultDiggerCycleDuration = 0.65f;
+
+    private const float DefaultStairBuildInterval = 0.65f;
+
+    private const float DefaultLadderBuildInterval = 0.65f;
     public static bool IsImplemented(
         DwarfJobType type)
     {
@@ -11,12 +15,31 @@ public static class DwarfJobFactory
                type ==
                    DwarfJobType.Tunneller ||
                type ==
-                   DwarfJobType.Digger;
+                   DwarfJobType.Digger ||
+               type ==
+                   DwarfJobType.StairBuilder ||
+               type ==
+                   DwarfJobType.LadderBuilder;
     }
 
     public static bool TryCreate(
         DwarfJobType type,
         DwarfAgent target,
+        out IDwarfJob job,
+        out string failureReason)
+    {
+        return TryCreate(
+            type,
+            target,
+            DirectionAltererTurn.Reverse,
+            out job,
+            out failureReason);
+    }
+
+    public static bool TryCreate(
+        DwarfJobType type,
+        DwarfAgent target,
+        DirectionAltererTurn directionAltererTurn,
         out IDwarfJob job,
         out string failureReason)
     {
@@ -34,13 +57,9 @@ public static class DwarfJobFactory
         {
             case DwarfJobType.DirectionAlter:
                 {
-                    PuzzleSide outputDirection =
-                        DirectionUtility.Opposite(
-                            target.Facing);
-
                     job =
                         new DirectionAltererJob(
-                            outputDirection);
+                            directionAltererTurn);
 
                     failureReason =
                         string.Empty;
@@ -81,6 +100,46 @@ public static class DwarfJobFactory
                     job =
                         new DiggerJob(
                             cycleDuration);
+
+                    failureReason =
+                        string.Empty;
+
+                    return true;
+                }
+
+            case DwarfJobType.StairBuilder:
+                {
+                    DwarfJobTuning tuning =
+                        target.GetComponent<DwarfJobTuning>();
+
+                    float buildInterval =
+                        tuning != null
+                            ? tuning.StairBuildInterval
+                            : DefaultStairBuildInterval;
+
+                    job =
+                        new StairBuilderJob(
+                            buildInterval);
+
+                    failureReason =
+                        string.Empty;
+
+                    return true;
+                }
+
+            case DwarfJobType.LadderBuilder:
+                {
+                    DwarfJobTuning tuning =
+                        target.GetComponent<DwarfJobTuning>();
+
+                    float buildInterval =
+                        tuning != null
+                            ? tuning.LadderBuildInterval
+                            : DefaultLadderBuildInterval;
+
+                    job =
+                        new LadderBuilderJob(
+                            buildInterval);
 
                     failureReason =
                         string.Empty;

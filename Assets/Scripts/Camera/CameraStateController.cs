@@ -51,11 +51,21 @@ public class CameraStateController : MonoBehaviour
 
     private void Update()
     {
+        HandleQuit();
         HandleTab();
 
         if (!isTransitioning)
         {
             activeMode?.HandleInput();
+        }
+    }
+
+    private void HandleQuit()
+    {
+        if (Keyboard.current != null &&
+            Keyboard.current.escapeKey.wasPressedThisFrame)
+        {
+            Application.Quit();
         }
     }
 
@@ -103,6 +113,12 @@ public class CameraStateController : MonoBehaviour
         {
             puzzleMode.SetOccupiedBounds(
                 occupiedBounds);
+
+            if (recenterOrbit)
+            {
+                orbitMode.FrameBounds(
+                    occupiedBounds);
+            }
         }
     }
 

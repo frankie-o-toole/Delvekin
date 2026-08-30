@@ -19,6 +19,7 @@ public static class VoxelRules
             case VoxelType.Air:
             case VoxelType.Water:
             case VoxelType.Lava:
+            case VoxelType.Ladder:
                 return false;
 
             default:
@@ -61,8 +62,10 @@ public static class VoxelRules
     /// </summary>
     public static bool IsBlocked(Voxel voxel)
     {
-        // Anything solid blocks movement
-        return IsSolid(voxel);
+        // Ladder is physically solid but intentionally excluded from
+        // IsSolid because it must never count as walkable ground support.
+        return voxel.Type == VoxelType.Ladder ||
+               IsSolid(voxel);
     }
 
     /// <summary>

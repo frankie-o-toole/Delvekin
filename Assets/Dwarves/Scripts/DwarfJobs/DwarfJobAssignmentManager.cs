@@ -11,14 +11,28 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     private DwarfJobType selectedJob =
         DwarfJobType.None;
 
+    private bool stopJobSelected;
+
+    private bool directionAltererOptionsOpen;
+    private DirectionAltererTurn selectedDirectionAltererTurn =
+        DirectionAltererTurn.Reverse;
+
     public event Action<DwarfAgent> SelectedDwarfChanged;
     public event Action<DwarfJobType> SelectedJobChanged;
+    public event Action<bool> StopJobSelectionChanged;
+    public event Action<
+        bool,
+        DirectionAltererTurn?> DirectionAltererSelectionChanged;
 
     public event Action<
         DwarfAgent,
         DwarfJobType> AssignmentSucceeded;
 
     public event Action<string> AssignmentFailed;
+
+    public event Action<
+        DwarfAgent,
+        DwarfJobType> JobStopped;
 
     public DwarfAgent SelectedDwarf =>
         selectedDwarf;
@@ -43,6 +57,21 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     public bool HasSelectedJob =>
         selectedJob != DwarfJobType.None;
 
+    public bool IsStopJobSelected =>
+        stopJobSelected;
+
+    public bool HasSelectedAction =>
+        HasSelectedJob ||
+        stopJobSelected;
+
+    public bool AreDirectionAltererOptionsOpen =>
+        directionAltererOptionsOpen;
+
+    public DirectionAltererTurn? SelectedDirectionAltererTurn =>
+        selectedJob == DwarfJobType.DirectionAlter
+            ? selectedDirectionAltererTurn
+            : null;
+
     private void Awake()
     {
         if (inventory == null)
@@ -55,6 +84,15 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     public void ToggleJob(
         DwarfJobType jobType)
     {
+        if (jobType == DwarfJobType.DirectionAlter)
+        {
+            ToggleDirectionAltererOptions();
+            return;
+        }
+
+        ClearStopJobSelection();
+        ClearDirectionAltererSelection();
+
         if (jobType == DwarfJobType.None)
         {
             ClearSelectedJob();
@@ -88,6 +126,84 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
         SelectedJobChanged?.Invoke(
             selectedJob);
+
+        TryResolveSelection();
+    }
+
+    public void ToggleDirectionAltererOptions()
+    {
+        if (directionAltererOptionsOpen ||
+            selectedJob == DwarfJobType.DirectionAlter)
+        {
+            ClearSelectedJob();
+            ClearDirectionAltererSelection();
+            return;
+        }
+
+        if (!DwarfJobFactory.IsImplemented(
+                DwarfJobType.DirectionAlter))
+        {
+            ReportFailure(
+                "DirectionAlter has not been implemented yet.");
+
+            return;
+        }
+
+        if (inventory == null ||
+            !inventory.HasAvailable(
+                DwarfJobType.DirectionAlter))
+        {
+            ReportFailure(
+                "No DirectionAlter jobs remain.");
+
+            return;
+        }
+
+        ClearStopJobSelection();
+        ClearSelectedJob();
+
+        directionAltererOptionsOpen = true;
+
+        DirectionAltererSelectionChanged?.Invoke(
+            true,
+            null);
+    }
+
+    public void SelectDirectionAltererTurn(
+        DirectionAltererTurn turn)
+    {
+        if (!directionAltererOptionsOpen)
+        {
+            return;
+        }
+
+        selectedDirectionAltererTurn = turn;
+        selectedJob = DwarfJobType.DirectionAlter;
+
+        DirectionAltererSelectionChanged?.Invoke(
+            true,
+            selectedDirectionAltererTurn);
+
+        SelectedJobChanged?.Invoke(
+            selectedJob);
+
+        TryResolveSelection();
+    }
+
+    public void ToggleStopJob()
+    {
+        if (stopJobSelected)
+        {
+            ClearStopJobSelection();
+            return;
+        }
+
+        ClearSelectedJob();
+        ClearDirectionAltererSelection();
+
+        stopJobSelected = true;
+
+        StopJobSelectionChanged?.Invoke(true);
 
         TryResolveSelection();
     }
@@ -142,10 +258,68 @@ public class DwarfJobAssignmentManager : MonoBehaviour
             selectedJob);
     }
 
+    public void ClearDirectionAltererSelection()
+    {
+        bool hadDirectionAltererState =
+            directionAltererOptionsOpen ||
+            selectedJob == DwarfJobType.DirectionAlter;
+
+        directionAltererOptionsOpen = false;
+
+        if (hadDirectionAltererState)
+        {
+            DirectionAltererSelectionChanged?.Invoke(
+                false,
+                null);
+        }
+    }
+
+    public void ClearStopJobSelection()
+    {
+        if (!stopJobSelected)
+        {
+            return;
+        }
+
+        stopJobSelected = false;
+
+        StopJobSelectionChanged?.Invoke(false);
+    }
+
     public void ClearAllSelections()
     {
         ClearSelectedDwarf();
         ClearSelectedJob();
+        ClearDirectionAltererSelection();
+        ClearStopJobSelection();
+    }
+
+    public bool CanStopJob(
+        DwarfAgent dwarf,
+        out string failureReason)
+    {
+        if (dwarf == null ||
+            !dwarf.IsActive)
+        {
+            failureReason =
+                "The dwarf is not active.";
+
+            return false;
+        }
+
+        DwarfJobController controller =
+            dwarf.GetComponent<DwarfJobController>();
+
+        if (controller == null)
+        {
+            failureReason =
+                $"{dwarf.name} has no DwarfJobController.";
+
+            return false;
+        }
+
+        return controller.CanStopCurrentJob(
+            out failureReason);
     }
 
     public bool CanAssignSelectedJob(
@@ -182,6 +356,7 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         if (!DwarfJobFactory.TryCreate(
                 selectedJob,
                 dwarf,
+                selectedDirectionAltererTurn,
                 out IDwarfJob job,
                 out failureReason))
         {
@@ -207,8 +382,18 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
     private void TryResolveSelection()
     {
-        if (selectedDwarf == null ||
-            selectedJob == DwarfJobType.None)
+        if (selectedDwarf == null)
+        {
+            return;
+        }
+
+        if (stopJobSelected)
+        {
+            TryStopSelectedDwarfJob();
+            return;
+        }
+
+        if (selectedJob == DwarfJobType.None)
         {
             return;
         }
@@ -231,6 +416,7 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         if (!DwarfJobFactory.TryCreate(
                 jobType,
                 target,
+                selectedDirectionAltererTurn,
                 out IDwarfJob job,
                 out failureReason))
         {
@@ -262,6 +448,41 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         // A successful assignment completes the interaction.
         ClearSelectedDwarf();
         ClearSelectedJob();
+        ClearDirectionAltererSelection();
+    }
+
+    private void TryStopSelectedDwarfJob()
+    {
+        DwarfAgent target =
+            selectedDwarf;
+
+        if (!CanStopJob(
+                target,
+                out string failureReason))
+        {
+            ReportFailure(failureReason);
+            ClearSelectedDwarf();
+            return;
+        }
+
+        DwarfJobController controller =
+            target.GetComponent<DwarfJobController>();
+
+        if (!controller.TryStopCurrentJob(
+                out DwarfJobType stoppedJobType,
+                out failureReason))
+        {
+            ReportFailure(failureReason);
+            ClearSelectedDwarf();
+            return;
+        }
+
+        JobStopped?.Invoke(
+            target,
+            stoppedJobType);
+
+        ClearSelectedDwarf();
+        ClearStopJobSelection();
     }
 
     private void ReportFailure(

@@ -8,4 +8,7 @@ public class SavedVoxel
     public int z;
 
     public VoxelType type;
+
+    // Ignored by non-oriented voxel types.
+    public PuzzleSide facing;
 }

@@ -11,6 +11,10 @@ public class DirectionAltererJob : IDwarfJob
     private DwarfJobContext context;
     private bool registered;
     private bool warnedAboutInvalidOutput;
+    private PuzzleSide approachDirection;
+    private bool hasApproachDirection;
+
+    private readonly DirectionAltererTurn selectedTurn;
 
     public DwarfJobType Type =>
         DwarfJobType.DirectionAlter;
@@ -18,7 +22,11 @@ public class DirectionAltererJob : IDwarfJob
     public PuzzleSide OutputDirection
     {
         get;
+        private set;
     }
+
+    public DirectionAltererTurn SelectedTurn =>
+        selectedTurn;
 
     public DwarfAgent Agent =>
         context?.Agent;
@@ -38,10 +46,10 @@ public class DirectionAltererJob : IDwarfJob
         true;
 
     public DirectionAltererJob(
-        PuzzleSide outputDirection)
+        DirectionAltererTurn selectedTurn)
     {
-        OutputDirection =
-            outputDirection;
+        this.selectedTurn =
+            selectedTurn;
     }
 
     public bool CanAssign(
@@ -131,6 +139,16 @@ public class DirectionAltererJob : IDwarfJob
     {
         context = jobContext;
 
+        approachDirection =
+            context.Agent.Facing;
+
+        hasApproachDirection = true;
+
+        OutputDirection =
+            DirectionUtility.ApplyTurn(
+                approachDirection,
+                selectedTurn);
+
         context.Agent.SetFacing(
             OutputDirection);
 
@@ -157,6 +175,15 @@ public class DirectionAltererJob : IDwarfJob
         registered = false;
 
         DirectionAltererRegistry.Unregister(this);
+
+        if (reason == DwarfJobEndReason.Cancelled &&
+            hasApproachDirection &&
+            jobContext?.Agent != null &&
+            jobContext.Agent.IsActive)
+        {
+            jobContext.Agent.SetFacing(
+                approachDirection);
+        }
 
         context = null;
     }

@@ -356,6 +356,8 @@ public sealed class DiggerJob : IDwarfJob
             case VoxelType.Dirt:
             case VoxelType.Vine:
             case VoxelType.Snow:
+            case VoxelType.Stair:
+            case VoxelType.Ladder:
                 return true;
 
             default:

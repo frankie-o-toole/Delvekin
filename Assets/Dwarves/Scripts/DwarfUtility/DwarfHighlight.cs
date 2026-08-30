@@ -7,6 +7,31 @@ public class DwarfHighlight : MonoBehaviour
     [SerializeField]
     private Transform visualRoot;
 
+    [Header("Job Colours")]
+    [SerializeField]
+    [Range(0f, 1f)]
+    private float jobColourStrength = 0.65f;
+
+    [SerializeField]
+    private Color directionAltererColour =
+        new Color(0.55f, 0.2f, 0.85f, 1f);
+
+    [SerializeField]
+    private Color tunnellerColour =
+        new Color(0.18f, 0.25f, 0.32f, 1f);
+
+    [SerializeField]
+    private Color diggerColour =
+        new Color(0.1f, 0.38f, 0.16f, 1f);
+
+    [SerializeField]
+    private Color stairBuilderColour =
+        new Color(0.48f, 0.24f, 0.07f, 1f);
+
+    [SerializeField]
+    private Color ladderBuilderColour =
+        new Color(0.12f, 0.32f, 0.72f, 1f);
+
     [Header("Hover")]
     [SerializeField]
     private Color hoverColour =
@@ -55,6 +80,8 @@ public class DwarfHighlight : MonoBehaviour
     private readonly List<MaterialData> materials =
         new();
 
+    private DwarfJobController jobController;
+
     private bool isHovered;
     private bool isSelected;
 
@@ -82,8 +109,30 @@ public class DwarfHighlight : MonoBehaviour
         RefreshHighlight();
     }
 
+    private void OnEnable()
+    {
+        ResolveJobController();
+
+        if (jobController != null)
+        {
+            jobController.StateChanged -=
+                HandleJobStateChanged;
+
+            jobController.StateChanged +=
+                HandleJobStateChanged;
+        }
+
+        RefreshHighlight();
+    }
+
     private void OnDisable()
     {
+        if (jobController != null)
+        {
+            jobController.StateChanged -=
+                HandleJobStateChanged;
+        }
+
         isHovered = false;
         isSelected = false;
 
@@ -91,6 +140,29 @@ public class DwarfHighlight : MonoBehaviour
         isValidJobTarget = false;
 
         RestoreOriginalColours();
+    }
+
+    private void ResolveJobController()
+    {
+        if (jobController != null)
+        {
+            return;
+        }
+
+        jobController =
+            GetComponent<DwarfJobController>();
+
+        if (jobController == null)
+        {
+            jobController =
+                GetComponentInParent<DwarfJobController>();
+        }
+    }
+
+    private void HandleJobStateChanged(
+        DwarfJobController controller)
+    {
+        RefreshHighlight();
     }
 
     public void SetHovered(bool hovered)
@@ -154,7 +226,7 @@ public class DwarfHighlight : MonoBehaviour
             return;
         }
 
-        RestoreOriginalColours();
+        ApplyJobBaseColours();
     }
 
     private void CacheRuntimeMaterials()
@@ -229,7 +301,7 @@ public class DwarfHighlight : MonoBehaviour
 
             Color result =
                 Color.Lerp(
-                    data.OriginalColour,
+                    GetBaseColour(data),
                     tint,
                     strength);
 
@@ -239,6 +311,84 @@ public class DwarfHighlight : MonoBehaviour
             data.Material.SetColor(
                 data.ColourProperty,
                 result);
+        }
+    }
+
+    private void ApplyJobBaseColours()
+    {
+        foreach (MaterialData data in materials)
+        {
+            if (data.Material == null)
+                continue;
+
+            data.Material.SetColor(
+                data.ColourProperty,
+                GetBaseColour(data));
+        }
+    }
+
+    private Color GetBaseColour(
+        MaterialData data)
+    {
+        if (!TryGetCurrentJobColour(
+                out Color jobColour))
+        {
+            return data.OriginalColour;
+        }
+
+        Color result =
+            Color.Lerp(
+                data.OriginalColour,
+                jobColour,
+                jobColourStrength);
+
+        result.a =
+            data.OriginalColour.a;
+
+        return result;
+    }
+
+    private bool TryGetCurrentJobColour(
+        out Color colour)
+    {
+        ResolveJobController();
+
+        DwarfJobType jobType =
+            DwarfJobType.None;
+
+        if (jobController != null)
+        {
+            jobType =
+                jobController.HasActiveJob
+                    ? jobController.ActiveJobType
+                    : jobController.PendingJobType;
+        }
+
+        switch (jobType)
+        {
+            case DwarfJobType.DirectionAlter:
+                colour = directionAltererColour;
+                return true;
+
+            case DwarfJobType.Tunneller:
+                colour = tunnellerColour;
+                return true;
+
+            case DwarfJobType.Digger:
+                colour = diggerColour;
+                return true;
+
+            case DwarfJobType.StairBuilder:
+                colour = stairBuilderColour;
+                return true;
+
+            case DwarfJobType.LadderBuilder:
+                colour = ladderBuilderColour;
+                return true;
+
+            default:
+                colour = default;
+                return false;
         }
     }
 

@@ -10,8 +10,20 @@ public class DwarfMovement : MonoBehaviour
         Walking,
         SteppingUp,
         SteppingDown,
+        ClimbingUp,
+        ClimbingDown,
+        LadderTransition,
         Turning,
         Falling
+    }
+
+    private enum LadderTraversalPhase
+    {
+        None,
+        Ascending,
+        Descending,
+        EnteringDescent,
+        ExitingTop
     }
 
     [Header("Walking")]
@@ -62,6 +74,11 @@ public class DwarfMovement : MonoBehaviour
     private Vector3Int pendingTargetVoxel;
 
     private Quaternion turnTargetRotation;
+
+    private LadderTraversalPhase ladderPhase;
+    private PuzzleSide ladderOutwardSide;
+    private Vector3Int ladderTransitionDirection;
+    private int ladderTransitionStepsRemaining;
 
     public MovementState State =>
         state;
@@ -116,6 +133,9 @@ public class DwarfMovement : MonoBehaviour
             case MovementState.Walking:
             case MovementState.SteppingUp:
             case MovementState.SteppingDown:
+            case MovementState.ClimbingUp:
+            case MovementState.ClimbingDown:
+            case MovementState.LadderTransition:
                 UpdateGroundMovement();
                 break;
         }
@@ -123,17 +143,27 @@ public class DwarfMovement : MonoBehaviour
 
     private void DecideNextMove()
     {
+        if (ladderPhase !=
+            LadderTraversalPhase.None)
+        {
+            ContinueLadderTraversal();
+            return;
+        }
+
+        // Construction jobs may deliberately hold a dwarf beside terrain
+        // without ordinary ground support. Let the active job own that state
+        // before applying the normal falling rule.
+        if (jobController != null &&
+            jobController.ControlsMovement)
+        {
+            return;
+        }
+
         if (DwarfWorldQueries.HasNoSupport(
             world,
             agent.CurrentVoxel))
         {
             BeginFall();
-            return;
-        }
-
-        if (jobController != null &&
-            jobController.ControlsMovement)
-        {
             return;
         }
 
@@ -168,6 +198,25 @@ public class DwarfMovement : MonoBehaviour
             return;
         }
 
+        PuzzleSide ladderSideForAscent =
+            DirectionUtility.Opposite(
+                agent.Facing);
+
+        if (DwarfWorldQueries.HasClimbableLadderContact(
+                world,
+                agent.CurrentVoxel,
+                ladderSideForAscent))
+        {
+            ladderOutwardSide =
+                ladderSideForAscent;
+
+            ladderPhase =
+                LadderTraversalPhase.Ascending;
+
+            ContinueLadderTraversal();
+            return;
+        }
+
 
         if (DwarfWorldQueries.CanOccupy(
                 world,
@@ -181,6 +230,12 @@ public class DwarfMovement : MonoBehaviour
                     forwardAnchor,
                     MovementState.Walking);
 
+                return;
+            }
+
+            if (TryBeginLadderDescent(
+                    direction))
+            {
                 return;
             }
 
@@ -252,7 +307,10 @@ public class DwarfMovement : MonoBehaviour
                 progress);
 
         if (state == MovementState.SteppingUp ||
-            state == MovementState.SteppingDown)
+            state == MovementState.SteppingDown ||
+            state == MovementState.ClimbingUp ||
+            state == MovementState.ClimbingDown ||
+            state == MovementState.LadderTransition)
         {
             float verticalProgress =
                 stepVerticalCurve.Evaluate(
@@ -276,6 +334,9 @@ public class DwarfMovement : MonoBehaviour
 
     private void CompleteGroundMovement()
     {
+        MovementState completedState =
+            state;
+
         transform.position =
             targetWorldPosition;
 
@@ -284,6 +345,16 @@ public class DwarfMovement : MonoBehaviour
 
         moveProgress = 0f;
         state = MovementState.Idle;
+
+        if (completedState ==
+                MovementState.ClimbingUp ||
+            completedState ==
+                MovementState.ClimbingDown ||
+            completedState ==
+                MovementState.LadderTransition)
+        {
+            return;
+        }
 
         // A job must not activate in mid-air. It remains pending
         // throughout the fall and is tested again after landing.
@@ -483,6 +554,251 @@ public class DwarfMovement : MonoBehaviour
         state = movementState;
     }
 
+    /// <summary>
+    /// Hands movement back from a completed Ladder Builder to the
+    /// ordinary ladder traversal state. The dwarf exits over the top
+    /// when possible; otherwise it returns down the ladder.
+    /// </summary>
+    public void FinishLadderBuilding(
+        PuzzleSide outwardSide)
+    {
+        ladderOutwardSide =
+            outwardSide;
+
+        ladderPhase =
+            LadderTraversalPhase.Ascending;
+    }
+
+    private bool TryBeginLadderDescent(
+        Vector3Int forward)
+    {
+        PuzzleSide outwardSide =
+            agent.Facing;
+
+        Vector3Int firstTransitionAnchor =
+            agent.CurrentVoxel +
+            forward;
+
+        Vector3Int ladderSideAnchor =
+            agent.CurrentVoxel +
+            forward * 2;
+
+        if (!DwarfWorldQueries.CanOccupy(
+                world,
+                firstTransitionAnchor) ||
+            !DwarfWorldQueries.CanOccupy(
+                world,
+                ladderSideAnchor) ||
+            !DwarfWorldQueries.HasClimbableLadderContact(
+                world,
+                ladderSideAnchor,
+                outwardSide,
+                verticalOffset: -1))
+        {
+            return false;
+        }
+
+        ladderOutwardSide =
+            outwardSide;
+
+        ladderPhase =
+            LadderTraversalPhase.EnteringDescent;
+
+        BeginLadderTransition(
+            forward,
+            stepCount: 2);
+
+        return true;
+    }
+
+    private void ContinueLadderTraversal()
+    {
+        switch (ladderPhase)
+        {
+            case LadderTraversalPhase.Ascending:
+                ContinueLadderAscent();
+                break;
+
+            case LadderTraversalPhase.Descending:
+                ContinueLadderDescent();
+                break;
+
+            case LadderTraversalPhase.EnteringDescent:
+            case LadderTraversalPhase.ExitingTop:
+                ContinueLadderTransition();
+                break;
+        }
+    }
+
+    private void ContinueLadderAscent()
+    {
+        Vector3Int upwardAnchor =
+            agent.CurrentVoxel +
+            Vector3Int.up;
+
+        if (DwarfWorldQueries.HasClimbableLadderContact(
+                world,
+                agent.CurrentVoxel,
+                ladderOutwardSide) &&
+            DwarfWorldQueries.CanOccupy(
+                world,
+                upwardAnchor))
+        {
+            MoveToVoxel(
+                upwardAnchor,
+                MovementState.ClimbingUp);
+
+            return;
+        }
+
+        Vector3Int inward =
+            -DirectionUtility.ToVector(
+                ladderOutwardSide);
+
+        if (CanCompleteLadderTopExit(
+                inward))
+        {
+            ladderPhase =
+                LadderTraversalPhase.ExitingTop;
+
+            BeginLadderTransition(
+                inward,
+                stepCount: 2);
+
+            return;
+        }
+
+        Vector3Int downwardAnchor =
+            agent.CurrentVoxel +
+            Vector3Int.down;
+
+        if (DwarfWorldQueries.HasClimbableLadderContact(
+                world,
+                agent.CurrentVoxel,
+                ladderOutwardSide,
+                verticalOffset: -1) &&
+            DwarfWorldQueries.CanOccupy(
+                world,
+                downwardAnchor))
+        {
+            // A failed ascent returns to the side from which it came.
+            agent.SetFacing(
+                ladderOutwardSide);
+
+            ladderPhase =
+                LadderTraversalPhase.Descending;
+
+            MoveToVoxel(
+                downwardAnchor,
+                MovementState.ClimbingDown);
+
+            return;
+        }
+
+        ladderPhase =
+            LadderTraversalPhase.None;
+
+        BeginFall();
+    }
+
+    private void ContinueLadderDescent()
+    {
+        Vector3Int downwardAnchor =
+            agent.CurrentVoxel +
+            Vector3Int.down;
+
+        if (DwarfWorldQueries.HasClimbableLadderContact(
+                world,
+                agent.CurrentVoxel,
+                ladderOutwardSide,
+                verticalOffset: -1) &&
+            DwarfWorldQueries.CanOccupy(
+                world,
+                downwardAnchor))
+        {
+            MoveToVoxel(
+                downwardAnchor,
+                MovementState.ClimbingDown);
+
+            return;
+        }
+
+        ladderPhase =
+            LadderTraversalPhase.None;
+
+        // At the bottom the dwarf is already beside the ladder.
+        // Its outward facing lets ordinary walking carry it away.
+    }
+
+    private bool CanCompleteLadderTopExit(
+        Vector3Int inward)
+    {
+        Vector3Int firstAnchor =
+            agent.CurrentVoxel +
+            inward;
+
+        Vector3Int finalAnchor =
+            agent.CurrentVoxel +
+            inward * 2;
+
+        return
+            DwarfWorldQueries.CanOccupy(
+                world,
+                firstAnchor) &&
+            DwarfWorldQueries.CanOccupy(
+                world,
+                finalAnchor) &&
+            DwarfWorldQueries.HasAnySupport(
+                world,
+                finalAnchor);
+    }
+
+    private void BeginLadderTransition(
+        Vector3Int direction,
+        int stepCount)
+    {
+        ladderTransitionDirection =
+            direction;
+
+        ladderTransitionStepsRemaining =
+            Mathf.Max(
+                0,
+                stepCount);
+
+        ContinueLadderTransition();
+    }
+
+    private void ContinueLadderTransition()
+    {
+        if (ladderTransitionStepsRemaining > 0)
+        {
+            Vector3Int targetAnchor =
+                agent.CurrentVoxel +
+                ladderTransitionDirection;
+
+            ladderTransitionStepsRemaining--;
+
+            MoveToVoxel(
+                targetAnchor,
+                MovementState.LadderTransition);
+
+            return;
+        }
+
+        if (ladderPhase ==
+            LadderTraversalPhase.EnteringDescent)
+        {
+            ladderPhase =
+                LadderTraversalPhase.Descending;
+
+            ContinueLadderDescent();
+            return;
+        }
+
+        ladderPhase =
+            LadderTraversalPhase.None;
+    }
+
     private void Die()
     {
         Debug.Log(
@@ -515,5 +831,16 @@ public class DwarfMovement : MonoBehaviour
         pendingTargetVoxel = default;
         turnTargetRotation = Quaternion.identity;
         fallStartY = 0;
+
+        ladderPhase =
+            LadderTraversalPhase.None;
+
+        ladderOutwardSide =
+            PuzzleSide.North;
+
+        ladderTransitionDirection =
+            Vector3Int.zero;
+
+        ladderTransitionStepsRemaining = 0;
     }
 }

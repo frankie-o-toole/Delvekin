@@ -183,6 +183,31 @@ public class DwarfJobController : MonoBehaviour
         failureReason = string.Empty;
 
         NotifyStateChanged();
+
+        /*
+         * Jobs assigned while the dwarf is already standing still
+         * should use that stable anchor. Previously, pending jobs
+         * were only activated after a movement completed or after
+         * landing, causing an idle Stair Builder or Digger to take
+         * one unwanted ordinary step first.
+         *
+         * The Direction Alterer deliberately keeps its established
+         * behaviour: it advances to the next supported anchor before
+         * activating.
+         */
+        if (movement != null &&
+            movement.State ==
+                DwarfMovement.MovementState.Idle &&
+            job.Type !=
+                DwarfJobType.DirectionAlter &&
+            world != null &&
+            DwarfWorldQueries.HasAnySupport(
+                world,
+                agent.CurrentVoxel))
+        {
+            ActivatePendingJob();
+        }
+
         return true;
     }
 
@@ -264,6 +289,69 @@ public class DwarfJobController : MonoBehaviour
 
         EndActiveJob(
             DwarfJobEndReason.Cancelled);
+
+        failureReason = string.Empty;
+        return true;
+    }
+
+    public bool CanStopCurrentJob(
+        out string failureReason)
+    {
+        IDwarfJob currentJob =
+            activeJob ?? pendingJob;
+
+        if (currentJob == null)
+        {
+            failureReason =
+                "The dwarf has no job to stop.";
+
+            return false;
+        }
+
+        if (!currentJob.CanBeCancelled)
+        {
+            failureReason =
+                $"{currentJob.Type} cannot be stopped.";
+
+            return false;
+        }
+
+        failureReason = string.Empty;
+        return true;
+    }
+
+    public bool TryStopCurrentJob(
+        out DwarfJobType stoppedJobType,
+        out string failureReason)
+    {
+        stoppedJobType =
+            DwarfJobType.None;
+
+        if (!CanStopCurrentJob(
+                out failureReason))
+        {
+            return false;
+        }
+
+        if (activeJob != null)
+        {
+            stoppedJobType =
+                activeJob.Type;
+
+            EndActiveJob(
+                DwarfJobEndReason.Cancelled);
+        }
+        else
+        {
+            stoppedJobType =
+                pendingJob.Type;
+
+            // A deliberate player stop consumes the assigned resource,
+            // even when the job had not activated yet.
+            CancelPendingJob(
+                DwarfJobEndReason.Cancelled,
+                refund: false);
+        }
 
         failureReason = string.Empty;
         return true;

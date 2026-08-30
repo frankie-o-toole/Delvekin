@@ -29,13 +29,13 @@ public class VoxelWorld : MonoBehaviour
     // =====================================================
 
     private string generationWidth =
-        "1";
+        "5";
 
     private string generationHeight =
-        "1";
+        "4";
 
     private string generationDepth =
-        "1";
+        "5";
 
     private void Awake()
     {
@@ -51,17 +51,23 @@ public class VoxelWorld : MonoBehaviour
         ChunkRefreshSystem.OnRefreshRequested +=
             RebuildAllChunks;
 
+        ChunkRefreshSystem.OnSliceRefreshRequested +=
+            RebuildSliceChunks;
+
         LoadGeneratedLevel(
             1234,
-            1,
-            1,
-            1);
+            5,
+            4,
+            5);
     }
 
     private void OnDestroy()
     {
         ChunkRefreshSystem.OnRefreshRequested -=
             RebuildAllChunks;
+
+        ChunkRefreshSystem.OnSliceRefreshRequested -=
+            RebuildSliceChunks;
     }
 
     // =====================================================
@@ -128,7 +134,10 @@ public class VoxelWorld : MonoBehaviour
                                     z,
 
                                 type =
-                                    voxel.Type
+                                    voxel.Type,
+
+                                facing =
+                                    voxel.Facing
                             });
                     }
                 }
@@ -339,7 +348,8 @@ public class VoxelWorld : MonoBehaviour
                 localPos.y,
                 localPos.z,
                 new Voxel(
-                    voxel.type));
+                    voxel.type,
+                    voxel.facing));
         }
 
         // -------------------------
@@ -440,11 +450,17 @@ public class VoxelWorld : MonoBehaviour
                     chunks[
                         chunkCoord] =
                         chunk;
-
-                    CreateChunkRenderer(
-                        chunk);
                 }
             }
+        }
+
+        // Build renderers only after every chunk exists. This prevents
+        // not-yet-added neighbours from temporarily appearing as Air and
+        // producing internal boundary faces in larger generated levels.
+        foreach (Chunk chunk in chunks.Values)
+        {
+            CreateChunkRenderer(
+                chunk);
         }
 
         RefreshWorldSpatialState(recenterCamera: true);
@@ -742,9 +758,69 @@ public class VoxelWorld : MonoBehaviour
             VoxelType.Air);
     }
 
+    /// <summary>
+    /// Returns true when this position belongs to a chunk that is
+    /// already part of the loaded level. Jobs use this as the current
+    /// temporary world-bound rule so they cannot expand the level by
+    /// creating new chunks.
+    /// </summary>
+    public bool ContainsExistingChunkAt(
+        Vector3Int worldPos)
+    {
+        Vector3Int chunkCoord =
+            VoxelMath.WorldToChunkCoord(
+                worldPos);
+
+        return chunks.ContainsKey(
+            chunkCoord);
+    }
+
     public void SetVoxel(
         Vector3Int worldPos,
         VoxelType type)
+    {
+        SetVoxel(
+            worldPos,
+            type,
+            PuzzleSide.North);
+    }
+
+    private void RebuildSliceChunks(
+        SliceAxis axis,
+        int oldVisibleBoundary,
+        int newVisibleBoundary)
+    {
+        int oldChunkLayer =
+            Mathf.FloorToInt(
+                oldVisibleBoundary /
+                (float)Chunk.ChunkSize);
+
+        int newChunkLayer =
+            Mathf.FloorToInt(
+                newVisibleBoundary /
+                (float)Chunk.ChunkSize);
+
+        foreach (var pair in chunkRenderers)
+        {
+            int rendererLayer =
+                axis == SliceAxis.X
+                    ? pair.Key.x
+                    : pair.Key.z;
+
+            if (rendererLayer != oldChunkLayer &&
+                rendererLayer != newChunkLayer)
+            {
+                continue;
+            }
+
+            pair.Value.RebuildMesh();
+        }
+    }
+
+    public void SetVoxel(
+        Vector3Int worldPos,
+        VoxelType type,
+        PuzzleSide facing)
     {
         if (
             worldPos.x ==
@@ -795,7 +871,8 @@ public class VoxelWorld : MonoBehaviour
             localPos.y,
             localPos.z,
             new Voxel(
-                type));
+                type,
+                facing));
 
         RefreshWorldSpatialState(recenterCamera: false);
 
@@ -806,6 +883,17 @@ public class VoxelWorld : MonoBehaviour
     public int SetVoxels(
     IEnumerable<Vector3Int> worldPositions,
     VoxelType type)
+    {
+        return SetVoxels(
+            worldPositions,
+            type,
+            PuzzleSide.North);
+    }
+
+    public int SetVoxels(
+    IEnumerable<Vector3Int> worldPositions,
+    VoxelType type,
+    PuzzleSide facing)
     {
         if (worldPositions == null)
         {
@@ -843,7 +931,9 @@ public class VoxelWorld : MonoBehaviour
                     localPos.y,
                     localPos.z);
 
-            if (existing.Type == type)
+            if (existing.Type == type &&
+                (type != VoxelType.Ladder ||
+                 existing.Facing == facing))
             {
                 continue;
             }
@@ -852,7 +942,9 @@ public class VoxelWorld : MonoBehaviour
                 localPos.x,
                 localPos.y,
                 localPos.z,
-                new Voxel(type));
+                new Voxel(
+                    type,
+                    facing));
 
             affectedChunks.Add(
                 chunkCoord);
@@ -1062,17 +1154,20 @@ public class VoxelWorld : MonoBehaviour
     public bool HasSupport(
         Vector3Int voxel)
     {
-        return
-            GetVoxel(voxel).Type !=
-            VoxelType.Air;
+        return VoxelRules.IsSolid(
+            GetVoxel(voxel));
     }
 
     public bool IsBlocked(
         Vector3Int worldPos)
     {
-        return
-            GetVoxel(worldPos).Type !=
-            VoxelType.Air;
+        Voxel voxel =
+            GetVoxel(worldPos);
+
+        // Ladder blocks ordinary horizontal movement even though it
+        // deliberately does not provide ground support.
+        return voxel.Type == VoxelType.Ladder ||
+               VoxelRules.IsBlocked(voxel);
     }
 
     public bool IsLethal(

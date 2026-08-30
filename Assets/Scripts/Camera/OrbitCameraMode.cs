@@ -234,6 +234,48 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
         }
     }
 
+    public void FrameBounds(
+        Bounds bounds,
+        float padding = 1.15f)
+    {
+        Camera controlledCamera =
+            GetComponent<Camera>();
+
+        if (controlledCamera == null ||
+            bounds.size.sqrMagnitude < 0.001f)
+        {
+            return;
+        }
+
+        SetOrbitCenter(bounds.center);
+
+        float radius = bounds.extents.magnitude;
+        float verticalHalfAngle =
+            controlledCamera.fieldOfView *
+            0.5f *
+            Mathf.Deg2Rad;
+
+        float horizontalHalfAngle =
+            Mathf.Atan(
+                Mathf.Tan(verticalHalfAngle) *
+                Mathf.Max(0.01f, controlledCamera.aspect));
+
+        float limitingHalfAngle =
+            Mathf.Min(verticalHalfAngle, horizontalHalfAngle);
+
+        float requiredDistance =
+            radius /
+            Mathf.Max(0.01f, Mathf.Sin(limitingHalfAngle));
+
+        distance = Mathf.Max(
+            minDistance,
+            requiredDistance * Mathf.Max(1f, padding));
+
+        // Generated worlds can legitimately be larger than the old
+        // inspector maximum. Preserve zooming room beyond the initial frame.
+        maxDistance = Mathf.Max(maxDistance, distance * 1.5f);
+    }
+
     public void SaveState()
     {
         savedState.TargetPosition =

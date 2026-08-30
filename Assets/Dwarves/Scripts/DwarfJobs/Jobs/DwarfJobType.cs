@@ -8,6 +8,13 @@ public enum DwarfJobType
     LadderBuilder
 }
 
+public enum DirectionAltererTurn
+{
+    Left,
+    Reverse,
+    Right
+}
+
 public enum DwarfJobStatus
 {
     None,

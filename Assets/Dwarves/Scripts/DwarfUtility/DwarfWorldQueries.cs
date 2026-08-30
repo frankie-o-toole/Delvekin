@@ -132,6 +132,13 @@ public static class DwarfWorldQueries
                 continue;
             }
 
+            // Ladder is never treated as a one-voxel stair. It is either
+            // entered through the directional climbing rule or blocks movement.
+            if (type == VoxelType.Ladder)
+            {
+                return false;
+            }
+
             if (voxelPosition.y != forwardAnchor.y)
             {
                 return false;
@@ -157,6 +164,70 @@ public static class DwarfWorldQueries
         return
             type == VoxelType.Dirt ||
             type == VoxelType.Granite ||
-            type == VoxelType.Snow;
+            type == VoxelType.Snow ||
+            type == VoxelType.Vine ||
+            type == VoxelType.Stair;
+    }
+
+    /// <summary>
+    /// Counts correctly oriented Ladder voxels touching the dwarf's
+    /// three-wide face. The dwarf remains outside the solid Ladder volume.
+    /// </summary>
+    public static int CountLadderContact(
+        VoxelWorld world,
+        Vector3Int dwarfAnchor,
+        PuzzleSide ladderOutwardSide,
+        int verticalOffset = 0)
+    {
+        Vector3Int outward =
+            DirectionUtility.ToVector(
+                ladderOutwardSide);
+
+        Vector3Int inward =
+            -outward;
+
+        Vector3Int sideways =
+            new(
+                inward.z,
+                0,
+                -inward.x);
+
+        Vector3Int ladderCentre =
+            dwarfAnchor +
+            inward * 2 +
+            Vector3Int.up * verticalOffset;
+
+        int count = 0;
+
+        for (int side = -1;
+             side <= 1;
+             side++)
+        {
+            Voxel voxel =
+                world.GetVoxel(
+                    ladderCentre +
+                    sideways * side);
+
+            if (voxel.Type == VoxelType.Ladder &&
+                voxel.Facing == ladderOutwardSide)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    public static bool HasClimbableLadderContact(
+        VoxelWorld world,
+        Vector3Int dwarfAnchor,
+        PuzzleSide ladderOutwardSide,
+        int verticalOffset = 0)
+    {
+        return CountLadderContact(
+                   world,
+                   dwarfAnchor,
+                   ladderOutwardSide,
+                   verticalOffset) >= 2;
     }
 }
