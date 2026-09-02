@@ -86,6 +86,8 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
+        WarnAboutUnsafeSpawnPoints();
+
         spawned = 0;
         rescued = 0;
         died = 0;
@@ -214,6 +216,41 @@ public class DwarfSpawner : MonoBehaviour
         return false;
     }
 
+    private void WarnAboutUnsafeSpawnPoints()
+    {
+        int fatalDistance =
+            pool.FatalFallDistance;
+
+        foreach (Vector3Int spawnPoint in
+                 world.GetSpawnPoints())
+        {
+            if (!DwarfSpawnValidator.TryGetLandingDistance(
+                    world,
+                    spawnPoint,
+                    out int fallDistance))
+            {
+                Debug.LogWarning(
+                    $"SpawnPoint at {spawnPoint} has no supporting terrain "
+                    + "beneath it inside the level. Dwarves will keep falling.",
+                    this);
+
+                continue;
+            }
+
+            if (fallDistance < fatalDistance)
+            {
+                continue;
+            }
+
+            Debug.LogWarning(
+                $"SpawnPoint at {spawnPoint} has a {fallDistance}-voxel "
+                + $"drop. Dwarves die at {fatalDistance} voxels or more. "
+                + "Move the SpawnPoint, add terrain beneath it, or adjust "
+                + "Fatal Fall Distance on the Dwarf prefab.",
+                this);
+        }
+    }
+
     private bool ValidateReferences()
     {
         bool valid = true;
@@ -279,7 +316,8 @@ public class DwarfSpawner : MonoBehaviour
                         ? "LEVEL COMPLETE"
                         : "LEVEL FAILED")
                     : $"Rescued: {rescued}/{GetRequiredRescues()}  "
-                      + $"Lost: {died}  Active: {pool.ActiveCount}";
+                      + $"Lost: {died}  "
+                      + $"Active: {pool.ActiveCount}/{maxDwarves}";
 
             GUI.Label(
                 new Rect(

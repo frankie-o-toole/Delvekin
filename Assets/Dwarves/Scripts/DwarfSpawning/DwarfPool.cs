@@ -31,6 +31,24 @@ public class DwarfPool : MonoBehaviour
     public int ActiveCount =>
         activeDwarves.Count;
 
+    public int FatalFallDistance
+    {
+        get
+        {
+            if (prefab == null)
+            {
+                return int.MaxValue;
+            }
+
+            DwarfMovement movement =
+                prefab.GetComponent<DwarfMovement>();
+
+            return movement != null
+                ? movement.FatalFallDistance
+                : int.MaxValue;
+        }
+    }
+
     public event Action<DwarfAgent, DwarfReleaseReason>
         DwarfReleased;
 

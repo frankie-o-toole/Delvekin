@@ -1,15 +1,13 @@
 using UnityEngine;
 
 /// <summary>
-/// Validates terrain around a dwarf spawnpoint.
+/// Validates clearance around a dwarf spawnpoint and predicts its fall.
 ///
 /// Other dwarves are deliberately ignored. Dwarves do not collide,
 /// so multiple dwarves may occupy or pass through the spawn area.
 /// </summary>
 public static class DwarfSpawnValidator
 {
-    public const int RequiredSupportVoxels = 5;
-
     public static bool CanSpawn(
         VoxelWorld world,
         Vector3Int anchorVoxel,
@@ -34,45 +32,49 @@ public static class DwarfSpawnValidator
             return false;
         }
 
-        if (!HasSufficientSupport(
-                world,
-                anchorVoxel,
-                out int supportCount))
-        {
-            failureReason =
-                $"Spawnpoint has insufficient support: "
-                + $"{supportCount}/9 supporting voxels.";
-
-            return false;
-        }
-
         failureReason = string.Empty;
         return true;
     }
 
-    public static bool HasSufficientSupport(
+    /// <summary>
+    /// Finds the first anchor below the spawnpoint where the dwarf would
+    /// encounter support. The result uses the same footprint support rule as
+    /// live movement, so warning behavior stays aligned with gameplay.
+    /// </summary>
+    public static bool TryGetLandingDistance(
         VoxelWorld world,
         Vector3Int anchorVoxel,
-        out int supportCount)
+        out int fallDistance)
     {
-        if (!DwarfWorldQueries.HasCentreSupport(
-                world,
-                anchorVoxel))
-        {
-            supportCount =
-                DwarfWorldQueries.CountSupportVoxels(
-                    world,
-                    anchorVoxel);
+        fallDistance = 0;
 
+        if (world == null ||
+            !world.TryGetVerticalBounds(
+                out int minimumWorldY,
+                out _))
+        {
             return false;
         }
 
-        supportCount =
-            DwarfWorldQueries.CountSupportVoxels(
-                world,
-                anchorVoxel);
+        Vector3Int candidateAnchor =
+            anchorVoxel;
 
-        return supportCount >=
-               RequiredSupportVoxels;
+        while (candidateAnchor.y > minimumWorldY)
+        {
+            if (DwarfWorldQueries.HasAnySupport(
+                    world,
+                    candidateAnchor))
+            {
+                fallDistance =
+                    anchorVoxel.y - candidateAnchor.y;
+
+                return true;
+            }
+
+            candidateAnchor +=
+                Vector3Int.down;
+        }
+
+        return false;
     }
 }

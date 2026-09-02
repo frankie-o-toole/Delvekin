@@ -86,6 +86,9 @@ public class DwarfMovement : MonoBehaviour
     public bool IsMoving =>
         state != MovementState.Idle;
 
+    public int FatalFallDistance =>
+        fatalFallDistance;
+
     private void Awake()
     {
         agent =

@@ -1245,4 +1245,38 @@ public class VoxelWorld : MonoBehaviour
     {
         return exitPoints;
     }
+
+    public bool TryGetVerticalBounds(
+        out int minimumWorldY,
+        out int maximumWorldY)
+    {
+        if (chunks.Count == 0)
+        {
+            minimumWorldY = 0;
+            maximumWorldY = 0;
+            return false;
+        }
+
+        int minimumChunkY = int.MaxValue;
+        int maximumChunkY = int.MinValue;
+
+        foreach (Vector3Int chunkCoordinate in chunks.Keys)
+        {
+            minimumChunkY = Mathf.Min(
+                minimumChunkY,
+                chunkCoordinate.y);
+
+            maximumChunkY = Mathf.Max(
+                maximumChunkY,
+                chunkCoordinate.y);
+        }
+
+        minimumWorldY =
+            minimumChunkY * Chunk.ChunkSize;
+
+        maximumWorldY =
+            (maximumChunkY + 1) * Chunk.ChunkSize - 1;
+
+        return true;
+    }
 }
