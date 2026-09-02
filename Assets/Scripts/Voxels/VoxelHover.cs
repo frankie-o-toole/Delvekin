@@ -318,6 +318,14 @@ public class VoxelHover : MonoBehaviour
                 VoxelType.SpawnPoint,
                 "SpawnPoint");
         }
+
+        if (Keyboard.current.digit9Key
+            .wasPressedThisFrame)
+        {
+            SelectVoxelType(
+                VoxelType.ExitPoint,
+                "ExitPoint");
+        }
     }
 
     private void SelectVoxelType(

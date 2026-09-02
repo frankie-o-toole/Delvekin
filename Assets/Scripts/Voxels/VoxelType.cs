@@ -10,6 +10,6 @@ public enum VoxelType
     Bubblegum,
     SpawnPoint,
     Stair,
-    Ladder
+    Ladder,
+    ExitPoint
 }
-

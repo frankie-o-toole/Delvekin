@@ -304,6 +304,9 @@ public class ChunkRenderer : MonoBehaviour
             VoxelType.SpawnPoint =>
                 Color.lightGreen,
 
+            VoxelType.ExitPoint =>
+                new Color(0.2f, 0.85f, 1f),
+
             _ =>
                 Color.magenta
         };

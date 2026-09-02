@@ -155,7 +155,8 @@ public static class DwarfWorldQueries
     {
         return
             type == VoxelType.Air ||
-            type == VoxelType.SpawnPoint;
+            type == VoxelType.SpawnPoint ||
+            type == VoxelType.ExitPoint;
     }
 
     public static bool IsSupportive(

@@ -20,6 +20,8 @@ public static class VoxelRules
             case VoxelType.Water:
             case VoxelType.Lava:
             case VoxelType.Ladder:
+            case VoxelType.SpawnPoint:
+            case VoxelType.ExitPoint:
                 return false;
 
             default:

@@ -1,5 +1,12 @@
 using System.Collections.Generic;
+using System;
 using UnityEngine;
+
+public enum DwarfReleaseReason
+{
+    Died,
+    Rescued
+}
 
 public class DwarfPool : MonoBehaviour
 {
@@ -23,6 +30,9 @@ public class DwarfPool : MonoBehaviour
 
     public int ActiveCount =>
         activeDwarves.Count;
+
+    public event Action<DwarfAgent, DwarfReleaseReason>
+        DwarfReleased;
 
     private void Awake()
     {
@@ -56,7 +66,9 @@ public class DwarfPool : MonoBehaviour
         return dwarf;
     }
 
-    public void Release(DwarfAgent dwarf)
+    public void Release(
+        DwarfAgent dwarf,
+        DwarfReleaseReason reason)
     {
         if (dwarf == null)
         {
@@ -71,6 +83,10 @@ public class DwarfPool : MonoBehaviour
 
             return;
         }
+
+        DwarfReleased?.Invoke(
+            dwarf,
+            reason);
 
         dwarf.Deactivate();
         availableDwarves.Enqueue(dwarf);

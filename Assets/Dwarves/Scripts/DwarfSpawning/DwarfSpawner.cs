@@ -21,12 +21,38 @@ public class DwarfSpawner : MonoBehaviour
     private int maxDwarves = 20;
 
     [SerializeField]
+    [Min(1)]
+    private int requiredRescues = 1;
+
+    [SerializeField]
     private PuzzleSide initialFacing =
         PuzzleSide.North;
 
     private bool simulationStarted;
     private int spawned;
+    private int rescued;
+    private int died;
     private int nextSpawnPointIndex;
+    private bool spawnFinished;
+    private bool simulationResolved;
+
+    private void OnEnable()
+    {
+        if (pool != null)
+        {
+            pool.DwarfReleased +=
+                HandleDwarfReleased;
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (pool != null)
+        {
+            pool.DwarfReleased -=
+                HandleDwarfReleased;
+        }
+    }
 
     public void StartSimulation()
     {
@@ -51,8 +77,21 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
+        if (world.GetExitPoints().Count == 0)
+        {
+            Debug.LogError(
+                "Cannot start dwarf simulation: "
+                + "no ExitPoint was found in the level.");
+
+            return;
+        }
+
         spawned = 0;
+        rescued = 0;
+        died = 0;
         nextSpawnPointIndex = 0;
+        spawnFinished = false;
+        simulationResolved = false;
         simulationStarted = true;
 
         StartCoroutine(SpawnLoop());
@@ -77,6 +116,52 @@ public class DwarfSpawner : MonoBehaviour
                     blockedRetryInterval);
             }
         }
+
+
+        spawnFinished = true;
+        TryResolveSimulation();
+    }
+
+    private void HandleDwarfReleased(
+        DwarfAgent dwarf,
+        DwarfReleaseReason reason)
+    {
+        if (!simulationStarted ||
+            simulationResolved)
+        {
+            return;
+        }
+
+        if (reason == DwarfReleaseReason.Rescued)
+        {
+            rescued++;
+        }
+        else
+        {
+            died++;
+        }
+
+        TryResolveSimulation();
+    }
+
+    private void TryResolveSimulation()
+    {
+        if (!spawnFinished ||
+            rescued + died < spawned)
+        {
+            return;
+        }
+
+        simulationResolved = true;
+
+        bool victory =
+            rescued >= GetRequiredRescues();
+
+        Debug.Log(
+            victory
+                ? $"Level complete! Rescued {rescued}/{spawned} dwarves."
+                : $"Level failed. Rescued {rescued}/{spawned} dwarves; "
+                  + $"required {GetRequiredRescues()}.");
     }
 
     private bool TrySpawnDwarf()
@@ -186,5 +271,31 @@ public class DwarfSpawner : MonoBehaviour
                 StartSimulation();
             }
         }
+        else
+        {
+            string status =
+                simulationResolved
+                    ? (rescued >= GetRequiredRescues()
+                        ? "LEVEL COMPLETE"
+                        : "LEVEL FAILED")
+                    : $"Rescued: {rescued}/{GetRequiredRescues()}  "
+                      + $"Lost: {died}  Active: {pool.ActiveCount}";
+
+            GUI.Label(
+                new Rect(
+                    x,
+                    y,
+                    width * 1.8f,
+                    height),
+                status);
+        }
+    }
+
+    private int GetRequiredRescues()
+    {
+        return Mathf.Clamp(
+            requiredRescues,
+            1,
+            Mathf.Max(1, maxDwarves));
     }
 }

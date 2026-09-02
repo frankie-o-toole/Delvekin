@@ -577,6 +577,7 @@ public sealed class TunnellerJob :
     {
         return type == VoxelType.Air ||
                type == VoxelType.SpawnPoint ||
+               type == VoxelType.ExitPoint ||
                IsDiggableMaterial(type);
     }
 
@@ -589,10 +590,13 @@ public sealed class TunnellerJob :
 
         foreach (Vector3Int position in positions)
         {
-            // SpawnPoint is non-physical level metadata. It permits the
+            // Level markers are non-physical metadata. They permit the
             // tunnel but must survive excavation for later restarts/saves.
-            if (world.GetVoxel(position).Type ==
-                VoxelType.SpawnPoint)
+            VoxelType type =
+                world.GetVoxel(position).Type;
+
+            if (type == VoxelType.SpawnPoint ||
+                type == VoxelType.ExitPoint)
             {
                 continue;
             }

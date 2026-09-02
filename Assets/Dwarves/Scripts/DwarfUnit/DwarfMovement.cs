@@ -143,6 +143,11 @@ public class DwarfMovement : MonoBehaviour
 
     private void DecideNextMove()
     {
+        if (TryReachExit())
+        {
+            return;
+        }
+
         if (ladderPhase !=
             LadderTraversalPhase.None)
         {
@@ -346,6 +351,11 @@ public class DwarfMovement : MonoBehaviour
         moveProgress = 0f;
         state = MovementState.Idle;
 
+        if (TryReachExit())
+        {
+            return;
+        }
+
         if (completedState ==
                 MovementState.ClimbingUp ||
             completedState ==
@@ -521,6 +531,11 @@ public class DwarfMovement : MonoBehaviour
         if (fallDistance >= fatalFallDistance)
         {
             Die();
+            return;
+        }
+
+        if (TryReachExit())
+        {
             return;
         }
 
@@ -808,11 +823,40 @@ public class DwarfMovement : MonoBehaviour
 
         if (pool != null)
         {
-            pool.Release(agent);
+            pool.Release(
+                agent,
+                DwarfReleaseReason.Died);
             return;
         }
 
         agent.Deactivate();
+    }
+
+    private bool TryReachExit()
+    {
+        if (world.GetVoxel(agent.CurrentVoxel).Type !=
+            VoxelType.ExitPoint)
+        {
+            return false;
+        }
+
+        Debug.Log(
+            $"{agent.name} reached the exit!");
+
+        state = MovementState.Idle;
+
+        if (pool != null)
+        {
+            pool.Release(
+                agent,
+                DwarfReleaseReason.Rescued);
+        }
+        else
+        {
+            agent.Deactivate();
+        }
+
+        return true;
     }
 
     private void ResetMovementState()

@@ -19,6 +19,9 @@ public class VoxelWorld : MonoBehaviour
     private readonly List<Vector3Int> spawnPoints =
         new();
 
+    private readonly List<Vector3Int> exitPoints =
+        new();
+
     private LevelData currentLevel;
 
     private string fileName =
@@ -229,6 +232,7 @@ public class VoxelWorld : MonoBehaviour
     public void ScanSpawnPoints()
     {
         spawnPoints.Clear();
+        exitPoints.Clear();
 
         foreach (var pair in chunks)
         {
@@ -259,9 +263,8 @@ public class VoxelWorld : MonoBehaviour
                                 y,
                                 z);
 
-                        if (
-                            voxel.Type !=
-                            VoxelType.SpawnPoint)
+                        if (voxel.Type != VoxelType.SpawnPoint &&
+                            voxel.Type != VoxelType.ExitPoint)
                         {
                             continue;
                         }
@@ -280,12 +283,14 @@ public class VoxelWorld : MonoBehaviour
                                 Chunk.ChunkSize +
                                 z);
 
-                        spawnPoints.Add(
-                            worldPos);
-
-                        Debug.Log(
-                            worldPos +
-                            " is where the spawnPoint is");
+                        if (voxel.Type == VoxelType.SpawnPoint)
+                        {
+                            spawnPoints.Add(worldPos);
+                        }
+                        else
+                        {
+                            exitPoints.Add(worldPos);
+                        }
                     }
                 }
             }
@@ -1233,5 +1238,11 @@ public class VoxelWorld : MonoBehaviour
         GetSpawnPoints()
     {
         return spawnPoints;
+    }
+
+    public IReadOnlyList<Vector3Int>
+        GetExitPoints()
+    {
+        return exitPoints;
     }
 }

@@ -469,8 +469,9 @@ public sealed class LadderBuilderJob :
         VoxelType type)
     {
         // New solid terrain types should support ladders automatically.
-        // SpawnPoint is traversable metadata rather than physical backing.
-        if (type == VoxelType.SpawnPoint)
+        // Level markers are traversable metadata rather than physical backing.
+        if (type == VoxelType.SpawnPoint ||
+            type == VoxelType.ExitPoint)
         {
             return false;
         }
