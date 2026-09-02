@@ -106,7 +106,14 @@ public class ChunkRenderer : MonoBehaviour
         List<int> triangles,
         List<Color> colors)
     {
-        Color color = GetVoxelColor(voxel.Type);
+        Vector3Int worldPos =
+            chunk.ChunkCoordinate * Chunk.ChunkSize +
+            new Vector3Int(x, y, z);
+
+        Color color =
+            GetVoxelColor(
+                voxel.Type,
+                worldPos);
 
         Vector3 p = new(x, y, z);
 
@@ -121,7 +128,7 @@ public class ChunkRenderer : MonoBehaviour
                 p + new Vector3(1, 1, 0),
                 p + new Vector3(1, 1, 1),
                 p + new Vector3(0, 1, 1),
-                color);
+                ShadeColor(color, 1.16f));
         }
 
         // BOTTOM
@@ -135,7 +142,7 @@ public class ChunkRenderer : MonoBehaviour
                 p + new Vector3(0, 0, 1),
                 p + new Vector3(1, 0, 1),
                 p + new Vector3(1, 0, 0),
-                color);
+                ShadeColor(color, 0.55f));
         }
 
         // NORTH
@@ -149,7 +156,7 @@ public class ChunkRenderer : MonoBehaviour
                 p + new Vector3(0, 1, 1),
                 p + new Vector3(1, 1, 1),
                 p + new Vector3(1, 0, 1),
-                color);
+                ShadeColor(color, 0.82f));
         }
 
         // SOUTH
@@ -163,7 +170,7 @@ public class ChunkRenderer : MonoBehaviour
                 p + new Vector3(1, 1, 0),
                 p + new Vector3(0, 1, 0),
                 p + new Vector3(0, 0, 0),
-                color);
+                ShadeColor(color, 0.94f));
         }
 
         // EAST
@@ -177,7 +184,7 @@ public class ChunkRenderer : MonoBehaviour
                 p + new Vector3(1, 1, 1),
                 p + new Vector3(1, 1, 0),
                 p + new Vector3(1, 0, 0),
-                color);
+                ShadeColor(color, 0.72f));
         }
 
         // WEST
@@ -191,7 +198,7 @@ public class ChunkRenderer : MonoBehaviour
                 p + new Vector3(0, 1, 0),
                 p + new Vector3(0, 1, 1),
                 p + new Vector3(0, 0, 1),
-                color);
+                ShadeColor(color, 0.87f));
         }
     }
 
@@ -250,9 +257,22 @@ public class ChunkRenderer : MonoBehaviour
         triangles.Add(index + 2);
     }
 
-    private Color GetVoxelColor(VoxelType type)
+    private static Color ShadeColor(
+        Color color,
+        float brightness)
     {
-        return type switch
+        return new Color(
+            color.r * brightness,
+            color.g * brightness,
+            color.b * brightness,
+            color.a);
+    }
+
+    private Color GetVoxelColor(
+        VoxelType type,
+        Vector3Int worldPosition)
+    {
+        Color baseColor = type switch
         {
             VoxelType.Dirt =>
                 new Color(0.56f, 0.26f, 0.13f),
@@ -287,5 +307,37 @@ public class ChunkRenderer : MonoBehaviour
             _ =>
                 Color.magenta
         };
+
+        if (type != VoxelType.Dirt &&
+            type != VoxelType.Granite)
+        {
+            return baseColor;
+        }
+
+        // Broad patches break up large single-colour surfaces without adding
+        // new voxel types or save data. The low frequency avoids visual noise.
+        float patch = Mathf.Lerp(
+            0.90f,
+            1.06f,
+            Mathf.PerlinNoise(
+                worldPosition.x * 0.045f,
+                worldPosition.z * 0.045f));
+
+        // Four-voxel strata make height and geological structure easier to
+        // read. The contrast is intentionally subtle enough to remain Dirt.
+        int band =
+            Mathf.FloorToInt(
+                worldPosition.y / 4f);
+
+        float stratum = (band % 3) switch
+        {
+            0 => 0.91f,
+            1 => 1.00f,
+            _ => 0.96f
+        };
+
+        return ShadeColor(
+            baseColor,
+            patch * stratum);
     }
 }

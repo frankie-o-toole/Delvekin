@@ -5,7 +5,10 @@ using UnityEngine;
 /// Tracks active Direction Alterer jobs and checks whether a proposed
 /// dwarf movement would overlap one.
 ///
-/// Dwarves are redirected before the overlap occurs.
+/// Approaching dwarves are redirected before entering the alterer.
+/// Dwarves that already partially overlap are still redirected until
+/// their anchor reaches the alterer's anchor. Once centred on or past
+/// the alterer, they are allowed to continue.
 /// </summary>
 public static class DirectionAltererRegistry
 {
@@ -58,15 +61,42 @@ public static class DirectionAltererRegistry
                 continue;
             }
 
-            // If the dwarves already overlap, redirection cannot solve the
-            // overlap. Allow the moving dwarf to continue until it leaves.
-            if (VolumesOverlap(
+            bool currentlyOverlapping =
+                VolumesOverlap(
                     movingDwarf.CurrentVoxel,
-                    altererDwarf.CurrentVoxel))
-            {
-                continue;
-            } 
+                    altererDwarf.CurrentVoxel);
 
+            if (currentlyOverlapping)
+            {
+                /*
+                 * A dwarf that has entered only partway should still
+                 * be redirected.
+                 *
+                 * Once its anchor is aligned with or has passed the
+                 * Direction Alterer's anchor along its direction of
+                 * travel, it may continue forward. Redirecting at that
+                 * point would pull it backward through the alterer.
+                 */
+                if (HasReachedOrPassedAltererCentre(
+                        movingDwarf,
+                        altererDwarf))
+                {
+                    continue;
+                }
+
+                outputDirection =
+                    ResolveSafeOutput(
+                        movingDwarf,
+                        alterer);
+
+                return true;
+            }
+
+            /*
+             * The dwarves do not currently overlap. Check whether the
+             * moving dwarf's next proposed anchor would enter the
+             * Direction Alterer's occupied volume.
+             */
             if (!VolumesOverlap(
                     proposedAnchor,
                     altererDwarf.CurrentVoxel))
@@ -84,6 +114,33 @@ public static class DirectionAltererRegistry
 
         outputDirection = default;
         return false;
+    }
+
+    /// <summary>
+    /// Returns true once the moving dwarf's anchor is aligned with or
+    /// has travelled beyond the Direction Alterer's anchor.
+    ///
+    /// The dot product makes this work for all four horizontal
+    /// directions without separate left/right/forward/back rules.
+    /// </summary>
+    private static bool HasReachedOrPassedAltererCentre(
+        DwarfAgent movingDwarf,
+        DwarfAgent altererDwarf)
+    {
+        Vector3Int movementDirection =
+            DirectionUtility.ToVector(
+                movingDwarf.Facing);
+
+        Vector3Int fromMovingDwarfToAlterer =
+            altererDwarf.CurrentVoxel -
+            movingDwarf.CurrentVoxel;
+
+        int remainingDistanceAlongMovement =
+            fromMovingDwarfToAlterer.x * movementDirection.x +
+            fromMovingDwarfToAlterer.y * movementDirection.y +
+            fromMovingDwarfToAlterer.z * movementDirection.z;
+
+        return remainingDistanceAlongMovement <= 0;
     }
 
     private static PuzzleSide ResolveSafeOutput(
@@ -105,8 +162,11 @@ public static class DirectionAltererRegistry
             return requestedDirection;
         }
 
-        // Temporary safety fallback. Step 9 should prevent the player
-        // from choosing an output direction that points into the alterer.
+        /*
+         * Temporary safety fallback. If the requested output would
+         * direct the moving dwarf farther into the alterer, turn it
+         * back toward the direction from which it approached.
+         */
         PuzzleSide fallbackDirection =
             DirectionUtility.Opposite(
                 movingDwarf.Facing);
