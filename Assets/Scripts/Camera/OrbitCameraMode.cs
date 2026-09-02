@@ -12,10 +12,16 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     [SerializeField] private float maxDistance = 80f;
     [SerializeField] private float zoomSpeed = 10f;
 
+    [Tooltip("Maximum distance change accepted from one rendered frame.")]
+    [SerializeField] private float maximumZoomChangePerFrame = 5f;
+
     [Header("Rotation Settings")]
     [SerializeField] private float rotationSpeed = 50f;
     [SerializeField] private float minPitch = -80f;
     [SerializeField] private float maxPitch = 80f;
+
+    [Tooltip("Prevents focus changes or cursor warps from causing a huge rotation in one frame.")]
+    [SerializeField] private float maximumRotationChangePerFrame = 15f;
 
     [Header("Pan Settings")]
     [SerializeField] private float panSpeed = 0.02f;
@@ -27,7 +33,8 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     private float yaw;
     private float pitch = 45f;
 
-    private Vector2 lastMousePos;
+    private Vector2 lastRotationMousePos;
+    private Vector2 lastPanMousePos;
 
     private bool isRotating;
     private bool isPanning;
@@ -77,6 +84,11 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
     public void HandleInput()
     {
+        if (Mouse.current == null)
+        {
+            return;
+        }
+
         Vector2 mousePos =
             Mouse.current.position.ReadValue();
 
@@ -85,21 +97,33 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
             if (!isRotating)
             {
                 isRotating = true;
-                lastMousePos = mousePos;
+                lastRotationMousePos = mousePos;
             }
 
             Vector2 delta =
-                mousePos - lastMousePos;
+                mousePos - lastRotationMousePos;
+
+            float yawChange =
+                Mathf.Clamp(
+                    delta.x *
+                    rotationSpeed *
+                    Time.deltaTime,
+                    -maximumRotationChangePerFrame,
+                    maximumRotationChangePerFrame);
+
+            float pitchChange =
+                Mathf.Clamp(
+                    delta.y *
+                    rotationSpeed *
+                    Time.deltaTime,
+                    -maximumRotationChangePerFrame,
+                    maximumRotationChangePerFrame);
 
             yaw +=
-                delta.x *
-                rotationSpeed *
-                Time.deltaTime;
+                yawChange;
 
             pitch -=
-                delta.y *
-                rotationSpeed *
-                Time.deltaTime;
+                pitchChange;
 
             pitch =
                 Mathf.Clamp(
@@ -107,7 +131,7 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
                     minPitch,
                     maxPitch);
 
-            lastMousePos = mousePos;
+            lastRotationMousePos = mousePos;
         }
         else
         {
@@ -119,11 +143,11 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
             if (!isPanning)
             {
                 isPanning = true;
-                lastMousePos = mousePos;
+                lastPanMousePos = mousePos;
             }
 
             Vector2 delta =
-                mousePos - lastMousePos;
+                mousePos - lastPanMousePos;
 
             Vector3 right =
                 transform.right;
@@ -136,7 +160,7 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
                  -up * delta.y)
                 * panSpeed;
 
-            lastMousePos = mousePos;
+            lastPanMousePos = mousePos;
         }
         else
         {
@@ -148,10 +172,18 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
 
         if (Mathf.Abs(scroll) > 0.01f)
         {
+            float scrollSteps =
+                NormalizeScrollSteps(
+                    scroll);
+
+            float zoomChange =
+                Mathf.Clamp(
+                    scrollSteps * zoomSpeed,
+                    -maximumZoomChangePerFrame,
+                    maximumZoomChangePerFrame);
+
             distance -=
-                scroll *
-                zoomSpeed *
-                Time.deltaTime;
+                zoomChange;
 
             distance =
                 Mathf.Clamp(
@@ -190,18 +222,26 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
         float desiredDistance =
             distance;
 
+        /*
+         * Cast from the desired camera position back toward the orbit
+         * target. The target commonly sits inside the voxel level. Casting
+         * outward from that point could hit terrain immediately and collapse
+         * the camera to minDistance when the orbit angle changed.
+         */
         if (Physics.Raycast(
-                target.position,
-                direction,
+                desiredPosition,
+                -direction,
                 out RaycastHit hit,
                 distance,
                 collisionMask))
         {
             desiredDistance =
-                Mathf.Max(
+                Mathf.Clamp(
+                    distance -
+                    hit.distance +
+                    collisionPadding,
                     minDistance,
-                    hit.distance -
-                    collisionPadding);
+                    distance);
         }
 
         Vector3 finalPosition =
@@ -211,6 +251,25 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
         transform.SetPositionAndRotation(
             finalPosition,
             rotation);
+    }
+
+    private static float NormalizeScrollSteps(
+        float rawScroll)
+    {
+        /*
+         * Windows commonly reports one wheel notch as 120 while some mice
+         * and platforms report values close to 1. Convert both conventions
+         * into a small, predictable step count.
+         */
+        float steps =
+            Mathf.Abs(rawScroll) > 10f
+                ? rawScroll / 120f
+                : rawScroll;
+
+        return Mathf.Clamp(
+            steps,
+            -3f,
+            3f);
     }
 
     public void SetOrbitCenter(Vector3 center)
