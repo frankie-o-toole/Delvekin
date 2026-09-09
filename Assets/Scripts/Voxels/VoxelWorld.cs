@@ -112,11 +112,22 @@ public class VoxelWorld : MonoBehaviour
 
     private void Update()
     {
-        if (simulateFluids &&
-            (fluidSimulationStarted || simulateFluidsBeforeDwarves))
+        if (!simulateFluids ||
+            (!fluidSimulationStarted &&
+             !simulateFluidsBeforeDwarves))
         {
-            fluidSimulation?.Tick(Time.deltaTime);
+            return;
         }
+
+        // Stable water owns no active work. The method is only entered while
+        // an edit or a previous transfer has left water cells awake.
+        if (waterSystem != null &&
+            waterSystem.HasAwakeWater)
+        {
+            waterSystem.Tick(Time.deltaTime);
+        }
+
+        fluidSimulation?.Tick(Time.deltaTime);
     }
 
     public void StartFluidSimulation()
