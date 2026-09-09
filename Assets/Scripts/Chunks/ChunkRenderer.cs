@@ -273,7 +273,12 @@ public class ChunkRenderer : MonoBehaviour
 
     private bool IsWorldFaceExposed(Vector3Int neighborPosition)
     {
-        if (voxelWorld.GetVoxel(neighborPosition).Type == VoxelType.Air)
+        VoxelType neighborType =
+            voxelWorld.GetVoxel(neighborPosition).Type;
+
+        if (neighborType == VoxelType.Air ||
+            neighborType == VoxelType.Water ||
+            neighborType == VoxelType.Lava)
         {
             return true;
         }

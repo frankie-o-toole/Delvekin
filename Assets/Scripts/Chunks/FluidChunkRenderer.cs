@@ -123,11 +123,9 @@ public sealed class FluidChunkRenderer : MonoBehaviour
 
         if (fillHeight < 0.999f || IsFluidFaceExposed(above, type))
         {
-            AddQuad(
-                p + new Vector3(0, surface.SouthWest, 0),
-                p + new Vector3(1, surface.SouthEast, 0),
-                p + new Vector3(1, surface.NorthEast, 1),
-                p + new Vector3(0, surface.NorthWest, 1),
+            AddTopSurface(
+                p,
+                surface,
                 Shade(color, 1.16f));
         }
 
@@ -254,6 +252,62 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         return SurfaceHeights.Flat(0.5f);
     }
 
+    private void AddTopSurface(
+        Vector3 origin,
+        SurfaceHeights heights,
+        Color color)
+    {
+        Vector3 southWest =
+            origin + new Vector3(0, heights.SouthWest, 0);
+        Vector3 southEast =
+            origin + new Vector3(1, heights.SouthEast, 0);
+        Vector3 northEast =
+            origin + new Vector3(1, heights.NorthEast, 1);
+        Vector3 northWest =
+            origin + new Vector3(0, heights.NorthWest, 1);
+
+        const float HighThreshold = 0.999f;
+        int highCount =
+            (heights.SouthWest >= HighThreshold ? 1 : 0) +
+            (heights.SouthEast >= HighThreshold ? 1 : 0) +
+            (heights.NorthEast >= HighThreshold ? 1 : 0) +
+            (heights.NorthWest >= HighThreshold ? 1 : 0);
+
+        // A corner shore is a triangular wedge, not a twisted quad. Omitting
+        // the fourth ground-level triangle avoids invalid interpolation in
+        // the voxel border shader.
+        if (highCount == 1)
+        {
+            if (heights.SouthWest >= HighThreshold)
+            {
+                AddTriangle(southWest, northWest, southEast, color);
+                return;
+            }
+
+            if (heights.SouthEast >= HighThreshold)
+            {
+                AddTriangle(southEast, southWest, northEast, color);
+                return;
+            }
+
+            if (heights.NorthEast >= HighThreshold)
+            {
+                AddTriangle(northEast, southEast, northWest, color);
+                return;
+            }
+
+            AddTriangle(northWest, northEast, southWest, color);
+            return;
+        }
+
+        AddQuad(
+            southWest,
+            southEast,
+            northEast,
+            northWest,
+            color);
+    }
+
     private void AddSide(
         Vector3Int neighbourPosition,
         VoxelType type,
@@ -353,6 +407,32 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         triangles.Add(index + 1);
         triangles.Add(index);
         triangles.Add(index + 3);
+        triangles.Add(index + 2);
+    }
+
+    private void AddTriangle(
+        Vector3 a,
+        Vector3 b,
+        Vector3 c,
+        Color color)
+    {
+        if (Vector3.Cross(b - a, c - a).sqrMagnitude < 0.000001f)
+        {
+            return;
+        }
+
+        int index = vertices.Count;
+
+        vertices.Add(a);
+        vertices.Add(b);
+        vertices.Add(c);
+
+        colors.Add(color);
+        colors.Add(color);
+        colors.Add(color);
+
+        triangles.Add(index);
+        triangles.Add(index + 1);
         triangles.Add(index + 2);
     }
 
