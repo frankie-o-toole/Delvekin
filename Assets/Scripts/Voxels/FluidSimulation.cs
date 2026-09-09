@@ -16,6 +16,9 @@ public class FluidTuning
 
     [Range(0, 4)]
     public int minimumHorizontalDifference = 1;
+
+    [Range(1, 64)]
+    public int drainSearchDistance = 24;
 }
 
 /// <summary>
@@ -185,6 +188,15 @@ public sealed class FluidSimulation : IDisposable
                 continue;
             }
 
+            // Current describes recent movement. A cell that does not move
+            // again settles back to zero on the next simulation tick.
+            if (sourceCell.FlowDirection != Vector3Int.zero)
+            {
+                sourceCell.FlowDirection = Vector3Int.zero;
+                working[source] = sourceCell;
+                changed.Add(source);
+            }
+
             int transferable = Mathf.Min(
                 snapshotCell.Amount,
                 sourceCell.Amount);
@@ -203,7 +215,7 @@ public sealed class FluidSimulation : IDisposable
 
             transferable -= movedDown;
 
-            if (transferable <= 1 ||
+            if (transferable <= 0 ||
                 CanAcceptFluid(working, below, type))
             {
                 continue;
@@ -214,9 +226,10 @@ public sealed class FluidSimulation : IDisposable
                     source.x + source.y + source.z + tickIndex,
                     HorizontalDirections.Length);
 
+            List<HorizontalCandidate> candidates = new();
+
             for (int directionIndex = 0;
-                 directionIndex < HorizontalDirections.Length &&
-                 transferable > 1;
+                 directionIndex < HorizontalDirections.Length;
                  directionIndex++)
             {
                 Vector3Int direction =
@@ -226,6 +239,33 @@ public sealed class FluidSimulation : IDisposable
 
                 Vector3Int target = source + direction;
 
+                if (!CanAcceptFluid(working, target, type))
+                {
+                    continue;
+                }
+
+                candidates.Add(
+                    new HorizontalCandidate(
+                        target,
+                        FindDrainDistance(
+                            working,
+                            target,
+                            type,
+                            tuning.drainSearchDistance),
+                        directionIndex));
+            }
+
+            candidates.Sort(CompareCandidates);
+
+            foreach (HorizontalCandidate candidate in candidates)
+            {
+                if (transferable <= 0)
+                {
+                    break;
+                }
+
+                Vector3Int target = candidate.Position;
+
                 int targetAmount = GetWorkingAmount(
                     working,
                     target,
@@ -233,15 +273,36 @@ public sealed class FluidSimulation : IDisposable
 
                 int difference = transferable - targetAmount;
 
-                if (difference <= tuning.minimumHorizontalDifference)
+                bool drainsDownhill = candidate.DrainDistance >= 0;
+
+                if (!drainsDownhill &&
+                    difference <= tuning.minimumHorizontalDifference)
                 {
                     continue;
                 }
 
+                int available = drainsDownhill
+                    ? transferable
+                    : transferable - 1;
+
+                if (available <= 0)
+                {
+                    continue;
+                }
+
+                int equalizingTransfer = difference / 2;
+
+                if (drainsDownhill)
+                {
+                    equalizingTransfer = Mathf.Max(
+                        1,
+                        equalizingTransfer);
+                }
+
                 int desiredTransfer = Mathf.Min(
-                    difference / 2,
+                    equalizingTransfer,
                     tuning.maximumHorizontalTransfer,
-                    transferable - 1);
+                    available);
 
                 int moved = Transfer(
                     working,
@@ -257,6 +318,110 @@ public sealed class FluidSimulation : IDisposable
 
         tickIndex++;
         ApplyWorkingState(type, working, changed);
+    }
+
+    private readonly struct HorizontalCandidate
+    {
+        public readonly Vector3Int Position;
+        public readonly int DrainDistance;
+        public readonly int Priority;
+
+        public HorizontalCandidate(
+            Vector3Int position,
+            int drainDistance,
+            int priority)
+        {
+            Position = position;
+            DrainDistance = drainDistance;
+            Priority = priority;
+        }
+    }
+
+    private static int CompareCandidates(
+        HorizontalCandidate left,
+        HorizontalCandidate right)
+    {
+        bool leftDrains = left.DrainDistance >= 0;
+        bool rightDrains = right.DrainDistance >= 0;
+
+        if (leftDrains != rightDrains)
+        {
+            return leftDrains ? -1 : 1;
+        }
+
+        if (leftDrains)
+        {
+            int distance = left.DrainDistance.CompareTo(
+                right.DrainDistance);
+
+            if (distance != 0)
+            {
+                return distance;
+            }
+        }
+
+        return left.Priority.CompareTo(right.Priority);
+    }
+
+    private int FindDrainDistance(
+        Dictionary<Vector3Int, FluidCell> state,
+        Vector3Int start,
+        VoxelType type,
+        int maximumDistance)
+    {
+        int clampedMaximum = Mathf.Max(1, maximumDistance);
+        Queue<(Vector3Int Position, int Distance)> frontier = new();
+        HashSet<Vector3Int> visited = new();
+
+        frontier.Enqueue((start, 0));
+        visited.Add(start);
+
+        while (frontier.Count > 0)
+        {
+            var current = frontier.Dequeue();
+            Vector3Int below = current.Position + Vector3Int.down;
+
+            if (!world.ContainsExistingChunkAt(below) ||
+                CanAcceptFluid(state, below, type))
+            {
+                return current.Distance;
+            }
+
+            if (current.Distance >= clampedMaximum)
+            {
+                continue;
+            }
+
+            foreach (Vector3Int direction in HorizontalDirections)
+            {
+                Vector3Int next = current.Position + direction;
+
+                if (visited.Contains(next) ||
+                    !world.ContainsExistingChunkAt(next) ||
+                    !CanTraverseHorizontally(state, next, type))
+                {
+                    continue;
+                }
+
+                visited.Add(next);
+                frontier.Enqueue((next, current.Distance + 1));
+            }
+        }
+
+        return -1;
+    }
+
+    private bool CanTraverseHorizontally(
+        Dictionary<Vector3Int, FluidCell> state,
+        Vector3Int position,
+        VoxelType type)
+    {
+        if (state.TryGetValue(position, out FluidCell cell))
+        {
+            return cell.Type == type;
+        }
+
+        return world.GetVoxel(position).Type == VoxelType.Air;
     }
 
     private int Transfer(
@@ -399,6 +564,10 @@ public sealed class FluidSimulation : IDisposable
         {
             applyingSimulationChanges = false;
         }
+
+        // Amount changes also alter partial-height fluid meshes even when the
+        // underlying voxel type remains Water or Lava.
+        world.RefreshVoxelVisuals(changed);
 
         HashSet<Vector3Int> active = GetActiveSet(type);
         active.Clear();

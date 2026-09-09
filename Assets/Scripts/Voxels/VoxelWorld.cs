@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -25,7 +24,8 @@ public class VoxelWorld : MonoBehaviour
         tickInterval = 0.15f,
         maximumDownwardTransfer = 8,
         maximumHorizontalTransfer = 4,
-        minimumHorizontalDifference = 1
+        minimumHorizontalDifference = 1,
+        drainSearchDistance = 24
     };
 
     [SerializeField]
@@ -34,7 +34,8 @@ public class VoxelWorld : MonoBehaviour
         tickInterval = 0.8f,
         maximumDownwardTransfer = 4,
         maximumHorizontalTransfer = 1,
-        minimumHorizontalDifference = 2
+        minimumHorizontalDifference = 2,
+        drainSearchDistance = 16
     };
 
     private readonly Dictionary<Vector3Int, Chunk> chunks =
@@ -53,7 +54,7 @@ public class VoxelWorld : MonoBehaviour
     private FluidSimulation fluidSimulation;
     private bool fluidSimulationStarted;
 
-    public event Action<Vector3Int, Voxel, Voxel>
+    public event System.Action<Vector3Int, Voxel, Voxel>
         VoxelChanged;
 
     private string fileName =
@@ -80,7 +81,8 @@ public class VoxelWorld : MonoBehaviour
             tickInterval = 0.8f,
             maximumDownwardTransfer = 4,
             maximumHorizontalTransfer = 1,
-            minimumHorizontalDifference = 2
+            minimumHorizontalDifference = 2,
+            drainSearchDistance = 16
         };
 
         fluidSimulation = new FluidSimulation(
@@ -109,12 +111,32 @@ public class VoxelWorld : MonoBehaviour
         fluidSimulationStarted = true;
     }
 
+    public float GetFluidFill01(Vector3Int worldPosition)
+    {
+        VoxelType type = GetVoxel(worldPosition).Type;
+
+        if (type != VoxelType.Water &&
+            type != VoxelType.Lava)
+        {
+            return 0f;
+        }
+
+        if (fluidSimulation == null)
+        {
+            return 1f;
+        }
+
+        return fluidSimulation.GetAmount(worldPosition) /
+               (float)FluidSimulation.MaximumAmount;
+    }
+
     public int GetFluidAmount(Vector3Int worldPosition)
     {
         return fluidSimulation?.GetAmount(worldPosition) ?? 0;
     }
 
-    public Vector3Int GetFluidFlowDirection(Vector3Int worldPosition)
+    public Vector3Int GetFluidFlowDirection(
+        Vector3Int worldPosition)
     {
         return fluidSimulation?.GetFlowDirection(worldPosition) ??
                Vector3Int.zero;
@@ -1167,7 +1189,7 @@ public class VoxelWorld : MonoBehaviour
     }
 
     public void ForEachVoxel(
-        Action<Vector3Int, Voxel> visitor)
+        System.Action<Vector3Int, Voxel> visitor)
     {
         if (visitor == null)
         {
@@ -1193,6 +1215,36 @@ public class VoxelWorld : MonoBehaviour
                     }
                 }
             }
+        }
+    }
+
+    public void RefreshVoxelVisuals(
+        IEnumerable<Vector3Int> worldPositions)
+    {
+        if (worldPositions == null)
+        {
+            return;
+        }
+
+        HashSet<Vector3Int> chunksToRebuild = new();
+
+        foreach (Vector3Int worldPosition in worldPositions)
+        {
+            Vector3Int chunkCoordinate =
+                VoxelMath.WorldToChunkCoord(worldPosition);
+
+            chunksToRebuild.Add(chunkCoordinate);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.right);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.left);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.up);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.down);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.forward);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.back);
+        }
+
+        foreach (Vector3Int chunkCoordinate in chunksToRebuild)
+        {
+            RebuildChunk(chunkCoordinate);
         }
     }
 
@@ -1364,7 +1416,7 @@ public class VoxelWorld : MonoBehaviour
                 depth.ToString();
 
             LoadGeneratedLevel(
-                Random.Range(
+                UnityEngine.Random.Range(
                     0,
                     99999),
                 width,

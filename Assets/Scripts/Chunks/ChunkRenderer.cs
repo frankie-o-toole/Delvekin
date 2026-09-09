@@ -116,18 +116,26 @@ public class ChunkRenderer : MonoBehaviour
                 worldPos);
 
         Vector3 p = new(x, y, z);
+        bool isFluid =
+            voxel.Type == VoxelType.Water ||
+            voxel.Type == VoxelType.Lava;
+
+        float height = isFluid
+            ? Mathf.Max(0.01f, voxelWorld.GetFluidFill01(worldPos))
+            : 1f;
 
         // TOP
-        if (IsFaceExposed(x, y + 1, z))
+        if ((isFluid && height < 0.999f) ||
+            IsFaceExposed(x, y + 1, z))
         {
             AddQuad(
                 vertices,
                 triangles,
                 colors,
-                p + new Vector3(0, 1, 0),
-                p + new Vector3(1, 1, 0),
-                p + new Vector3(1, 1, 1),
-                p + new Vector3(0, 1, 1),
+                p + new Vector3(0, height, 0),
+                p + new Vector3(1, height, 0),
+                p + new Vector3(1, height, 1),
+                p + new Vector3(0, height, 1),
                 ShadeColor(color, 1.16f));
         }
 
@@ -146,60 +154,125 @@ public class ChunkRenderer : MonoBehaviour
         }
 
         // NORTH
-        if (IsFaceExposed(x, y, z + 1))
+        if (TryGetSideBottomHeight(
+                worldPos + Vector3Int.forward,
+                voxel.Type,
+                height,
+                isFluid,
+                out float northBottom))
         {
             AddQuad(
                 vertices,
                 triangles,
                 colors,
-                p + new Vector3(0, 0, 1),
-                p + new Vector3(0, 1, 1),
-                p + new Vector3(1, 1, 1),
-                p + new Vector3(1, 0, 1),
+                p + new Vector3(0, northBottom, 1),
+                p + new Vector3(0, height, 1),
+                p + new Vector3(1, height, 1),
+                p + new Vector3(1, northBottom, 1),
                 ShadeColor(color, 0.82f));
         }
 
         // SOUTH
-        if (IsFaceExposed(x, y, z - 1))
+        if (TryGetSideBottomHeight(
+                worldPos + Vector3Int.back,
+                voxel.Type,
+                height,
+                isFluid,
+                out float southBottom))
         {
             AddQuad(
                 vertices,
                 triangles,
                 colors,
-                p + new Vector3(1, 0, 0),
-                p + new Vector3(1, 1, 0),
-                p + new Vector3(0, 1, 0),
-                p + new Vector3(0, 0, 0),
+                p + new Vector3(1, southBottom, 0),
+                p + new Vector3(1, height, 0),
+                p + new Vector3(0, height, 0),
+                p + new Vector3(0, southBottom, 0),
                 ShadeColor(color, 0.94f));
         }
 
         // EAST
-        if (IsFaceExposed(x + 1, y, z))
+        if (TryGetSideBottomHeight(
+                worldPos + Vector3Int.right,
+                voxel.Type,
+                height,
+                isFluid,
+                out float eastBottom))
         {
             AddQuad(
                 vertices,
                 triangles,
                 colors,
-                p + new Vector3(1, 0, 1),
-                p + new Vector3(1, 1, 1),
-                p + new Vector3(1, 1, 0),
-                p + new Vector3(1, 0, 0),
+                p + new Vector3(1, eastBottom, 1),
+                p + new Vector3(1, height, 1),
+                p + new Vector3(1, height, 0),
+                p + new Vector3(1, eastBottom, 0),
                 ShadeColor(color, 0.72f));
         }
 
         // WEST
-        if (IsFaceExposed(x - 1, y, z))
+        if (TryGetSideBottomHeight(
+                worldPos + Vector3Int.left,
+                voxel.Type,
+                height,
+                isFluid,
+                out float westBottom))
         {
             AddQuad(
                 vertices,
                 triangles,
                 colors,
-                p + new Vector3(0, 0, 0),
-                p + new Vector3(0, 1, 0),
-                p + new Vector3(0, 1, 1),
-                p + new Vector3(0, 0, 1),
+                p + new Vector3(0, westBottom, 0),
+                p + new Vector3(0, height, 0),
+                p + new Vector3(0, height, 1),
+                p + new Vector3(0, westBottom, 1),
                 ShadeColor(color, 0.87f));
         }
+    }
+
+    private bool TryGetSideBottomHeight(
+        Vector3Int neighborPosition,
+        VoxelType voxelType,
+        float height,
+        bool isFluid,
+        out float bottomHeight)
+    {
+        bottomHeight = 0f;
+
+        if (!isFluid)
+        {
+            return IsWorldFaceExposed(neighborPosition);
+        }
+
+        if (!VoxelVisibilitySystem.IsVoxelVisible(neighborPosition))
+        {
+            return true;
+        }
+
+        Voxel neighbor = voxelWorld.GetVoxel(neighborPosition);
+
+        if (neighbor.Type == VoxelType.Air)
+        {
+            return true;
+        }
+
+        if (neighbor.Type != voxelType)
+        {
+            return false;
+        }
+
+        bottomHeight = voxelWorld.GetFluidFill01(neighborPosition);
+        return bottomHeight + 0.001f < height;
+    }
+
+    private bool IsWorldFaceExposed(Vector3Int neighborPosition)
+    {
+        if (voxelWorld.GetVoxel(neighborPosition).Type == VoxelType.Air)
+        {
+            return true;
+        }
+
+        return !VoxelVisibilitySystem.IsVoxelVisible(neighborPosition);
     }
 
     private bool IsFaceExposed(
