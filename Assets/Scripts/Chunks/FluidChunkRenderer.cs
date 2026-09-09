@@ -10,13 +10,37 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         new("Delvekin.Fluid.RebuildMesh");
 
     private readonly List<Color> colors = new();
-    private readonly List<Vector3> normals = new();
     private readonly List<Vector3> vertices = new();
     private readonly List<int> triangles = new();
 
     private Mesh mesh;
     private Chunk chunk;
     private VoxelWorld world;
+
+    private readonly struct SurfaceHeights
+    {
+        public readonly float SouthWest;
+        public readonly float SouthEast;
+        public readonly float NorthEast;
+        public readonly float NorthWest;
+
+        public SurfaceHeights(
+            float southWest,
+            float southEast,
+            float northEast,
+            float northWest)
+        {
+            SouthWest = southWest;
+            SouthEast = southEast;
+            NorthEast = northEast;
+            NorthWest = northWest;
+        }
+
+        public static SurfaceHeights Flat(float height)
+        {
+            return new SurfaceHeights(height, height, height, height);
+        }
+    }
 
     public void Initialize(Chunk chunk, VoxelWorld world)
     {
@@ -38,7 +62,6 @@ public sealed class FluidChunkRenderer : MonoBehaviour
 
         mesh.Clear();
         colors.Clear();
-        normals.Clear();
         vertices.Clear();
         triangles.Clear();
 
@@ -75,7 +98,7 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         mesh.SetColors(colors);
-        mesh.SetNormals(normals);
+        mesh.RecalculateNormals();
         mesh.RecalculateBounds();
     }
 
@@ -85,7 +108,7 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         VoxelType type)
     {
         Vector3 p = localPosition;
-        float height = Mathf.Max(
+        float fillHeight = Mathf.Max(
             0.01f,
             world.GetFluidFill01(worldPosition));
 
@@ -93,15 +116,18 @@ public sealed class FluidChunkRenderer : MonoBehaviour
             ? new Color(0.05f, 0.55f, 0.7f)
             : Color.red;
 
+        SurfaceHeights surface =
+            GetSurfaceHeights(worldPosition, type, fillHeight);
+
         Vector3Int above = worldPosition + Vector3Int.up;
 
-        if (height < 0.999f || IsFluidFaceExposed(above, type))
+        if (fillHeight < 0.999f || IsFluidFaceExposed(above, type))
         {
             AddQuad(
-                p + new Vector3(0, height, 0),
-                p + new Vector3(1, height, 0),
-                p + new Vector3(1, height, 1),
-                p + new Vector3(0, height, 1),
+                p + new Vector3(0, surface.SouthWest, 0),
+                p + new Vector3(1, surface.SouthEast, 0),
+                p + new Vector3(1, surface.NorthEast, 1),
+                p + new Vector3(0, surface.NorthWest, 1),
                 Shade(color, 1.16f));
         }
 
@@ -118,48 +144,120 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         AddSide(
             worldPosition + Vector3Int.forward,
             type,
-            height,
+            fillHeight,
             p + new Vector3(0, 0, 1),
-            p + new Vector3(0, height, 1),
-            p + new Vector3(1, height, 1),
+            p + new Vector3(0, surface.NorthWest, 1),
+            p + new Vector3(1, surface.NorthEast, 1),
             p + new Vector3(1, 0, 1),
             Shade(color, 0.82f));
 
         AddSide(
             worldPosition + Vector3Int.back,
             type,
-            height,
+            fillHeight,
             p + new Vector3(1, 0, 0),
-            p + new Vector3(1, height, 0),
-            p + new Vector3(0, height, 0),
+            p + new Vector3(1, surface.SouthEast, 0),
+            p + new Vector3(0, surface.SouthWest, 0),
             p + new Vector3(0, 0, 0),
             Shade(color, 0.94f));
 
         AddSide(
             worldPosition + Vector3Int.right,
             type,
-            height,
+            fillHeight,
             p + new Vector3(1, 0, 1),
-            p + new Vector3(1, height, 1),
-            p + new Vector3(1, height, 0),
+            p + new Vector3(1, surface.NorthEast, 1),
+            p + new Vector3(1, surface.SouthEast, 0),
             p + new Vector3(1, 0, 0),
             Shade(color, 0.72f));
 
         AddSide(
             worldPosition + Vector3Int.left,
             type,
-            height,
+            fillHeight,
             p + new Vector3(0, 0, 0),
-            p + new Vector3(0, height, 0),
-            p + new Vector3(0, height, 1),
+            p + new Vector3(0, surface.SouthWest, 0),
+            p + new Vector3(0, surface.NorthWest, 1),
             p + new Vector3(0, 0, 1),
             Shade(color, 0.87f));
+    }
+
+    private SurfaceHeights GetSurfaceHeights(
+        Vector3Int position,
+        VoxelType type,
+        float fillHeight)
+    {
+        if (type != VoxelType.Water ||
+            fillHeight > 0.501f ||
+            world.GetVoxel(position + Vector3Int.up).Type ==
+                VoxelType.Water)
+        {
+            return SurfaceHeights.Flat(fillHeight);
+        }
+
+        bool openNorth =
+            world.GetVoxel(position + Vector3Int.forward).Type !=
+            VoxelType.Water;
+
+        bool openSouth =
+            world.GetVoxel(position + Vector3Int.back).Type !=
+            VoxelType.Water;
+
+        bool openEast =
+            world.GetVoxel(position + Vector3Int.right).Type !=
+            VoxelType.Water;
+
+        bool openWest =
+            world.GetVoxel(position + Vector3Int.left).Type !=
+            VoxelType.Water;
+
+        int openCount =
+            (openNorth ? 1 : 0) +
+            (openSouth ? 1 : 0) +
+            (openEast ? 1 : 0) +
+            (openWest ? 1 : 0);
+
+        const float High = 1f;
+        const float Low = 0f;
+
+        if (openCount == 1)
+        {
+            if (openNorth)
+                return new SurfaceHeights(High, High, Low, Low);
+
+            if (openSouth)
+                return new SurfaceHeights(Low, Low, High, High);
+
+            if (openEast)
+                return new SurfaceHeights(High, Low, Low, High);
+
+            return new SurfaceHeights(Low, High, High, Low);
+        }
+
+        if (openCount == 2)
+        {
+            if (openNorth && openEast)
+                return new SurfaceHeights(High, Low, Low, Low);
+
+            if (openNorth && openWest)
+                return new SurfaceHeights(Low, High, Low, Low);
+
+            if (openSouth && openEast)
+                return new SurfaceHeights(Low, Low, Low, High);
+
+            if (openSouth && openWest)
+                return new SurfaceHeights(Low, Low, High, Low);
+        }
+
+        // Isolated cells, straight channels and ambiguous configurations stay
+        // visibly half full instead of collapsing into degenerate geometry.
+        return SurfaceHeights.Flat(0.5f);
     }
 
     private void AddSide(
         Vector3Int neighbourPosition,
         VoxelType type,
-        float height,
+        float fillHeight,
         Vector3 bottomA,
         Vector3 topA,
         Vector3 topB,
@@ -169,7 +267,7 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         if (!TryGetSideBottom(
                 neighbourPosition,
                 type,
-                height,
+                fillHeight,
                 out float neighbourHeight))
         {
             return;
@@ -177,6 +275,12 @@ public sealed class FluidChunkRenderer : MonoBehaviour
 
         bottomA.y += neighbourHeight;
         bottomB.y += neighbourHeight;
+
+        if (topA.y <= bottomA.y + 0.001f &&
+            topB.y <= bottomB.y + 0.001f)
+        {
+            return;
+        }
 
         AddQuad(bottomA, topA, topB, bottomB, color);
     }
@@ -243,13 +347,6 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         colors.Add(color);
         colors.Add(color);
         colors.Add(color);
-
-        // Triangle winding is a-c-b, so calculate the matching face normal.
-        Vector3 normal = Vector3.Cross(c - a, b - a).normalized;
-        normals.Add(normal);
-        normals.Add(normal);
-        normals.Add(normal);
-        normals.Add(normal);
 
         triangles.Add(index);
         triangles.Add(index + 2);

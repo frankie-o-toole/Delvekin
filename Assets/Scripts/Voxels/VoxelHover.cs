@@ -45,6 +45,7 @@ public class VoxelHover : MonoBehaviour
 
     private EditorShape selectedShape = EditorShape.Single;
     private EditorAction selectedAction = EditorAction.Place;
+    private WaterAmount selectedWaterAmount = WaterAmount.Full;
 
     private bool isDraggingTool;
     private Vector3Int dragStartVoxel;
@@ -60,7 +61,7 @@ public class VoxelHover : MonoBehaviour
 
     private const float EditorUiScale = 2.5f;
     private const float EditorPanelWidth = 190f;
-    private const float EditorPanelHeight = 175f;
+    private const float EditorPanelHeight = 205f;
     private const float EditorPanelMargin = 10f;
 
     private void Awake()
@@ -447,6 +448,14 @@ public class VoxelHover : MonoBehaviour
         }
 
         voxelWorld.SetVoxels(previousVoxels.Keys, targetType);
+
+        if (targetType == VoxelType.Water)
+        {
+            voxelWorld.SetWaterAmounts(
+                previousVoxels.Keys,
+                selectedWaterAmount);
+        }
+
         PushUndo(previousVoxels);
 
         Debug.Log(
@@ -743,6 +752,14 @@ public class VoxelHover : MonoBehaviour
 
         GUILayout.Label($"Material: {selectedVoxelType}");
 
+        if (selectedVoxelType == VoxelType.Water)
+        {
+            GUILayout.BeginHorizontal();
+            DrawWaterAmountButton(WaterAmount.Full);
+            DrawWaterAmountButton(WaterAmount.Half);
+            GUILayout.EndHorizontal();
+        }
+
         GUILayout.BeginHorizontal();
         DrawShapeButton(EditorShape.Single);
         DrawShapeButton(EditorShape.Line);
@@ -758,6 +775,20 @@ public class VoxelHover : MonoBehaviour
         GUILayout.Label("Ctrl+Z: undo");
 
         GUILayout.EndArea();
+    }
+
+    private void DrawWaterAmountButton(WaterAmount amount)
+    {
+        bool wasSelected = selectedWaterAmount == amount;
+        bool selectedNow = GUILayout.Toggle(
+            wasSelected,
+            amount.ToString(),
+            GUI.skin.button);
+
+        if (selectedNow && !wasSelected)
+        {
+            selectedWaterAmount = amount;
+        }
     }
 
     private void DrawShapeButton(EditorShape shape)

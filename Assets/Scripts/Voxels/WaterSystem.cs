@@ -62,6 +62,60 @@ public sealed class WaterSystem : IDisposable
         return GetAmount(position) / (float)MaximumAmount;
     }
 
+    public bool SetAmount(
+        Vector3Int position,
+        WaterAmount amount,
+        bool refreshVisuals = true)
+    {
+        if (world.GetVoxel(position).Type != VoxelType.Water ||
+            !cells.TryGetValue(position, out WaterCell cell))
+        {
+            return false;
+        }
+
+        if (cell.Amount == amount)
+        {
+            return false;
+        }
+
+        cell.Amount = amount;
+        cells[position] = cell;
+
+        if (refreshVisuals)
+        {
+            world.RefreshVoxelVisuals(new[] { position });
+        }
+
+        return true;
+    }
+
+    public int SetAmounts(
+        IEnumerable<Vector3Int> positions,
+        WaterAmount amount)
+    {
+        if (positions == null)
+        {
+            return 0;
+        }
+
+        List<Vector3Int> changed = new();
+
+        foreach (Vector3Int position in positions)
+        {
+            if (SetAmount(position, amount, refreshVisuals: false))
+            {
+                changed.Add(position);
+            }
+        }
+
+        if (changed.Count > 0)
+        {
+            world.RefreshVoxelVisuals(changed);
+        }
+
+        return changed.Count;
+    }
+
     public WaterMotion GetMotion(Vector3Int position)
     {
         return cells.TryGetValue(position, out WaterCell cell)

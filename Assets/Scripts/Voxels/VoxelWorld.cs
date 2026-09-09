@@ -173,6 +173,21 @@ public class VoxelWorld : MonoBehaviour
             : Vector3Int.zero;
     }
 
+    public bool SetWaterAmount(
+        Vector3Int worldPosition,
+        WaterAmount amount)
+    {
+        return waterSystem != null &&
+               waterSystem.SetAmount(worldPosition, amount);
+    }
+
+    public int SetWaterAmounts(
+        IEnumerable<Vector3Int> worldPositions,
+        WaterAmount amount)
+    {
+        return waterSystem?.SetAmounts(worldPositions, amount) ?? 0;
+    }
+
     private void Start()
     {
         ChunkRefreshSystem.OnRefreshRequested +=
