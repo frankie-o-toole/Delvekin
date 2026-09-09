@@ -44,6 +44,9 @@ public class VoxelWorld : MonoBehaviour
     private readonly Dictionary<Vector3Int, ChunkRenderer> chunkRenderers =
         new();
 
+    private readonly Dictionary<Vector3Int, FluidChunkRenderer>
+        fluidChunkRenderers = new();
+
     private readonly List<Vector3Int> spawnPoints =
         new();
 
@@ -295,6 +298,7 @@ public class VoxelWorld : MonoBehaviour
         chunks.Clear();
 
         chunkRenderers.Clear();
+        fluidChunkRenderers.Clear();
     }
 
     // =====================================================
@@ -620,6 +624,21 @@ public class VoxelWorld : MonoBehaviour
         chunkRenderers.Add(
             chunk.ChunkCoordinate,
             renderer);
+
+        GameObject fluidObject = new("Fluids");
+        fluidObject.transform.SetParent(go.transform, false);
+
+        FluidChunkRenderer fluidRenderer =
+            fluidObject.AddComponent<FluidChunkRenderer>();
+
+        fluidObject.GetComponent<MeshRenderer>().material =
+            voxelMaterial;
+
+        fluidRenderer.Initialize(chunk, this);
+
+        fluidChunkRenderers.Add(
+            chunk.ChunkCoordinate,
+            fluidRenderer);
     }
 
     // =====================================================
@@ -783,6 +802,11 @@ public class VoxelWorld : MonoBehaviour
         {
             renderer.RebuildMesh();
         }
+
+        foreach (FluidChunkRenderer renderer in fluidChunkRenderers.Values)
+        {
+            renderer.RebuildMesh();
+        }
     }
 
     private void RebuildChunkAndNeighbors(
@@ -829,6 +853,18 @@ public class VoxelWorld : MonoBehaviour
             chunkRenderers.TryGetValue(
                 chunkCoord,
                 out ChunkRenderer renderer))
+        {
+            renderer.RebuildMesh();
+        }
+
+        RebuildFluidChunk(chunkCoord);
+    }
+
+    private void RebuildFluidChunk(Vector3Int chunkCoord)
+    {
+        if (fluidChunkRenderers.TryGetValue(
+                chunkCoord,
+                out FluidChunkRenderer renderer))
         {
             renderer.RebuildMesh();
         }
@@ -1188,6 +1224,64 @@ public class VoxelWorld : MonoBehaviour
         return changedCount;
     }
 
+    /// <summary>
+    /// Applies simulation-owned fluid occupancy without recalculating world
+    /// bounds, rebuilding terrain, or recooking terrain colliders.
+    /// </summary>
+    public int SetFluidVoxelStates(
+        IReadOnlyDictionary<Vector3Int, Voxel> voxelStates)
+    {
+        if (voxelStates == null || voxelStates.Count == 0)
+        {
+            return 0;
+        }
+
+        int changedCount = 0;
+
+        foreach (var pair in voxelStates)
+        {
+            Vector3Int worldPosition = pair.Key;
+            Vector3Int chunkCoordinate =
+                VoxelMath.WorldToChunkCoord(worldPosition);
+
+            if (!chunks.TryGetValue(chunkCoordinate, out Chunk chunk))
+            {
+                continue;
+            }
+
+            Vector3Int localPosition =
+                VoxelMath.WorldToLocalVoxel(worldPosition);
+
+            Voxel previousVoxel = chunk.GetVoxel(
+                localPosition.x,
+                localPosition.y,
+                localPosition.z);
+
+            Voxel currentVoxel = pair.Value;
+
+            if (previousVoxel.Type == currentVoxel.Type &&
+                previousVoxel.Facing == currentVoxel.Facing)
+            {
+                continue;
+            }
+
+            chunk.SetVoxel(
+                localPosition.x,
+                localPosition.y,
+                localPosition.z,
+                currentVoxel);
+
+            changedCount++;
+
+            VoxelChanged?.Invoke(
+                worldPosition,
+                previousVoxel,
+                currentVoxel);
+        }
+
+        return changedCount;
+    }
+
     public void ForEachVoxel(
         System.Action<Vector3Int, Voxel> visitor)
     {
@@ -1234,17 +1328,29 @@ public class VoxelWorld : MonoBehaviour
                 VoxelMath.WorldToChunkCoord(worldPosition);
 
             chunksToRebuild.Add(chunkCoordinate);
-            chunksToRebuild.Add(chunkCoordinate + Vector3Int.right);
-            chunksToRebuild.Add(chunkCoordinate + Vector3Int.left);
-            chunksToRebuild.Add(chunkCoordinate + Vector3Int.up);
-            chunksToRebuild.Add(chunkCoordinate + Vector3Int.down);
-            chunksToRebuild.Add(chunkCoordinate + Vector3Int.forward);
-            chunksToRebuild.Add(chunkCoordinate + Vector3Int.back);
+
+            Vector3Int localPosition =
+                VoxelMath.WorldToLocalVoxel(worldPosition);
+
+            if (localPosition.x == 0)
+                chunksToRebuild.Add(chunkCoordinate + Vector3Int.left);
+            else if (localPosition.x == Chunk.ChunkSize - 1)
+                chunksToRebuild.Add(chunkCoordinate + Vector3Int.right);
+
+            if (localPosition.y == 0)
+                chunksToRebuild.Add(chunkCoordinate + Vector3Int.down);
+            else if (localPosition.y == Chunk.ChunkSize - 1)
+                chunksToRebuild.Add(chunkCoordinate + Vector3Int.up);
+
+            if (localPosition.z == 0)
+                chunksToRebuild.Add(chunkCoordinate + Vector3Int.back);
+            else if (localPosition.z == Chunk.ChunkSize - 1)
+                chunksToRebuild.Add(chunkCoordinate + Vector3Int.forward);
         }
 
         foreach (Vector3Int chunkCoordinate in chunksToRebuild)
         {
-            RebuildChunk(chunkCoordinate);
+            RebuildFluidChunk(chunkCoordinate);
         }
     }
 

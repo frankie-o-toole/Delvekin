@@ -45,6 +45,10 @@ public sealed class FluidSimulation : IDisposable
     private readonly Dictionary<Vector3Int, FluidCell> cells = new();
     private readonly HashSet<Vector3Int> activeWater = new();
     private readonly HashSet<Vector3Int> activeLava = new();
+    private readonly HashSet<Vector3Int> drainRegion = new();
+    private readonly Dictionary<Vector3Int, int> drainRegionDepth = new();
+    private readonly Dictionary<Vector3Int, int> drainDistances = new();
+    private readonly Queue<Vector3Int> drainFrontier = new();
 
     private float waterElapsed;
     private float lavaElapsed;
@@ -173,6 +177,12 @@ public sealed class FluidSimulation : IDisposable
         Dictionary<Vector3Int, FluidCell> working =
             new(cells);
 
+        BuildDrainMap(
+            working,
+            type,
+            active,
+            tuning.drainSearchDistance);
+
         List<Vector3Int> sources = new(active);
         sources.Sort(ComparePositions);
 
@@ -247,11 +257,11 @@ public sealed class FluidSimulation : IDisposable
                 candidates.Add(
                     new HorizontalCandidate(
                         target,
-                        FindDrainDistance(
-                            working,
+                        drainDistances.TryGetValue(
                             target,
-                            type,
-                            tuning.drainSearchDistance),
+                            out int drainDistance)
+                                ? drainDistance
+                                : -1,
                         directionIndex));
             }
 
@@ -363,52 +373,99 @@ public sealed class FluidSimulation : IDisposable
         return left.Priority.CompareTo(right.Priority);
     }
 
-    private int FindDrainDistance(
+    private void BuildDrainMap(
         Dictionary<Vector3Int, FluidCell> state,
-        Vector3Int start,
         VoxelType type,
+        HashSet<Vector3Int> active,
         int maximumDistance)
     {
         int clampedMaximum = Mathf.Max(1, maximumDistance);
-        Queue<(Vector3Int Position, int Distance)> frontier = new();
-        HashSet<Vector3Int> visited = new();
 
-        frontier.Enqueue((start, 0));
-        visited.Add(start);
+        drainRegion.Clear();
+        drainRegionDepth.Clear();
+        drainDistances.Clear();
+        drainFrontier.Clear();
 
-        while (frontier.Count > 0)
+        foreach (Vector3Int position in active)
         {
-            var current = frontier.Dequeue();
-            Vector3Int below = current.Position + Vector3Int.down;
-
-            if (!world.ContainsExistingChunkAt(below) ||
-                CanAcceptFluid(state, below, type))
+            if (!CanTraverseHorizontally(state, position, type) ||
+                drainRegion.Contains(position))
             {
-                return current.Distance;
+                continue;
             }
 
-            if (current.Distance >= clampedMaximum)
+            drainRegion.Add(position);
+            drainRegionDepth[position] = 0;
+            drainFrontier.Enqueue(position);
+        }
+
+        // Build the union of horizontally reachable cells once. Previously
+        // every source performed its own overlapping breadth-first search.
+        while (drainFrontier.Count > 0)
+        {
+            Vector3Int current = drainFrontier.Dequeue();
+            int depth = drainRegionDepth[current];
+
+            if (depth >= clampedMaximum)
             {
                 continue;
             }
 
             foreach (Vector3Int direction in HorizontalDirections)
             {
-                Vector3Int next = current.Position + direction;
+                Vector3Int next = current + direction;
 
-                if (visited.Contains(next) ||
+                if (drainRegion.Contains(next) ||
                     !world.ContainsExistingChunkAt(next) ||
                     !CanTraverseHorizontally(state, next, type))
                 {
                     continue;
                 }
 
-                visited.Add(next);
-                frontier.Enqueue((next, current.Distance + 1));
+                drainRegion.Add(next);
+                drainRegionDepth[next] = depth + 1;
+                drainFrontier.Enqueue(next);
             }
         }
 
-        return -1;
+        // Seed every downhill opening, then expand outward. The resulting map
+        // gives every candidate an O(1) nearest-drain distance lookup.
+        foreach (Vector3Int position in drainRegion)
+        {
+            Vector3Int below = position + Vector3Int.down;
+
+            if (!world.ContainsExistingChunkAt(below) ||
+                CanAcceptFluid(state, below, type))
+            {
+                drainDistances[position] = 0;
+                drainFrontier.Enqueue(position);
+            }
+        }
+
+        while (drainFrontier.Count > 0)
+        {
+            Vector3Int current = drainFrontier.Dequeue();
+            int distance = drainDistances[current];
+
+            if (distance >= clampedMaximum)
+            {
+                continue;
+            }
+
+            foreach (Vector3Int direction in HorizontalDirections)
+            {
+                Vector3Int next = current + direction;
+
+                if (!drainRegion.Contains(next) ||
+                    drainDistances.ContainsKey(next))
+                {
+                    continue;
+                }
+
+                drainDistances[next] = distance + 1;
+                drainFrontier.Enqueue(next);
+            }
+        }
     }
 
     private bool CanTraverseHorizontally(
@@ -557,7 +614,7 @@ public sealed class FluidSimulation : IDisposable
         {
             if (voxelChanges.Count > 0)
             {
-                world.SetVoxelStates(voxelChanges);
+                world.SetFluidVoxelStates(voxelChanges);
             }
         }
         finally

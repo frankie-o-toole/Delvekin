@@ -63,6 +63,12 @@ public class ChunkRenderer : MonoBehaviour
                     if (!voxel.IsSolid())
                         continue;
 
+                    if (voxel.Type == VoxelType.Water ||
+                        voxel.Type == VoxelType.Lava)
+                    {
+                        continue;
+                    }
+
                     Vector3Int worldPos =
                         chunk.ChunkCoordinate * Chunk.ChunkSize +
                         new Vector3Int(x, y, z);
@@ -290,7 +296,9 @@ public class ChunkRenderer : MonoBehaviour
         Voxel neighborVoxel =
             voxelWorld.GetVoxel(worldNeighborPos);
 
-        if (neighborVoxel.Type == VoxelType.Air)
+        if (neighborVoxel.Type == VoxelType.Air ||
+            neighborVoxel.Type == VoxelType.Water ||
+            neighborVoxel.Type == VoxelType.Lava)
             return true;
 
         if (!VoxelVisibilitySystem.IsVoxelVisible(worldNeighborPos))
