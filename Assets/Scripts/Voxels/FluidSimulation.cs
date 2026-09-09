@@ -20,6 +20,9 @@ public class FluidTuning
 
     [Range(1, 64)]
     public int drainSearchDistance = 24;
+
+    [Min(128)]
+    public int maximumDrainNodesPerFrame = 2048;
 }
 
 /// <summary>
@@ -94,12 +97,26 @@ public sealed class FluidSimulation : IDisposable
         public readonly Queue<Vector3Int> Frontier = new();
 
         public bool IsValid;
+        public bool IsBuilding;
         public int MaximumDistance;
+        public DrainBuildPhase Phase;
+        public HashSet<Vector3Int>.Enumerator SeedEnumerator;
 
         public void Invalidate()
         {
+            SeedEnumerator.Dispose();
             IsValid = false;
+            IsBuilding = false;
+            Phase = DrainBuildPhase.None;
         }
+    }
+
+    private enum DrainBuildPhase
+    {
+        None,
+        ExpandRegion,
+        SeedDrains,
+        ExpandDistances
     }
 
     public FluidSimulation(
@@ -188,6 +205,27 @@ public sealed class FluidSimulation : IDisposable
         ref float elapsed)
     {
         float interval = Mathf.Max(0.02f, tuning.tickInterval);
+        DrainMapCache drainMap = GetDrainMap(type);
+
+        if (drainMap.IsBuilding)
+        {
+            using (DrainMapMarker.Auto())
+            {
+                AdvanceDrainMap(
+                    drainMap,
+                    type,
+                    GetDrainNodeBudget(tuning));
+            }
+
+            // Do not accumulate a burst of catch-up ticks while routing is
+            // built over multiple rendered frames.
+            elapsed = Mathf.Min(elapsed, interval);
+
+            if (!drainMap.IsValid)
+            {
+                return;
+            }
+        }
 
         // The cap prevents a long hitch from causing an even larger catch-up
         // hitch. Remaining elapsed time is retained for later frames.
@@ -196,12 +234,18 @@ public sealed class FluidSimulation : IDisposable
         while (elapsed >= interval && ticksThisFrame < 4)
         {
             elapsed -= interval;
-            SimulateType(type, tuning);
+
+            if (!SimulateType(type, tuning))
+            {
+                elapsed = Mathf.Min(elapsed, interval);
+                break;
+            }
+
             ticksThisFrame++;
         }
     }
 
-    private void SimulateType(
+    private bool SimulateType(
         VoxelType type,
         FluidTuning tuning)
     {
@@ -209,7 +253,7 @@ public sealed class FluidSimulation : IDisposable
 
         if (active.Count == 0)
         {
-            return;
+            return true;
         }
 
         using (CopyStateMarker.Auto())
@@ -226,12 +270,15 @@ public sealed class FluidSimulation : IDisposable
 
         using (DrainMapMarker.Auto())
         {
-            EnsureDrainMap(
+            if (!EnsureDrainMap(
                 drainMap,
-                working,
                 type,
                 active,
-                tuning.drainSearchDistance);
+                tuning.drainSearchDistance,
+                GetDrainNodeBudget(tuning)))
+            {
+                return false;
+            }
         }
 
         sources.Clear();
@@ -368,8 +415,9 @@ public sealed class FluidSimulation : IDisposable
                     }
 
                     int desiredTransfer = Mathf.Min(
-                        equalizingTransfer,
-                        tuning.maximumHorizontalTransfer,
+                        Mathf.Min(
+                            equalizingTransfer,
+                            tuning.maximumHorizontalTransfer),
                         available);
 
                     int moved = Transfer(
@@ -391,6 +439,8 @@ public sealed class FluidSimulation : IDisposable
         {
             ApplyWorkingState(type, working, changed);
         }
+
+        return true;
     }
 
     private readonly struct HorizontalCandidate
@@ -456,12 +506,12 @@ public sealed class FluidSimulation : IDisposable
         }
     }
 
-    private void EnsureDrainMap(
+    private bool EnsureDrainMap(
         DrainMapCache cache,
-        Dictionary<Vector3Int, FluidCell> state,
         VoxelType type,
         HashSet<Vector3Int> active,
-        int maximumDistance)
+        int maximumDistance,
+        int nodeBudget)
     {
         int clampedMaximum = Mathf.Max(1, maximumDistance);
 
@@ -483,20 +533,21 @@ public sealed class FluidSimulation : IDisposable
 
         if (!requiresRebuild)
         {
-            return;
+            return true;
         }
 
-        BuildDrainMap(
+        StartDrainMapBuild(
             cache,
-            state,
             type,
             active,
             clampedMaximum);
+
+        AdvanceDrainMap(cache, type, nodeBudget);
+        return cache.IsValid;
     }
 
-    private void BuildDrainMap(
+    private void StartDrainMapBuild(
         DrainMapCache cache,
-        Dictionary<Vector3Int, FluidCell> state,
         VoxelType type,
         HashSet<Vector3Int> active,
         int maximumDistance)
@@ -506,10 +557,13 @@ public sealed class FluidSimulation : IDisposable
         cache.Distances.Clear();
         cache.Frontier.Clear();
         cache.MaximumDistance = maximumDistance;
+        cache.IsValid = false;
+        cache.IsBuilding = true;
+        cache.Phase = DrainBuildPhase.ExpandRegion;
 
         foreach (Vector3Int position in active)
         {
-            if (!CanTraverseHorizontally(state, position, type) ||
+            if (!CanTraverseHorizontally(cells, position, type) ||
                 cache.Region.Contains(position))
             {
                 continue;
@@ -519,76 +573,141 @@ public sealed class FluidSimulation : IDisposable
             cache.RegionDepth[position] = 0;
             cache.Frontier.Enqueue(position);
         }
+    }
 
-        // Build the union of horizontally reachable cells once. Previously
-        // every source performed its own overlapping breadth-first search.
-        while (cache.Frontier.Count > 0)
+    private void AdvanceDrainMap(
+        DrainMapCache cache,
+        VoxelType type,
+        int nodeBudget)
+    {
+        int remainingBudget = Mathf.Max(128, nodeBudget);
+
+        while (remainingBudget > 0 && cache.IsBuilding)
         {
-            Vector3Int current = cache.Frontier.Dequeue();
-            int depth = cache.RegionDepth[current];
+            switch (cache.Phase)
+            {
+                case DrainBuildPhase.ExpandRegion:
+                    if (cache.Frontier.Count == 0)
+                    {
+                        cache.SeedEnumerator =
+                            cache.Region.GetEnumerator();
+                        cache.Phase = DrainBuildPhase.SeedDrains;
+                        continue;
+                    }
 
-            if (depth >= maximumDistance)
+                    ExpandOneRegionNode(cache, type);
+                    remainingBudget--;
+                    break;
+
+                case DrainBuildPhase.SeedDrains:
+                    if (!cache.SeedEnumerator.MoveNext())
+                    {
+                        cache.SeedEnumerator.Dispose();
+                        cache.Phase = DrainBuildPhase.ExpandDistances;
+                        continue;
+                    }
+
+                    SeedOneDrain(
+                        cache,
+                        type,
+                        cache.SeedEnumerator.Current);
+                    remainingBudget--;
+                    break;
+
+                case DrainBuildPhase.ExpandDistances:
+                    if (cache.Frontier.Count == 0)
+                    {
+                        cache.IsBuilding = false;
+                        cache.IsValid = true;
+                        cache.Phase = DrainBuildPhase.None;
+                        continue;
+                    }
+
+                    ExpandOneDistanceNode(cache);
+                    remainingBudget--;
+                    break;
+
+                default:
+                    cache.IsBuilding = false;
+                    break;
+            }
+        }
+    }
+
+    private void ExpandOneRegionNode(
+        DrainMapCache cache,
+        VoxelType type)
+    {
+        Vector3Int current = cache.Frontier.Dequeue();
+        int depth = cache.RegionDepth[current];
+
+        if (depth >= cache.MaximumDistance)
+        {
+            return;
+        }
+
+        foreach (Vector3Int direction in HorizontalDirections)
+        {
+            Vector3Int next = current + direction;
+
+            if (cache.Region.Contains(next) ||
+                !world.ContainsExistingChunkAt(next) ||
+                !CanTraverseHorizontally(cells, next, type))
             {
                 continue;
             }
 
-            foreach (Vector3Int direction in HorizontalDirections)
-            {
-                Vector3Int next = current + direction;
+            cache.Region.Add(next);
+            cache.RegionDepth[next] = depth + 1;
+            cache.Frontier.Enqueue(next);
+        }
+    }
 
-                if (cache.Region.Contains(next) ||
-                    !world.ContainsExistingChunkAt(next) ||
-                    !CanTraverseHorizontally(state, next, type))
-                {
-                    continue;
-                }
+    private void SeedOneDrain(
+        DrainMapCache cache,
+        VoxelType type,
+        Vector3Int position)
+    {
+        Vector3Int below = position + Vector3Int.down;
 
-                cache.Region.Add(next);
-                cache.RegionDepth[next] = depth + 1;
-                cache.Frontier.Enqueue(next);
-            }
+        if (!world.ContainsExistingChunkAt(below) ||
+            CanAcceptFluid(cells, below, type))
+        {
+            cache.Distances[position] = 0;
+            cache.Frontier.Enqueue(position);
+        }
+    }
+
+    private void ExpandOneDistanceNode(DrainMapCache cache)
+    {
+        Vector3Int current = cache.Frontier.Dequeue();
+        int distance = cache.Distances[current];
+
+        if (distance >= cache.MaximumDistance)
+        {
+            return;
         }
 
-        // Seed every downhill opening, then expand outward. The resulting map
-        // gives every candidate an O(1) nearest-drain distance lookup.
-        foreach (Vector3Int position in cache.Region)
+        foreach (Vector3Int direction in HorizontalDirections)
         {
-            Vector3Int below = position + Vector3Int.down;
+            Vector3Int next = current + direction;
 
-            if (!world.ContainsExistingChunkAt(below) ||
-                CanAcceptFluid(state, below, type))
-            {
-                cache.Distances[position] = 0;
-                cache.Frontier.Enqueue(position);
-            }
-        }
-
-        while (cache.Frontier.Count > 0)
-        {
-            Vector3Int current = cache.Frontier.Dequeue();
-            int distance = cache.Distances[current];
-
-            if (distance >= maximumDistance)
+            if (!cache.Region.Contains(next) ||
+                cache.Distances.ContainsKey(next))
             {
                 continue;
             }
 
-            foreach (Vector3Int direction in HorizontalDirections)
-            {
-                Vector3Int next = current + direction;
-
-                if (!cache.Region.Contains(next) ||
-                    cache.Distances.ContainsKey(next))
-                {
-                    continue;
-                }
-
-                cache.Distances[next] = distance + 1;
-                cache.Frontier.Enqueue(next);
-            }
+            cache.Distances[next] = distance + 1;
+            cache.Frontier.Enqueue(next);
         }
+    }
 
-        cache.IsValid = true;
+    private static int GetDrainNodeBudget(FluidTuning tuning)
+    {
+        return tuning.maximumDrainNodesPerFrame > 0
+            ? Mathf.Max(128, tuning.maximumDrainNodesPerFrame)
+            : 2048;
     }
 
     private bool CanTraverseHorizontally(
@@ -639,8 +758,7 @@ public sealed class FluidSimulation : IDisposable
 
         int targetAmount = GetWorkingAmount(working, target, type);
         int moved = Mathf.Min(
-            requestedAmount,
-            sourceCell.Amount,
+            Mathf.Min(requestedAmount, sourceCell.Amount),
             MaximumAmount - targetAmount);
 
         if (moved <= 0)
