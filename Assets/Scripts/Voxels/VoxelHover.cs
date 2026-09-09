@@ -60,7 +60,7 @@ public class VoxelHover : MonoBehaviour
 
     private const float EditorUiScale = 2.5f;
     private const float EditorPanelWidth = 190f;
-    private const float EditorPanelHeight = 155f;
+    private const float EditorPanelHeight = 175f;
     private const float EditorPanelMargin = 10f;
 
     private void Awake()
@@ -471,6 +471,12 @@ public class VoxelHover : MonoBehaviour
 
         if (selectedShape == EditorShape.Line)
         {
+            if (IsAxisLockHeld())
+            {
+                end = LockToDominantAxis(start, end);
+                difference = end - start;
+            }
+
             int steps = Mathf.Max(
                 Mathf.Abs(difference.x),
                 Mathf.Abs(difference.y),
@@ -532,6 +538,46 @@ public class VoxelHover : MonoBehaviour
         }
 
         return true;
+    }
+
+    private static bool IsAxisLockHeld()
+    {
+        return Keyboard.current != null &&
+               (Keyboard.current.leftShiftKey.isPressed ||
+                Keyboard.current.rightShiftKey.isPressed);
+    }
+
+    private static Vector3Int LockToDominantAxis(
+        Vector3Int start,
+        Vector3Int end)
+    {
+        Vector3Int difference = end - start;
+
+        int xDistance = Mathf.Abs(difference.x);
+        int yDistance = Mathf.Abs(difference.y);
+        int zDistance = Mathf.Abs(difference.z);
+
+        if (xDistance >= yDistance &&
+            xDistance >= zDistance)
+        {
+            return new Vector3Int(
+                end.x,
+                start.y,
+                start.z);
+        }
+
+        if (yDistance >= zDistance)
+        {
+            return new Vector3Int(
+                start.x,
+                end.y,
+                start.z);
+        }
+
+        return new Vector3Int(
+            start.x,
+            start.y,
+            end.z);
     }
 
     private void WarnOperationTooLarge(long voxelCount)
@@ -708,7 +754,8 @@ public class VoxelHover : MonoBehaviour
         DrawActionButton(EditorAction.Erase);
         GUILayout.EndHorizontal();
 
-        GUILayout.Label("LMB drag: apply   Ctrl+Z: undo");
+        GUILayout.Label("LMB drag: apply   Shift: straight");
+        GUILayout.Label("Ctrl+Z: undo");
 
         GUILayout.EndArea();
     }

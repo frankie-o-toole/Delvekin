@@ -171,8 +171,9 @@ public static class DwarfWorldQueries
     }
 
     /// <summary>
-    /// Counts correctly oriented Ladder voxels touching the dwarf's
-    /// three-wide face. The dwarf remains outside the solid Ladder volume.
+    /// Counts climbable voxels touching the dwarf's three-wide face.
+    /// Built Ladders must face the dwarf; natural Vine walls can be climbed
+    /// from any side. The dwarf remains outside the solid climbable volume.
     /// </summary>
     public static int CountLadderContact(
         VoxelWorld world,
@@ -209,8 +210,14 @@ public static class DwarfWorldQueries
                     ladderCentre +
                     sideways * side);
 
-            if (voxel.Type == VoxelType.Ladder &&
-                voxel.Facing == ladderOutwardSide)
+            bool matchingLadder =
+                voxel.Type == VoxelType.Ladder &&
+                voxel.Facing == ladderOutwardSide;
+
+            bool naturalClimbable =
+                voxel.Type == VoxelType.Vine;
+
+            if (matchingLadder || naturalClimbable)
             {
                 count++;
             }

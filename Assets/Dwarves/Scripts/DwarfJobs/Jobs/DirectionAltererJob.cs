@@ -11,8 +11,6 @@ public class DirectionAltererJob : IDwarfJob
     private DwarfJobContext context;
     private bool registered;
     private bool warnedAboutInvalidOutput;
-    private PuzzleSide approachDirection;
-    private bool hasApproachDirection;
 
     private readonly DirectionAltererTurn selectedTurn;
 
@@ -142,10 +140,8 @@ public class DirectionAltererJob : IDwarfJob
     {
         context = jobContext;
 
-        approachDirection =
+        PuzzleSide approachDirection =
             context.Agent.Facing;
-
-        hasApproachDirection = true;
 
         OutputDirection =
             DirectionUtility.ApplyTurn(
