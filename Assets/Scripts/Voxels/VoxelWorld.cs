@@ -173,6 +173,39 @@ public class VoxelWorld : MonoBehaviour
             : Vector3Int.zero;
     }
 
+    public bool SetWaterAmount(
+        Vector3Int worldPosition,
+        WaterAmount amount)
+    {
+        return waterSystem != null &&
+               waterSystem.SetAmount(worldPosition, amount);
+    }
+
+    public bool SetWaterSource(WaterSourceData source)
+    {
+        return waterSystem != null &&
+               waterSystem.SetSource(source);
+    }
+
+    public bool RemoveWaterSource(Vector3Int worldPosition)
+    {
+        return waterSystem != null &&
+               waterSystem.RemoveSource(worldPosition);
+    }
+
+    public bool TryGetWaterSource(
+        Vector3Int worldPosition,
+        out WaterSourceData source)
+    {
+        if (waterSystem != null)
+        {
+            return waterSystem.TryGetSource(worldPosition, out source);
+        }
+
+        source = default;
+        return false;
+    }
+
     private void Start()
     {
         ChunkRefreshSystem.OnRefreshRequested +=
@@ -266,11 +299,30 @@ public class VoxelWorld : MonoBehaviour
                                 type =
                                     voxel.Type,
 
+                                waterAmount =
+                                    voxel.Type == VoxelType.Water
+                                        ? (byte)(waterSystem?.GetAmount(
+                                            new Vector3Int(
+                                                chunkCoord.x * Chunk.ChunkSize + x,
+                                                chunkCoord.y * Chunk.ChunkSize + y,
+                                                chunkCoord.z * Chunk.ChunkSize + z)) ??
+                                            (int)WaterAmount.Full)
+                                        : (byte)0,
+
                                 facing =
                                     voxel.Facing
                             });
                     }
                 }
+            }
+        }
+
+        if (waterSystem != null)
+        {
+            foreach (WaterSourceData source in waterSystem.GetSources())
+            {
+                save.waterSources.Add(
+                    SavedWaterSource.FromRuntime(source));
             }
         }
 
@@ -507,7 +559,7 @@ public class VoxelWorld : MonoBehaviour
         VoxelVisibilitySystem
             .ResetVisibility();
 
-        waterSystem?.ResetFromWorld();
+        waterSystem?.ResetFromWorld(save);
         fluidSimulation?.ResetFromWorld();
 
         ChunkRefreshSystem
