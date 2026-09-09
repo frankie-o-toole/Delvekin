@@ -56,6 +56,7 @@ public class VoxelWorld : MonoBehaviour
         new();
 
     private LevelData currentLevel;
+    private WaterSystem waterSystem;
     private FluidSimulation fluidSimulation;
     private bool fluidSimulationStarted;
 
@@ -90,10 +91,17 @@ public class VoxelWorld : MonoBehaviour
             drainSearchDistance = 16
         };
 
+        waterSystem = new WaterSystem(this);
+
+        // Water now has its own deliberately static phase-one data model.
+        // The legacy solver remains active for Lava only until Lava receives
+        // its own design pass.
         fluidSimulation = new FluidSimulation(
             this,
             waterFluid,
-            lavaFluid);
+            lavaFluid,
+            simulateWater: false,
+            simulateLava: true);
 
         if (cameraStateController == null)
         {
@@ -120,31 +128,49 @@ public class VoxelWorld : MonoBehaviour
     {
         VoxelType type = GetVoxel(worldPosition).Type;
 
-        if (type != VoxelType.Water &&
-            type != VoxelType.Lava)
+        if (type == VoxelType.Water)
         {
-            return 0f;
+            return waterSystem?.GetFill01(worldPosition) ?? 1f;
         }
 
-        if (fluidSimulation == null)
+        if (type == VoxelType.Lava)
         {
-            return 1f;
+            return fluidSimulation?.GetAmount(worldPosition) /
+                   (float)FluidSimulation.MaximumAmount ?? 1f;
         }
 
-        return fluidSimulation.GetAmount(worldPosition) /
-               (float)FluidSimulation.MaximumAmount;
+        return 0f;
     }
 
     public int GetFluidAmount(Vector3Int worldPosition)
     {
-        return fluidSimulation?.GetAmount(worldPosition) ?? 0;
+        VoxelType type = GetVoxel(worldPosition).Type;
+
+        if (type == VoxelType.Water)
+        {
+            return waterSystem?.GetAmount(worldPosition) ?? 0;
+        }
+
+        return type == VoxelType.Lava
+            ? fluidSimulation?.GetAmount(worldPosition) ?? 0
+            : 0;
     }
 
     public Vector3Int GetFluidFlowDirection(
         Vector3Int worldPosition)
     {
-        return fluidSimulation?.GetFlowDirection(worldPosition) ??
-               Vector3Int.zero;
+        VoxelType type = GetVoxel(worldPosition).Type;
+
+        if (type == VoxelType.Water)
+        {
+            return waterSystem?.GetPrimaryFlowDirection(worldPosition) ??
+                   Vector3Int.zero;
+        }
+
+        return type == VoxelType.Lava
+            ? fluidSimulation?.GetFlowDirection(worldPosition) ??
+              Vector3Int.zero
+            : Vector3Int.zero;
     }
 
     private void Start()
@@ -164,6 +190,7 @@ public class VoxelWorld : MonoBehaviour
 
     private void OnDestroy()
     {
+        waterSystem?.Dispose();
         fluidSimulation?.Dispose();
 
         ChunkRefreshSystem.OnRefreshRequested -=
@@ -480,6 +507,7 @@ public class VoxelWorld : MonoBehaviour
         VoxelVisibilitySystem
             .ResetVisibility();
 
+        waterSystem?.ResetFromWorld();
         fluidSimulation?.ResetFromWorld();
 
         ChunkRefreshSystem
@@ -582,6 +610,7 @@ public class VoxelWorld : MonoBehaviour
         VoxelVisibilitySystem
             .ResetVisibility();
 
+        waterSystem?.ResetFromWorld();
         fluidSimulation?.ResetFromWorld();
 
         ChunkRefreshSystem

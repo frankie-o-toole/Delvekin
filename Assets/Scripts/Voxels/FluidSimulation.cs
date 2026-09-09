@@ -56,6 +56,8 @@ public sealed class FluidSimulation : IDisposable
     private readonly VoxelWorld world;
     private readonly FluidTuning waterTuning;
     private readonly FluidTuning lavaTuning;
+    private readonly bool simulateWater;
+    private readonly bool simulateLava;
 
     private readonly Dictionary<Vector3Int, FluidCell> cells = new();
     private readonly HashSet<Vector3Int> activeWater = new();
@@ -122,11 +124,15 @@ public sealed class FluidSimulation : IDisposable
     public FluidSimulation(
         VoxelWorld world,
         FluidTuning waterTuning,
-        FluidTuning lavaTuning)
+        FluidTuning lavaTuning,
+        bool simulateWater = true,
+        bool simulateLava = true)
     {
         this.world = world;
         this.waterTuning = waterTuning;
         this.lavaTuning = lavaTuning;
+        this.simulateWater = simulateWater;
+        this.simulateLava = simulateLava;
 
         world.VoxelChanged += HandleVoxelChanged;
     }
@@ -154,7 +160,7 @@ public sealed class FluidSimulation : IDisposable
         world.ForEachVoxel(
             (position, voxel) =>
             {
-                if (!IsFluid(voxel.Type))
+                if (!IsSimulatedFluid(voxel.Type))
                 {
                     return;
                 }
@@ -173,15 +179,21 @@ public sealed class FluidSimulation : IDisposable
             waterElapsed += deltaTime;
             lavaElapsed += deltaTime;
 
-            RunDueTicks(
-                VoxelType.Water,
-                waterTuning,
-                ref waterElapsed);
+            if (simulateWater)
+            {
+                RunDueTicks(
+                    VoxelType.Water,
+                    waterTuning,
+                    ref waterElapsed);
+            }
 
-            RunDueTicks(
-                VoxelType.Lava,
-                lavaTuning,
-                ref lavaElapsed);
+            if (simulateLava)
+            {
+                RunDueTicks(
+                    VoxelType.Lava,
+                    lavaTuning,
+                    ref lavaElapsed);
+            }
         }
     }
 
@@ -916,11 +928,18 @@ public sealed class FluidSimulation : IDisposable
         // where a downward opening exists. Simulation-owned Air <-> Fluid
         // changes keep those routes equivalent and deliberately do not reach
         // this invalidation path.
-        waterDrainMap.Invalidate();
-        lavaDrainMap.Invalidate();
+        if (simulateWater)
+        {
+            waterDrainMap.Invalidate();
+        }
 
-        bool previousWasFluid = IsFluid(previous.Type);
-        bool currentIsFluid = IsFluid(current.Type);
+        if (simulateLava)
+        {
+            lavaDrainMap.Invalidate();
+        }
+
+        bool previousWasFluid = IsSimulatedFluid(previous.Type);
+        bool currentIsFluid = IsSimulatedFluid(current.Type);
 
         if (previousWasFluid)
         {
@@ -939,8 +958,15 @@ public sealed class FluidSimulation : IDisposable
 
         if (previous.Type != current.Type)
         {
-            ActivateNeighbours(position, VoxelType.Water);
-            ActivateNeighbours(position, VoxelType.Lava);
+            if (simulateWater)
+            {
+                ActivateNeighbours(position, VoxelType.Water);
+            }
+
+            if (simulateLava)
+            {
+                ActivateNeighbours(position, VoxelType.Lava);
+            }
         }
     }
 
@@ -984,6 +1010,13 @@ public sealed class FluidSimulation : IDisposable
         return type == VoxelType.Lava
             ? lavaDrainMap
             : waterDrainMap;
+    }
+
+    private bool IsSimulatedFluid(VoxelType type)
+    {
+        return
+            (simulateWater && type == VoxelType.Water) ||
+            (simulateLava && type == VoxelType.Lava);
     }
 
     private static bool IsFluid(VoxelType type)
