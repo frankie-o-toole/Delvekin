@@ -330,9 +330,25 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         bottomA.y += neighbourHeight;
         bottomB.y += neighbourHeight;
 
-        if (topA.y <= bottomA.y + 0.001f &&
-            topB.y <= bottomB.y + 0.001f)
+        bool firstEdgeCollapsed =
+            topA.y <= bottomA.y + 0.001f;
+        bool secondEdgeCollapsed =
+            topB.y <= bottomB.y + 0.001f;
+
+        if (firstEdgeCollapsed && secondEdgeCollapsed)
         {
+            return;
+        }
+
+        if (firstEdgeCollapsed)
+        {
+            AddTriangle(bottomA, bottomB, topB, color);
+            return;
+        }
+
+        if (secondEdgeCollapsed)
+        {
+            AddTriangle(bottomA, topB, topA, color);
             return;
         }
 
