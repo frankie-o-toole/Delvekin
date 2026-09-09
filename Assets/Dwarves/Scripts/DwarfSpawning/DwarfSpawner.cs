@@ -98,6 +98,8 @@ public class DwarfSpawner : MonoBehaviour
         simulationResolved = false;
         simulationStarted = true;
 
+        world.StartFluidSimulation();
+
         StartCoroutine(SpawnLoop());
     }
 

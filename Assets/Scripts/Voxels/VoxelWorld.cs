@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -9,6 +10,32 @@ public class VoxelWorld : MonoBehaviour
 
     [Header("Rendering")]
     public Material voxelMaterial;
+
+    [Header("Fluid Simulation")]
+    [SerializeField]
+    private bool simulateFluids = true;
+
+    [Tooltip("Useful for fluid-only tests. Normally fluids begin with the dwarf simulation.")]
+    [SerializeField]
+    private bool simulateFluidsBeforeDwarves;
+
+    [SerializeField]
+    private FluidTuning waterFluid = new()
+    {
+        tickInterval = 0.15f,
+        maximumDownwardTransfer = 8,
+        maximumHorizontalTransfer = 4,
+        minimumHorizontalDifference = 1
+    };
+
+    [SerializeField]
+    private FluidTuning lavaFluid = new()
+    {
+        tickInterval = 0.8f,
+        maximumDownwardTransfer = 4,
+        maximumHorizontalTransfer = 1,
+        minimumHorizontalDifference = 2
+    };
 
     private readonly Dictionary<Vector3Int, Chunk> chunks =
         new();
@@ -23,6 +50,11 @@ public class VoxelWorld : MonoBehaviour
         new();
 
     private LevelData currentLevel;
+    private FluidSimulation fluidSimulation;
+    private bool fluidSimulationStarted;
+
+    public event Action<Vector3Int, Voxel, Voxel>
+        VoxelChanged;
 
     private string fileName =
         "TestLevel";
@@ -42,11 +74,50 @@ public class VoxelWorld : MonoBehaviour
 
     private void Awake()
     {
+        waterFluid ??= new FluidTuning();
+        lavaFluid ??= new FluidTuning
+        {
+            tickInterval = 0.8f,
+            maximumDownwardTransfer = 4,
+            maximumHorizontalTransfer = 1,
+            minimumHorizontalDifference = 2
+        };
+
+        fluidSimulation = new FluidSimulation(
+            this,
+            waterFluid,
+            lavaFluid);
+
         if (cameraStateController == null)
         {
             cameraStateController =
                 FindFirstObjectByType<CameraStateController>();
         }
+    }
+
+    private void Update()
+    {
+        if (simulateFluids &&
+            (fluidSimulationStarted || simulateFluidsBeforeDwarves))
+        {
+            fluidSimulation?.Tick(Time.deltaTime);
+        }
+    }
+
+    public void StartFluidSimulation()
+    {
+        fluidSimulationStarted = true;
+    }
+
+    public int GetFluidAmount(Vector3Int worldPosition)
+    {
+        return fluidSimulation?.GetAmount(worldPosition) ?? 0;
+    }
+
+    public Vector3Int GetFluidFlowDirection(Vector3Int worldPosition)
+    {
+        return fluidSimulation?.GetFlowDirection(worldPosition) ??
+               Vector3Int.zero;
     }
 
     private void Start()
@@ -66,6 +137,8 @@ public class VoxelWorld : MonoBehaviour
 
     private void OnDestroy()
     {
+        fluidSimulation?.Dispose();
+
         ChunkRefreshSystem.OnRefreshRequested -=
             RebuildAllChunks;
 
@@ -307,6 +380,7 @@ public class VoxelWorld : MonoBehaviour
     private void BuildFromSavedLevel(
         SavedLevel save)
     {
+        fluidSimulationStarted = false;
         ClearWorld();
 
         VoxelVisibilitySystem
@@ -378,6 +452,8 @@ public class VoxelWorld : MonoBehaviour
         VoxelVisibilitySystem
             .ResetVisibility();
 
+        fluidSimulation?.ResetFromWorld();
+
         ChunkRefreshSystem
             .RequestFullRefresh();
     }
@@ -389,6 +465,7 @@ public class VoxelWorld : MonoBehaviour
     private void BuildFromLevel(
         LevelData data)
     {
+        fluidSimulationStarted = false;
         ClearWorld();
 
         for (
@@ -476,6 +553,8 @@ public class VoxelWorld : MonoBehaviour
 
         VoxelVisibilitySystem
             .ResetVisibility();
+
+        fluidSimulation?.ResetFromWorld();
 
         ChunkRefreshSystem
             .RequestFullRefresh();
@@ -871,13 +950,33 @@ public class VoxelWorld : MonoBehaviour
             GetOrCreateChunk(
                 chunkCoord);
 
+        Voxel previousVoxel =
+            chunk.GetVoxel(
+                localPos.x,
+                localPos.y,
+                localPos.z);
+
+        Voxel currentVoxel =
+            new Voxel(
+                type,
+                facing);
+
+        if (previousVoxel.Type == currentVoxel.Type &&
+            previousVoxel.Facing == currentVoxel.Facing)
+        {
+            return;
+        }
+
         chunk.SetVoxel(
             localPos.x,
             localPos.y,
             localPos.z,
-            new Voxel(
-                type,
-                facing));
+            currentVoxel);
+
+        VoxelChanged?.Invoke(
+            worldPos,
+            previousVoxel,
+            currentVoxel);
 
         RefreshWorldSpatialState(recenterCamera: false);
 
@@ -951,6 +1050,11 @@ public class VoxelWorld : MonoBehaviour
                     type,
                     facing));
 
+            VoxelChanged?.Invoke(
+                worldPos,
+                existing,
+                new Voxel(type, facing));
+
             affectedChunks.Add(
                 chunkCoord);
 
@@ -973,6 +1077,125 @@ public class VoxelWorld : MonoBehaviour
 
         return changedCount;
     }
+
+    /// <summary>
+    /// Applies mixed voxel states as one edit and rebuilds every affected
+    /// chunk once. Fluid simulation and undo use this to avoid a rebuild per
+    /// changed cell.
+    /// </summary>
+    public int SetVoxelStates(
+        IReadOnlyDictionary<Vector3Int, Voxel> voxelStates)
+    {
+        if (voxelStates == null ||
+            voxelStates.Count == 0)
+        {
+            return 0;
+        }
+
+        HashSet<Vector3Int> affectedChunks = new();
+        int changedCount = 0;
+
+        foreach (var pair in voxelStates)
+        {
+            Vector3Int worldPosition = pair.Key;
+            Voxel currentVoxel = pair.Value;
+            Vector3Int chunkCoordinate =
+                VoxelMath.WorldToChunkCoord(worldPosition);
+
+            if (currentVoxel.Type == VoxelType.Air &&
+                !chunks.ContainsKey(chunkCoordinate))
+            {
+                continue;
+            }
+
+            Vector3Int localPosition =
+                VoxelMath.WorldToLocalVoxel(worldPosition);
+
+            Chunk chunk = GetOrCreateChunk(chunkCoordinate);
+            Voxel previousVoxel = chunk.GetVoxel(
+                localPosition.x,
+                localPosition.y,
+                localPosition.z);
+
+            if (previousVoxel.Type == currentVoxel.Type &&
+                previousVoxel.Facing == currentVoxel.Facing)
+            {
+                continue;
+            }
+
+            chunk.SetVoxel(
+                localPosition.x,
+                localPosition.y,
+                localPosition.z,
+                currentVoxel);
+
+            affectedChunks.Add(chunkCoordinate);
+            changedCount++;
+
+            VoxelChanged?.Invoke(
+                worldPosition,
+                previousVoxel,
+                currentVoxel);
+        }
+
+        if (changedCount == 0)
+        {
+            return 0;
+        }
+
+        RefreshWorldSpatialState(recenterCamera: false);
+
+        HashSet<Vector3Int> chunksToRebuild = new();
+
+        foreach (Vector3Int chunkCoordinate in affectedChunks)
+        {
+            chunksToRebuild.Add(chunkCoordinate);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.right);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.left);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.up);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.down);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.forward);
+            chunksToRebuild.Add(chunkCoordinate + Vector3Int.back);
+        }
+
+        foreach (Vector3Int chunkCoordinate in chunksToRebuild)
+        {
+            RebuildChunk(chunkCoordinate);
+        }
+
+        return changedCount;
+    }
+
+    public void ForEachVoxel(
+        Action<Vector3Int, Voxel> visitor)
+    {
+        if (visitor == null)
+        {
+            return;
+        }
+
+        foreach (var pair in chunks)
+        {
+            Vector3Int chunkOrigin =
+                pair.Key * Chunk.ChunkSize;
+
+            for (int x = 0; x < Chunk.ChunkSize; x++)
+            {
+                for (int y = 0; y < Chunk.ChunkSize; y++)
+                {
+                    for (int z = 0; z < Chunk.ChunkSize; z++)
+                    {
+                        Vector3Int localPosition = new(x, y, z);
+
+                        visitor(
+                            chunkOrigin + localPosition,
+                            pair.Value.GetVoxel(x, y, z));
+                    }
+                }
+            }
+        }
+    }
+
     private Chunk GetOrCreateChunk(
     Vector3Int chunkCoord)
     {
