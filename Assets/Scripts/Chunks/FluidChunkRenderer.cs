@@ -202,6 +202,15 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         bool fullWest =
             IsFullWater(position + Vector3Int.left);
 
+        bool waterNorth =
+            IsWater(position + Vector3Int.forward);
+        bool waterSouth =
+            IsWater(position + Vector3Int.back);
+        bool waterEast =
+            IsWater(position + Vector3Int.right);
+        bool waterWest =
+            IsWater(position + Vector3Int.left);
+
         // Each surface corner looks behind itself for supporting full water.
         // This distinguishes a concave shore (three high corners) from a
         // convex shore (one high corner) without storing a slope type.
@@ -209,25 +218,29 @@ public sealed class FluidChunkRenderer : MonoBehaviour
             fullSouth ||
             fullWest ||
             IsFullWater(
-                position + Vector3Int.back + Vector3Int.left);
+                position + Vector3Int.back + Vector3Int.left) ||
+            (waterSouth && waterWest);
 
         bool highSouthEast =
             fullSouth ||
             fullEast ||
             IsFullWater(
-                position + Vector3Int.back + Vector3Int.right);
+                position + Vector3Int.back + Vector3Int.right) ||
+            (waterSouth && waterEast);
 
         bool highNorthEast =
             fullNorth ||
             fullEast ||
             IsFullWater(
-                position + Vector3Int.forward + Vector3Int.right);
+                position + Vector3Int.forward + Vector3Int.right) ||
+            (waterNorth && waterEast);
 
         bool highNorthWest =
             fullNorth ||
             fullWest ||
             IsFullWater(
-                position + Vector3Int.forward + Vector3Int.left);
+                position + Vector3Int.forward + Vector3Int.left) ||
+            (waterNorth && waterWest);
 
         int highCount =
             (highSouthWest ? 1 : 0) +
@@ -257,6 +270,11 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         return
             world.GetVoxel(position).Type == VoxelType.Water &&
             world.GetFluidFill01(position) > 0.501f;
+    }
+
+    private bool IsWater(Vector3Int position)
+    {
+        return world.GetVoxel(position).Type == VoxelType.Water;
     }
 
     private void AddTopSurface(
