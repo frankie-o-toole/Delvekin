@@ -32,7 +32,8 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
     public event Action<
         DwarfAgent,
-        DwarfJobType> JobStopped;
+        DwarfJobType,
+        bool> JobStopped;
 
     public DwarfAgent SelectedDwarf =>
         selectedDwarf;
@@ -470,6 +471,7 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
         if (!controller.TryStopCurrentJob(
                 out DwarfJobType stoppedJobType,
+                out bool dwarfRecalled,
                 out failureReason))
         {
             ReportFailure(failureReason);
@@ -479,7 +481,15 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
         JobStopped?.Invoke(
             target,
-            stoppedJobType);
+            stoppedJobType,
+            dwarfRecalled);
+
+        if (dwarfRecalled)
+        {
+            Debug.Log(
+                $"Recalled {target.name} after stopping "
+                + $"{stoppedJobType}.");
+        }
 
         ClearSelectedDwarf();
         ClearStopJobSelection();

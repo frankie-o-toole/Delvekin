@@ -32,6 +32,7 @@ public class DwarfSpawner : MonoBehaviour
     private int spawned;
     private int rescued;
     private int died;
+    private int recalled;
     private int nextSpawnPointIndex;
     private bool spawnFinished;
     private bool simulationResolved;
@@ -91,6 +92,7 @@ public class DwarfSpawner : MonoBehaviour
         spawned = 0;
         rescued = 0;
         died = 0;
+        recalled = 0;
         nextSpawnPointIndex = 0;
         spawnFinished = false;
         simulationResolved = false;
@@ -138,9 +140,13 @@ public class DwarfSpawner : MonoBehaviour
         {
             rescued++;
         }
-        else
+        else if (reason == DwarfReleaseReason.Died)
         {
             died++;
+        }
+        else
+        {
+            recalled++;
         }
 
         TryResolveSimulation();
@@ -149,7 +155,7 @@ public class DwarfSpawner : MonoBehaviour
     private void TryResolveSimulation()
     {
         if (!spawnFinished ||
-            rescued + died < spawned)
+            rescued + died + recalled < spawned)
         {
             return;
         }
@@ -278,20 +284,23 @@ public class DwarfSpawner : MonoBehaviour
 
     private void OnGUI()
     {
+        const float uiScale = 2.5f;
+
         GUI.matrix =
             Matrix4x4.TRS(
                 Vector3.zero,
                 Quaternion.identity,
-                Vector3.one * 2.5f);
+                Vector3.one * uiScale);
 
         const float width = 180f;
         const float height = 40f;
         const float margin = 10f;
 
+        float logicalScreenWidth =
+            Screen.width / uiScale;
+
         float x =
-            (Screen.width / 2.5f)
-            - width
-            - margin;
+            logicalScreenWidth - width - margin;
 
         float y = margin;
 
@@ -310,20 +319,28 @@ public class DwarfSpawner : MonoBehaviour
         }
         else
         {
+            float statusWidth =
+                Mathf.Min(
+                    360f,
+                    logicalScreenWidth - margin * 2f);
+
+            float statusX =
+                logicalScreenWidth - statusWidth - margin;
+
             string status =
                 simulationResolved
                     ? (rescued >= GetRequiredRescues()
                         ? "LEVEL COMPLETE"
                         : "LEVEL FAILED")
                     : $"Rescued: {rescued}/{GetRequiredRescues()}  "
-                      + $"Lost: {died}  "
+                      + $"Lost: {died + recalled}  "
                       + $"Active: {pool.ActiveCount}/{maxDwarves}";
 
             GUI.Label(
                 new Rect(
-                    x,
+                    statusX,
                     y,
-                    width * 1.8f,
+                    statusWidth,
                     height),
                 status);
         }

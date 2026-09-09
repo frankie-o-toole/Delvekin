@@ -6,6 +6,7 @@ public class DwarfJobController : MonoBehaviour
 {
     private DwarfAgent agent;
     private DwarfMovement movement;
+    private DwarfPool pool;
     private VoxelWorld world;
 
     private DwarfJobContext context;
@@ -66,6 +67,9 @@ public class DwarfJobController : MonoBehaviour
 
         movement =
             GetComponent<DwarfMovement>();
+
+        pool =
+            GetComponentInParent<DwarfPool>();
 
         world =
             FindFirstObjectByType<VoxelWorld>();
@@ -287,8 +291,28 @@ public class DwarfJobController : MonoBehaviour
             return false;
         }
 
+        bool recallAfterStopping =
+            activeJob.RecallOnCancel;
+
+        if (recallAfterStopping &&
+            pool == null)
+        {
+            failureReason =
+                "The stationary dwarf cannot be recalled because "
+                + "its DwarfPool could not be found.";
+
+            return false;
+        }
+
         EndActiveJob(
             DwarfJobEndReason.Cancelled);
+
+        if (recallAfterStopping)
+        {
+            pool.Release(
+                agent,
+                DwarfReleaseReason.Recalled);
+        }
 
         failureReason = string.Empty;
         return true;
@@ -322,10 +346,13 @@ public class DwarfJobController : MonoBehaviour
 
     public bool TryStopCurrentJob(
         out DwarfJobType stoppedJobType,
+        out bool dwarfRecalled,
         out string failureReason)
     {
         stoppedJobType =
             DwarfJobType.None;
+
+        dwarfRecalled = false;
 
         if (!CanStopCurrentJob(
                 out failureReason))
@@ -338,8 +365,30 @@ public class DwarfJobController : MonoBehaviour
             stoppedJobType =
                 activeJob.Type;
 
+            bool recallAfterStopping =
+                activeJob.RecallOnCancel;
+
+            if (recallAfterStopping &&
+                pool == null)
+            {
+                failureReason =
+                    "The stationary dwarf cannot be recalled because "
+                    + "its DwarfPool could not be found.";
+
+                return false;
+            }
+
             EndActiveJob(
                 DwarfJobEndReason.Cancelled);
+
+            if (recallAfterStopping)
+            {
+                dwarfRecalled = true;
+
+                pool.Release(
+                    agent,
+                    DwarfReleaseReason.Recalled);
+            }
         }
         else
         {

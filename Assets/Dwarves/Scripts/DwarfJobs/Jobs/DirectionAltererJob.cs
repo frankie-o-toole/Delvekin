@@ -45,6 +45,9 @@ public class DirectionAltererJob : IDwarfJob
     public bool CanBeCancelled =>
         true;
 
+    public bool RecallOnCancel =>
+        true;
+
     public DirectionAltererJob(
         DirectionAltererTurn selectedTurn)
     {
@@ -175,15 +178,6 @@ public class DirectionAltererJob : IDwarfJob
         registered = false;
 
         DirectionAltererRegistry.Unregister(this);
-
-        if (reason == DwarfJobEndReason.Cancelled &&
-            hasApproachDirection &&
-            jobContext?.Agent != null &&
-            jobContext.Agent.IsActive)
-        {
-            jobContext.Agent.SetFacing(
-                approachDirection);
-        }
 
         context = null;
     }

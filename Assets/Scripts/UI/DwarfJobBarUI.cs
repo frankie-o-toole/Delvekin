@@ -476,12 +476,15 @@ public class DwarfJobBarUI : MonoBehaviour
 
     private void HandleJobStopped(
         DwarfAgent dwarf,
-        DwarfJobType jobType)
+        DwarfJobType jobType,
+        bool dwarfRecalled)
     {
         if (feedbackLabel != null)
         {
             feedbackLabel.text =
-                $"Stopped {jobType} on {dwarf.name}";
+                dwarfRecalled
+                    ? $"Recalled {dwarf.name} after stopping {jobType}"
+                    : $"Stopped {jobType} on {dwarf.name}";
         }
     }
 

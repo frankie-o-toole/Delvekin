@@ -5,7 +5,8 @@ using UnityEngine;
 public enum DwarfReleaseReason
 {
     Died,
-    Rescued
+    Rescued,
+    Recalled
 }
 
 public class DwarfPool : MonoBehaviour

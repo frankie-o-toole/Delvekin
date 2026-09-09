@@ -39,6 +39,9 @@ public sealed class StairBuilderJob : IDwarfJob
     public bool CanBeCancelled =>
         true;
 
+    public bool RecallOnCancel =>
+        false;
+
     public StairBuilderJob(
         float buildInterval)
     {

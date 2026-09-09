@@ -23,6 +23,9 @@ public sealed class DiggerJob : IDwarfJob
     public bool CanBeCancelled =>
         true;
 
+    public bool RecallOnCancel =>
+        false;
+
     public DiggerJob(
         float cycleDuration)
     {

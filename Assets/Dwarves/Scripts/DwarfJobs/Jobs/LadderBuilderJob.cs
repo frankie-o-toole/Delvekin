@@ -38,6 +38,9 @@ public sealed class LadderBuilderJob :
     public bool CanBeCancelled =>
         true;
 
+    public bool RecallOnCancel =>
+        false;
+
     public LadderBuilderJob(
         float buildInterval)
     {

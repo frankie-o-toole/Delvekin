@@ -39,6 +39,9 @@ public sealed class TunnellerJob :
     public bool CanBeCancelled =>
         true;
 
+    public bool RecallOnCancel =>
+        false;
+
     public TunnellerJob(
         float cycleDuration)
     {
