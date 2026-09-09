@@ -193,63 +193,70 @@ public sealed class FluidChunkRenderer : MonoBehaviour
             return SurfaceHeights.Flat(fillHeight);
         }
 
-        bool openNorth =
-            world.GetVoxel(position + Vector3Int.forward).Type !=
-            VoxelType.Water;
+        bool fullNorth =
+            IsFullWater(position + Vector3Int.forward);
+        bool fullSouth =
+            IsFullWater(position + Vector3Int.back);
+        bool fullEast =
+            IsFullWater(position + Vector3Int.right);
+        bool fullWest =
+            IsFullWater(position + Vector3Int.left);
 
-        bool openSouth =
-            world.GetVoxel(position + Vector3Int.back).Type !=
-            VoxelType.Water;
+        // Each surface corner looks behind itself for supporting full water.
+        // This distinguishes a concave shore (three high corners) from a
+        // convex shore (one high corner) without storing a slope type.
+        bool highSouthWest =
+            fullSouth ||
+            fullWest ||
+            IsFullWater(
+                position + Vector3Int.back + Vector3Int.left);
 
-        bool openEast =
-            world.GetVoxel(position + Vector3Int.right).Type !=
-            VoxelType.Water;
+        bool highSouthEast =
+            fullSouth ||
+            fullEast ||
+            IsFullWater(
+                position + Vector3Int.back + Vector3Int.right);
 
-        bool openWest =
-            world.GetVoxel(position + Vector3Int.left).Type !=
-            VoxelType.Water;
+        bool highNorthEast =
+            fullNorth ||
+            fullEast ||
+            IsFullWater(
+                position + Vector3Int.forward + Vector3Int.right);
 
-        int openCount =
-            (openNorth ? 1 : 0) +
-            (openSouth ? 1 : 0) +
-            (openEast ? 1 : 0) +
-            (openWest ? 1 : 0);
+        bool highNorthWest =
+            fullNorth ||
+            fullWest ||
+            IsFullWater(
+                position + Vector3Int.forward + Vector3Int.left);
+
+        int highCount =
+            (highSouthWest ? 1 : 0) +
+            (highSouthEast ? 1 : 0) +
+            (highNorthEast ? 1 : 0) +
+            (highNorthWest ? 1 : 0);
+
+        // Without full water nearby there is no objective downhill
+        // direction, so isolated or ambiguous half water remains level.
+        if (highCount == 0)
+        {
+            return SurfaceHeights.Flat(0.5f);
+        }
 
         const float High = 1f;
         const float Low = 0f;
 
-        if (openCount == 1)
-        {
-            if (openNorth)
-                return new SurfaceHeights(High, High, Low, Low);
+        return new SurfaceHeights(
+            highSouthWest ? High : Low,
+            highSouthEast ? High : Low,
+            highNorthEast ? High : Low,
+            highNorthWest ? High : Low);
+    }
 
-            if (openSouth)
-                return new SurfaceHeights(Low, Low, High, High);
-
-            if (openEast)
-                return new SurfaceHeights(High, Low, Low, High);
-
-            return new SurfaceHeights(Low, High, High, Low);
-        }
-
-        if (openCount == 2)
-        {
-            if (openNorth && openEast)
-                return new SurfaceHeights(High, Low, Low, Low);
-
-            if (openNorth && openWest)
-                return new SurfaceHeights(Low, High, Low, Low);
-
-            if (openSouth && openEast)
-                return new SurfaceHeights(Low, Low, Low, High);
-
-            if (openSouth && openWest)
-                return new SurfaceHeights(Low, Low, High, Low);
-        }
-
-        // Isolated cells, straight channels and ambiguous configurations stay
-        // visibly half full instead of collapsing into degenerate geometry.
-        return SurfaceHeights.Flat(0.5f);
+    private bool IsFullWater(Vector3Int position)
+    {
+        return
+            world.GetVoxel(position).Type == VoxelType.Water &&
+            world.GetFluidFill01(position) > 0.501f;
     }
 
     private void AddTopSurface(
