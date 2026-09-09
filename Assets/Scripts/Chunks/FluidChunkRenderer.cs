@@ -1,11 +1,16 @@
 using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 [RequireComponent(typeof(MeshFilter))]
 [RequireComponent(typeof(MeshRenderer))]
 public sealed class FluidChunkRenderer : MonoBehaviour
 {
+    private static readonly ProfilerMarker RebuildMarker =
+        new("Delvekin.Fluid.RebuildMesh");
+
     private readonly List<Color> colors = new();
+    private readonly List<Vector3> normals = new();
     private readonly List<Vector3> vertices = new();
     private readonly List<int> triangles = new();
 
@@ -29,8 +34,11 @@ public sealed class FluidChunkRenderer : MonoBehaviour
 
     public void RebuildMesh()
     {
+        using var marker = RebuildMarker.Auto();
+
         mesh.Clear();
         colors.Clear();
+        normals.Clear();
         vertices.Clear();
         triangles.Clear();
 
@@ -67,7 +75,7 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         mesh.SetVertices(vertices);
         mesh.SetTriangles(triangles, 0);
         mesh.SetColors(colors);
-        mesh.RecalculateNormals();
+        mesh.SetNormals(normals);
         mesh.RecalculateBounds();
     }
 
@@ -235,6 +243,13 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         colors.Add(color);
         colors.Add(color);
         colors.Add(color);
+
+        // Triangle winding is a-c-b, so calculate the matching face normal.
+        Vector3 normal = Vector3.Cross(c - a, b - a).normalized;
+        normals.Add(normal);
+        normals.Add(normal);
+        normals.Add(normal);
+        normals.Add(normal);
 
         triangles.Add(index);
         triangles.Add(index + 2);

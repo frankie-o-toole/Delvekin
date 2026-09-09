@@ -47,6 +47,8 @@ public class VoxelWorld : MonoBehaviour
     private readonly Dictionary<Vector3Int, FluidChunkRenderer>
         fluidChunkRenderers = new();
 
+    private readonly HashSet<Vector3Int> dirtyFluidChunks = new();
+
     private readonly List<Vector3Int> spawnPoints =
         new();
 
@@ -957,6 +959,22 @@ public class VoxelWorld : MonoBehaviour
 
             pair.Value.RebuildMesh();
         }
+
+        foreach (var pair in fluidChunkRenderers)
+        {
+            int rendererLayer =
+                axis == SliceAxis.X
+                    ? pair.Key.x
+                    : pair.Key.z;
+
+            if (rendererLayer != oldChunkLayer &&
+                rendererLayer != newChunkLayer)
+            {
+                continue;
+            }
+
+            pair.Value.RebuildMesh();
+        }
     }
 
     public void SetVoxel(
@@ -1320,35 +1338,35 @@ public class VoxelWorld : MonoBehaviour
             return;
         }
 
-        HashSet<Vector3Int> chunksToRebuild = new();
+        dirtyFluidChunks.Clear();
 
         foreach (Vector3Int worldPosition in worldPositions)
         {
             Vector3Int chunkCoordinate =
                 VoxelMath.WorldToChunkCoord(worldPosition);
 
-            chunksToRebuild.Add(chunkCoordinate);
+            dirtyFluidChunks.Add(chunkCoordinate);
 
             Vector3Int localPosition =
                 VoxelMath.WorldToLocalVoxel(worldPosition);
 
             if (localPosition.x == 0)
-                chunksToRebuild.Add(chunkCoordinate + Vector3Int.left);
+                dirtyFluidChunks.Add(chunkCoordinate + Vector3Int.left);
             else if (localPosition.x == Chunk.ChunkSize - 1)
-                chunksToRebuild.Add(chunkCoordinate + Vector3Int.right);
+                dirtyFluidChunks.Add(chunkCoordinate + Vector3Int.right);
 
             if (localPosition.y == 0)
-                chunksToRebuild.Add(chunkCoordinate + Vector3Int.down);
+                dirtyFluidChunks.Add(chunkCoordinate + Vector3Int.down);
             else if (localPosition.y == Chunk.ChunkSize - 1)
-                chunksToRebuild.Add(chunkCoordinate + Vector3Int.up);
+                dirtyFluidChunks.Add(chunkCoordinate + Vector3Int.up);
 
             if (localPosition.z == 0)
-                chunksToRebuild.Add(chunkCoordinate + Vector3Int.back);
+                dirtyFluidChunks.Add(chunkCoordinate + Vector3Int.back);
             else if (localPosition.z == Chunk.ChunkSize - 1)
-                chunksToRebuild.Add(chunkCoordinate + Vector3Int.forward);
+                dirtyFluidChunks.Add(chunkCoordinate + Vector3Int.forward);
         }
 
-        foreach (Vector3Int chunkCoordinate in chunksToRebuild)
+        foreach (Vector3Int chunkCoordinate in dirtyFluidChunks)
         {
             RebuildFluidChunk(chunkCoordinate);
         }

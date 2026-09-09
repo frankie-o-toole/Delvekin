@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Unity.Profiling;
 using UnityEngine;
 
 [Serializable]
@@ -30,6 +31,17 @@ public sealed class FluidSimulation : IDisposable
 {
     public const int MaximumAmount = 8;
 
+    private static readonly ProfilerMarker TickMarker =
+        new("Delvekin.Fluid.Tick");
+    private static readonly ProfilerMarker CopyStateMarker =
+        new("Delvekin.Fluid.CopyState");
+    private static readonly ProfilerMarker DrainMapMarker =
+        new("Delvekin.Fluid.DrainMap");
+    private static readonly ProfilerMarker SolveMarker =
+        new("Delvekin.Fluid.Solve");
+    private static readonly ProfilerMarker ApplyMarker =
+        new("Delvekin.Fluid.Apply");
+
     private static readonly Vector3Int[] HorizontalDirections =
     {
         Vector3Int.right,
@@ -49,6 +61,13 @@ public sealed class FluidSimulation : IDisposable
     private readonly Dictionary<Vector3Int, int> drainRegionDepth = new();
     private readonly Dictionary<Vector3Int, int> drainDistances = new();
     private readonly Queue<Vector3Int> drainFrontier = new();
+    private readonly Dictionary<Vector3Int, FluidCell> working = new();
+    private readonly List<Vector3Int> sources = new();
+    private readonly HashSet<Vector3Int> changed = new();
+    private readonly HashSet<Vector3Int> nextActive = new();
+    private readonly Dictionary<Vector3Int, Voxel> voxelChanges = new();
+    private readonly HorizontalCandidate[] candidates =
+        new HorizontalCandidate[HorizontalDirections.Length];
 
     private float waterElapsed;
     private float lavaElapsed;
@@ -116,18 +135,21 @@ public sealed class FluidSimulation : IDisposable
 
     public void Tick(float deltaTime)
     {
-        waterElapsed += deltaTime;
-        lavaElapsed += deltaTime;
+        using (TickMarker.Auto())
+        {
+            waterElapsed += deltaTime;
+            lavaElapsed += deltaTime;
 
-        RunDueTicks(
-            VoxelType.Water,
-            waterTuning,
-            ref waterElapsed);
+            RunDueTicks(
+                VoxelType.Water,
+                waterTuning,
+                ref waterElapsed);
 
-        RunDueTicks(
-            VoxelType.Lava,
-            lavaTuning,
-            ref lavaElapsed);
+            RunDueTicks(
+                VoxelType.Lava,
+                lavaTuning,
+                ref lavaElapsed);
+        }
     }
 
     public int GetAmount(Vector3Int position)
@@ -174,160 +196,182 @@ public sealed class FluidSimulation : IDisposable
             return;
         }
 
-        Dictionary<Vector3Int, FluidCell> working =
-            new(cells);
+        using (CopyStateMarker.Auto())
+        {
+            working.Clear();
 
-        BuildDrainMap(
-            working,
-            type,
-            active,
-            tuning.drainSearchDistance);
+            foreach (var pair in cells)
+            {
+                working.Add(pair.Key, pair.Value);
+            }
+        }
 
-        List<Vector3Int> sources = new(active);
+        using (DrainMapMarker.Auto())
+        {
+            BuildDrainMap(
+                working,
+                type,
+                active,
+                tuning.drainSearchDistance);
+        }
+
+        sources.Clear();
+        sources.AddRange(active);
         sources.Sort(ComparePositions);
 
-        HashSet<Vector3Int> changed = new();
+        changed.Clear();
 
-        foreach (Vector3Int source in sources)
+        using (SolveMarker.Auto())
         {
-            if (!cells.TryGetValue(source, out FluidCell snapshotCell) ||
-                snapshotCell.Type != type ||
-                snapshotCell.Amount <= 0 ||
-                !working.TryGetValue(source, out FluidCell sourceCell))
+            foreach (Vector3Int source in sources)
             {
-                continue;
-            }
-
-            // Current describes recent movement. A cell that does not move
-            // again settles back to zero on the next simulation tick.
-            if (sourceCell.FlowDirection != Vector3Int.zero)
-            {
-                sourceCell.FlowDirection = Vector3Int.zero;
-                working[source] = sourceCell;
-                changed.Add(source);
-            }
-
-            int transferable = Mathf.Min(
-                snapshotCell.Amount,
-                sourceCell.Amount);
-
-            Vector3Int below = source + Vector3Int.down;
-
-            int movedDown = Transfer(
-                working,
-                source,
-                below,
-                type,
-                Mathf.Min(
-                    transferable,
-                    tuning.maximumDownwardTransfer),
-                changed);
-
-            transferable -= movedDown;
-
-            if (transferable <= 0 ||
-                CanAcceptFluid(working, below, type))
-            {
-                continue;
-            }
-
-            int directionOffset =
-                PositiveModulo(
-                    source.x + source.y + source.z + tickIndex,
-                    HorizontalDirections.Length);
-
-            List<HorizontalCandidate> candidates = new();
-
-            for (int directionIndex = 0;
-                 directionIndex < HorizontalDirections.Length;
-                 directionIndex++)
-            {
-                Vector3Int direction =
-                    HorizontalDirections[
-                        (directionIndex + directionOffset) %
-                        HorizontalDirections.Length];
-
-                Vector3Int target = source + direction;
-
-                if (!CanAcceptFluid(working, target, type))
+                if (!cells.TryGetValue(source, out FluidCell snapshotCell) ||
+                    snapshotCell.Type != type ||
+                    snapshotCell.Amount <= 0 ||
+                    !working.TryGetValue(source, out FluidCell sourceCell))
                 {
                     continue;
                 }
 
-                candidates.Add(
-                    new HorizontalCandidate(
-                        target,
-                        drainDistances.TryGetValue(
-                            target,
-                            out int drainDistance)
-                                ? drainDistance
-                                : -1,
-                        directionIndex));
-            }
-
-            candidates.Sort(CompareCandidates);
-
-            foreach (HorizontalCandidate candidate in candidates)
-            {
-                if (transferable <= 0)
+                // Current describes recent movement. A cell that does not move
+                // again settles back to zero on the next simulation tick.
+                if (sourceCell.FlowDirection != Vector3Int.zero)
                 {
-                    break;
+                    sourceCell.FlowDirection = Vector3Int.zero;
+                    working[source] = sourceCell;
+                    changed.Add(source);
                 }
 
-                Vector3Int target = candidate.Position;
+                int transferable = Mathf.Min(
+                    snapshotCell.Amount,
+                    sourceCell.Amount);
 
-                int targetAmount = GetWorkingAmount(
-                    working,
-                    target,
-                    type);
+                Vector3Int below = source + Vector3Int.down;
 
-                int difference = transferable - targetAmount;
-
-                bool drainsDownhill = candidate.DrainDistance >= 0;
-
-                if (!drainsDownhill &&
-                    difference <= tuning.minimumHorizontalDifference)
-                {
-                    continue;
-                }
-
-                int available = drainsDownhill
-                    ? transferable
-                    : transferable - 1;
-
-                if (available <= 0)
-                {
-                    continue;
-                }
-
-                int equalizingTransfer = difference / 2;
-
-                if (drainsDownhill)
-                {
-                    equalizingTransfer = Mathf.Max(
-                        1,
-                        equalizingTransfer);
-                }
-
-                int desiredTransfer = Mathf.Min(
-                    equalizingTransfer,
-                    tuning.maximumHorizontalTransfer,
-                    available);
-
-                int moved = Transfer(
+                int movedDown = Transfer(
                     working,
                     source,
-                    target,
+                    below,
                     type,
-                    desiredTransfer,
+                    Mathf.Min(
+                        transferable,
+                        tuning.maximumDownwardTransfer),
                     changed);
 
-                transferable -= moved;
+                transferable -= movedDown;
+
+                if (transferable <= 0 ||
+                    CanAcceptFluid(working, below, type))
+                {
+                    continue;
+                }
+
+                int directionOffset =
+                    PositiveModulo(
+                        source.x + source.y + source.z + tickIndex,
+                        HorizontalDirections.Length);
+
+                int candidateCount = 0;
+
+                for (int directionIndex = 0;
+                     directionIndex < HorizontalDirections.Length;
+                     directionIndex++)
+                {
+                    Vector3Int direction =
+                        HorizontalDirections[
+                            (directionIndex + directionOffset) %
+                            HorizontalDirections.Length];
+
+                    Vector3Int target = source + direction;
+
+                    if (!CanAcceptFluid(working, target, type))
+                    {
+                        continue;
+                    }
+
+                    candidates[candidateCount++] =
+                        new HorizontalCandidate(
+                            target,
+                            drainDistances.TryGetValue(
+                                target,
+                                out int drainDistance)
+                                    ? drainDistance
+                                    : -1,
+                            directionIndex);
+                }
+
+                SortCandidates(candidateCount);
+
+                for (int candidateIndex = 0;
+                     candidateIndex < candidateCount;
+                     candidateIndex++)
+                {
+                    HorizontalCandidate candidate = candidates[candidateIndex];
+
+                    if (transferable <= 0)
+                    {
+                        break;
+                    }
+
+                    Vector3Int target = candidate.Position;
+
+                    int targetAmount = GetWorkingAmount(
+                        working,
+                        target,
+                        type);
+
+                    int difference = transferable - targetAmount;
+
+                    bool drainsDownhill = candidate.DrainDistance >= 0;
+
+                    if (!drainsDownhill &&
+                        difference <= tuning.minimumHorizontalDifference)
+                    {
+                        continue;
+                    }
+
+                    int available = drainsDownhill
+                        ? transferable
+                        : transferable - 1;
+
+                    if (available <= 0)
+                    {
+                        continue;
+                    }
+
+                    int equalizingTransfer = difference / 2;
+
+                    if (drainsDownhill)
+                    {
+                        equalizingTransfer = Mathf.Max(
+                            1,
+                            equalizingTransfer);
+                    }
+
+                    int desiredTransfer = Mathf.Min(
+                        equalizingTransfer,
+                        tuning.maximumHorizontalTransfer,
+                        available);
+
+                    int moved = Transfer(
+                        working,
+                        source,
+                        target,
+                        type,
+                        desiredTransfer,
+                        changed);
+
+                    transferable -= moved;
+                }
             }
         }
 
         tickIndex++;
-        ApplyWorkingState(type, working, changed);
+
+        using (ApplyMarker.Auto())
+        {
+            ApplyWorkingState(type, working, changed);
+        }
     }
 
     private readonly struct HorizontalCandidate
@@ -371,6 +415,26 @@ public sealed class FluidSimulation : IDisposable
         }
 
         return left.Priority.CompareTo(right.Priority);
+    }
+
+    private void SortCandidates(int count)
+    {
+        // At most four candidates exist, so insertion sort avoids allocating
+        // a List and comparer machinery for every active fluid cell.
+        for (int index = 1; index < count; index++)
+        {
+            HorizontalCandidate value = candidates[index];
+            int insertionIndex = index - 1;
+
+            while (insertionIndex >= 0 &&
+                   CompareCandidates(candidates[insertionIndex], value) > 0)
+            {
+                candidates[insertionIndex + 1] = candidates[insertionIndex];
+                insertionIndex--;
+            }
+
+            candidates[insertionIndex + 1] = value;
+        }
     }
 
     private void BuildDrainMap(
@@ -576,8 +640,8 @@ public sealed class FluidSimulation : IDisposable
         Dictionary<Vector3Int, FluidCell> working,
         HashSet<Vector3Int> changed)
     {
-        HashSet<Vector3Int> nextActive = new();
-        Dictionary<Vector3Int, Voxel> voxelChanges = new();
+        nextActive.Clear();
+        voxelChanges.Clear();
 
         foreach (Vector3Int position in changed)
         {
