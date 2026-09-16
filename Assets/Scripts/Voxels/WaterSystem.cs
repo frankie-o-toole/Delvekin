@@ -28,6 +28,19 @@ public sealed class WaterSystem : IDisposable
         Vector3Int.down
     };
 
+    // Current spreads horizontally through rivers and may fall. Upward
+    // traversal keeps connected multi-level bodies discoverable, but is never
+    // selected as an outgoing gameplay current.
+    private static readonly Vector3Int[] FlowTraversalDirections =
+    {
+        Vector3Int.forward,
+        Vector3Int.right,
+        Vector3Int.back,
+        Vector3Int.left,
+        Vector3Int.down,
+        Vector3Int.up
+    };
+
     private readonly VoxelWorld world;
     private readonly Dictionary<Vector3Int, WaterCell> cells = new();
     private readonly Dictionary<Vector3Int, WaterSource> sources = new();
@@ -385,6 +398,30 @@ public sealed class WaterSystem : IDisposable
             : Vector3Int.zero;
     }
 
+    public Vector3Int GetSecondaryFlowDirection(Vector3Int position)
+    {
+        return cells.TryGetValue(position, out WaterCell cell)
+            ? cell.SecondaryFlowDirection
+            : Vector3Int.zero;
+    }
+
+    public Vector3 GetFlowVector(Vector3Int position)
+    {
+        if (!cells.TryGetValue(position, out WaterCell cell) ||
+            cell.Motion != WaterMotion.Flowing)
+        {
+            return Vector3.zero;
+        }
+
+        Vector3 weighted =
+            (Vector3)cell.PrimaryFlowDirection * cell.PrimaryCapacity +
+            (Vector3)cell.SecondaryFlowDirection * cell.SecondaryCapacity;
+
+        return weighted.sqrMagnitude > 0f
+            ? weighted.normalized
+            : Vector3.zero;
+    }
+
     private void QueueExistingSourceFalls()
     {
         foreach (WaterBody body in bodies.Values)
@@ -394,8 +431,19 @@ public sealed class WaterSystem : IDisposable
                 continue;
             }
 
+            HashSet<Vector3Int> outletCells =
+                GetOutletCells(body);
+
             foreach (Vector3Int position in body.Cells)
             {
+                // An outlet hands water to a waterfall/VFX volume. The voxel
+                // solver deliberately stops here instead of searching the
+                // open world beyond the portal.
+                if (outletCells.Contains(position))
+                {
+                    continue;
+                }
+
                 Vector3Int below = position + Vector3Int.down;
 
                 if (world.ContainsExistingChunkAt(below) &&
@@ -432,6 +480,360 @@ public sealed class WaterSystem : IDisposable
                 }
             }
         }
+    }
+
+
+    private HashSet<Vector3Int> GetOutletCells(WaterBody body)
+    {
+        HashSet<Vector3Int> result = new();
+
+        foreach (WaterOutletPortal outlet in body.Outlets)
+        {
+            if (outlet == null)
+            {
+                continue;
+            }
+
+            portalVoxelBuffer.Clear();
+            outlet.GetCoveredVoxels(portalVoxelBuffer);
+
+            foreach (Vector3Int position in portalVoxelBuffer)
+            {
+                if (bodyByPosition.TryGetValue(position, out int bodyId) &&
+                    bodyId == body.Id)
+                {
+                    result.Add(position);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Builds a cached gameplay-current network. This runs only after water
+    /// topology or a portal changes; stable rivers have no per-frame cost.
+    ///
+    /// Distance grows away from every source. Each cell points to downstream
+    /// neighbours. Downstream capacity makes the widest/longest continuation
+    /// primary while preserving a second valid branch.
+    /// </summary>
+    private void RebuildFlowFields()
+    {
+        List<Vector3Int> allPositions = new(cells.Keys);
+
+        foreach (Vector3Int position in allPositions)
+        {
+            WaterCell cell = cells[position];
+            cell.Motion = WaterMotion.Still;
+            cell.PrimaryFlowDirection = Vector3Int.zero;
+            cell.SecondaryFlowDirection = Vector3Int.zero;
+            cell.PrimaryCapacity = 0;
+            cell.SecondaryCapacity = 0;
+            cells[position] = cell;
+        }
+
+        foreach (WaterBody body in bodies.Values)
+        {
+            if (body.Kind == WaterBodyKind.SourceFed)
+            {
+                BuildFlowField(body);
+            }
+        }
+    }
+
+    private void BuildFlowField(WaterBody body)
+    {
+        HashSet<Vector3Int> bodyCells = new(body.Cells);
+        Dictionary<Vector3Int, Vector3Int> preferredDirections = new();
+        HashSet<Vector3Int> seeds = new();
+
+        foreach (WaterSource source in body.Sources)
+        {
+            if (bodyCells.Contains(source.Position))
+            {
+                seeds.Add(source.Position);
+                preferredDirections[source.Position] =
+                    source.InitialDirection;
+            }
+        }
+
+        // A portal is a volume, not a single point. Seeding every overlapped
+        // water voxel gives a broad river a broad, parallel current instead
+        // of a radial fan from the portal's minimum corner.
+        foreach (WaterSourcePortal portal in sourcePortals)
+        {
+            if (portal == null)
+            {
+                continue;
+            }
+
+            portalVoxelBuffer.Clear();
+            portal.GetCoveredVoxels(portalVoxelBuffer);
+
+            foreach (Vector3Int position in portalVoxelBuffer)
+            {
+                if (!bodyCells.Contains(position))
+                {
+                    continue;
+                }
+
+                seeds.Add(position);
+                preferredDirections[position] = portal.Direction;
+            }
+        }
+
+        if (seeds.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<Vector3Int, int> distance = new();
+        Dictionary<Vector3Int, Vector3Int> predecessor = new();
+        Queue<Vector3Int> frontier = new();
+
+        foreach (Vector3Int seed in seeds)
+        {
+            distance[seed] = 0;
+            frontier.Enqueue(seed);
+        }
+
+        while (frontier.Count > 0)
+        {
+            Vector3Int position = frontier.Dequeue();
+            int nextDistance = distance[position] + 1;
+
+            foreach (Vector3Int direction in FlowTraversalDirections)
+            {
+                Vector3Int neighbour = position + direction;
+
+                if (!bodyCells.Contains(neighbour) ||
+                    distance.ContainsKey(neighbour))
+                {
+                    continue;
+                }
+
+                distance[neighbour] = nextDistance;
+                predecessor[neighbour] = position;
+                frontier.Enqueue(neighbour);
+            }
+        }
+
+        List<Vector3Int> ordered = new(distance.Keys);
+        ordered.Sort(
+            (left, right) =>
+                distance[right].CompareTo(distance[left]));
+
+        Dictionary<Vector3Int, int> downstreamCapacity = new();
+
+        foreach (Vector3Int position in ordered)
+        {
+            List<Vector3Int> outgoing =
+                GetOutgoingFlowNeighbours(position, bodyCells, distance);
+
+            int capacity = 1;
+
+            foreach (Vector3Int neighbour in outgoing)
+            {
+                if (downstreamCapacity.TryGetValue(
+                        neighbour,
+                        out int branchCapacity))
+                {
+                    capacity = Mathf.Min(
+                        byte.MaxValue,
+                        capacity + branchCapacity);
+                }
+            }
+
+            downstreamCapacity[position] = capacity;
+        }
+
+        Dictionary<Vector3Int, OutletFlow> outletFlows =
+            BuildOutletFlowMap(body);
+
+        foreach (Vector3Int position in distance.Keys)
+        {
+            if (outletFlows.TryGetValue(
+                    position,
+                    out OutletFlow outletFlow))
+            {
+                SetFlow(
+                    position,
+                    outletFlow.Direction,
+                    outletFlow.Capacity,
+                    Vector3Int.zero,
+                    0);
+                continue;
+            }
+
+            List<Vector3Int> outgoing =
+                GetOutgoingFlowNeighbours(position, bodyCells, distance);
+
+            if (outgoing.Count == 0)
+            {
+                continue;
+            }
+
+            Vector3Int preferred = Vector3Int.zero;
+
+            if (!preferredDirections.TryGetValue(position, out preferred) &&
+                predecessor.TryGetValue(position, out Vector3Int previous))
+            {
+                preferred = position - previous;
+            }
+
+            outgoing.Sort(
+                (left, right) =>
+                {
+                    int leftCapacity = downstreamCapacity[left];
+                    int rightCapacity = downstreamCapacity[right];
+                    int comparison =
+                        rightCapacity.CompareTo(leftCapacity);
+
+                    if (comparison != 0)
+                    {
+                        return comparison;
+                    }
+
+                    bool leftPreferred =
+                        left - position == preferred;
+                    bool rightPreferred =
+                        right - position == preferred;
+
+                    if (leftPreferred != rightPreferred)
+                    {
+                        return rightPreferred.CompareTo(leftPreferred);
+                    }
+
+                    comparison = left.x.CompareTo(right.x);
+
+                    return comparison != 0
+                        ? comparison
+                        : left.z.CompareTo(right.z);
+                });
+
+            Vector3Int primaryNeighbour = outgoing[0];
+            Vector3Int primaryDirection =
+                primaryNeighbour - position;
+            int primaryCapacity =
+                downstreamCapacity[primaryNeighbour];
+
+            Vector3Int secondaryDirection = Vector3Int.zero;
+            int secondaryCapacity = 0;
+
+            if (outgoing.Count > 1)
+            {
+                Vector3Int secondaryNeighbour = outgoing[1];
+                secondaryDirection =
+                    secondaryNeighbour - position;
+                secondaryCapacity =
+                    downstreamCapacity[secondaryNeighbour];
+            }
+
+            SetFlow(
+                position,
+                primaryDirection,
+                primaryCapacity,
+                secondaryDirection,
+                secondaryCapacity);
+        }
+    }
+
+    private static List<Vector3Int> GetOutgoingFlowNeighbours(
+        Vector3Int position,
+        HashSet<Vector3Int> bodyCells,
+        IReadOnlyDictionary<Vector3Int, int> distance)
+    {
+        List<Vector3Int> horizontal = new(4);
+        int currentDistance = distance[position];
+
+        for (int index = 0; index < 4; index++)
+        {
+            Vector3Int neighbour =
+                position + FlowTraversalDirections[index];
+
+            if (bodyCells.Contains(neighbour) &&
+                distance.TryGetValue(neighbour, out int neighbourDistance) &&
+                neighbourDistance == currentDistance + 1)
+            {
+                horizontal.Add(neighbour);
+            }
+        }
+
+        if (horizontal.Count > 0)
+        {
+            return horizontal;
+        }
+
+        Vector3Int below = position + Vector3Int.down;
+
+        if (bodyCells.Contains(below) &&
+            distance.TryGetValue(below, out int belowDistance) &&
+            belowDistance == currentDistance + 1)
+        {
+            horizontal.Add(below);
+        }
+
+        return horizontal;
+    }
+
+    private Dictionary<Vector3Int, OutletFlow> BuildOutletFlowMap(
+        WaterBody body)
+    {
+        Dictionary<Vector3Int, OutletFlow> result = new();
+
+        foreach (WaterOutletPortal outlet in body.Outlets)
+        {
+            if (outlet == null)
+            {
+                continue;
+            }
+
+            portalVoxelBuffer.Clear();
+            outlet.GetCoveredVoxels(portalVoxelBuffer);
+
+            foreach (Vector3Int position in portalVoxelBuffer)
+            {
+                if (bodyByPosition.TryGetValue(position, out int bodyId) &&
+                    bodyId == body.Id)
+                {
+                    result[position] =
+                        new OutletFlow(
+                            outlet.Direction,
+                            outlet.Capacity);
+                }
+            }
+        }
+
+        return result;
+    }
+
+    private void SetFlow(
+        Vector3Int position,
+        Vector3Int primaryDirection,
+        int primaryCapacity,
+        Vector3Int secondaryDirection,
+        int secondaryCapacity)
+    {
+        if (!cells.TryGetValue(position, out WaterCell cell) ||
+            primaryDirection == Vector3Int.zero)
+        {
+            return;
+        }
+
+        cell.Motion = WaterMotion.Flowing;
+        cell.PrimaryFlowDirection = primaryDirection;
+        cell.SecondaryFlowDirection = secondaryDirection;
+        cell.PrimaryCapacity =
+            (byte)Mathf.Clamp(primaryCapacity, 1, byte.MaxValue);
+        cell.SecondaryCapacity =
+            secondaryDirection == Vector3Int.zero
+                ? (byte)0
+                : (byte)Mathf.Clamp(
+                    secondaryCapacity,
+                    1,
+                    byte.MaxValue);
+        cells[position] = cell;
     }
 
     private bool BuildSourceFedRedistributionPlan(
@@ -1163,6 +1565,8 @@ public sealed class WaterSystem : IDisposable
                 }
             }
         }
+
+        RebuildFlowFields();
     }
 
     private bool TouchesWater(Vector3Int position)
@@ -1285,6 +1689,20 @@ public sealed class WaterSystem : IDisposable
             }
 
             return true;
+        }
+    }
+
+    private readonly struct OutletFlow
+    {
+        public Vector3Int Direction { get; }
+        public int Capacity { get; }
+
+        public OutletFlow(
+            Vector3Int direction,
+            int capacity)
+        {
+            Direction = direction;
+            Capacity = Mathf.Max(1, capacity);
         }
     }
 
