@@ -625,7 +625,8 @@ public class DwarfMovement : MonoBehaviour
             facingDirection.y == 0 &&
             primaryDirection != Vector3Int.zero &&
             facingDirection != Vector3Int.zero &&
-            Vector3Int.Dot(primaryDirection, facingDirection) == 0;
+            primaryDirection.x * facingDirection.x +
+            primaryDirection.z * facingDirection.z == 0;
 
         // A broad voxel corner exposes its new axis several cells before the
         // current lane actually ends. Preserve the dwarf's incoming momentum
