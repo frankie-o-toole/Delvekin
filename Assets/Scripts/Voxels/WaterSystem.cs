@@ -695,16 +695,10 @@ public sealed class WaterSystem : IDisposable
             outgoing.Sort(
                 (left, right) =>
                 {
-                    int leftCapacity = downstreamCapacity[left];
-                    int rightCapacity = downstreamCapacity[right];
-                    int comparison =
-                        rightCapacity.CompareTo(leftCapacity);
-
-                    if (comparison != 0)
-                    {
-                        return comparison;
-                    }
-
+                    // River inertia is more readable than turning toward
+                    // the globally largest downstream region. Continue in
+                    // the incoming direction while that route exists; branch
+                    // capacity only decides between equally plausible turns.
                     bool leftPreferred =
                         left - position == preferred;
                     bool rightPreferred =
@@ -713,6 +707,16 @@ public sealed class WaterSystem : IDisposable
                     if (leftPreferred != rightPreferred)
                     {
                         return rightPreferred.CompareTo(leftPreferred);
+                    }
+
+                    int leftCapacity = downstreamCapacity[left];
+                    int rightCapacity = downstreamCapacity[right];
+                    int comparison =
+                        rightCapacity.CompareTo(leftCapacity);
+
+                    if (comparison != 0)
+                    {
+                        return comparison;
                     }
 
                     comparison = left.x.CompareTo(right.x);

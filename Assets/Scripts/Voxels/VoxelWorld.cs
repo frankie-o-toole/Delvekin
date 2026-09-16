@@ -186,6 +186,15 @@ public class VoxelWorld : MonoBehaviour
             : Vector3Int.zero;
     }
 
+    public Vector3Int GetSecondaryWaterFlowDirection(
+        Vector3Int worldPosition)
+    {
+        return GetVoxel(worldPosition).Type == VoxelType.Water
+            ? waterSystem?.GetSecondaryFlowDirection(worldPosition) ??
+              Vector3Int.zero
+            : Vector3Int.zero;
+    }
+
     public Vector3 GetWaterFlowVector(
         Vector3Int worldPosition)
     {

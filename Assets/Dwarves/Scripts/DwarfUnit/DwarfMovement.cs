@@ -613,10 +613,28 @@ public class DwarfMovement : MonoBehaviour
 
     private bool TryBeginWaterCurrentMove()
     {
-        Vector3Int currentDirection =
+        Vector3Int primaryDirection =
             world.GetFluidFlowDirection(
                 agent.CurrentVoxel);
 
+        if (TryBeginWaterCurrentMove(primaryDirection))
+        {
+            return true;
+        }
+
+        // At a corner or split the primary lane can still continue for water
+        // while the dwarf's 3x3 footprint no longer fits. The cached secondary
+        // direction is the deliberate alternative turn.
+        Vector3Int secondaryDirection =
+            world.GetSecondaryWaterFlowDirection(
+                agent.CurrentVoxel);
+
+        return TryBeginWaterCurrentMove(secondaryDirection);
+    }
+
+    private bool TryBeginWaterCurrentMove(
+        Vector3Int currentDirection)
+    {
         if (currentDirection == Vector3Int.zero)
         {
             return false;
