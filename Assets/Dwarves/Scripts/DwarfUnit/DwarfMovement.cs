@@ -89,6 +89,11 @@ public class DwarfMovement : MonoBehaviour
     private float currentMoveSpeedMultiplier = 1f;
     private float deepWaterDistanceTravelled;
 
+    // Persistent lane state prevents a broad corner's local water cells from
+    // changing the dwarf's travel axis before its current lane actually ends.
+    private bool hasWaterLaneHeading;
+    private Vector3Int waterLaneHeading;
+
     private int fallStartY;
 
     private Vector3 startWorldPosition;
@@ -620,123 +625,81 @@ public class DwarfMovement : MonoBehaviour
         Vector3Int waterSample =
             GetWaterSampleVoxel();
 
+        if (world.GetVoxel(waterSample).Type != VoxelType.Water)
+        {
+            hasWaterLaneHeading = false;
+            waterLaneHeading = Vector3Int.zero;
+            return false;
+        }
+
         Vector3Int primaryDirection =
-            world.GetFluidFlowDirection(
-                waterSample);
+            world.GetFluidFlowDirection(waterSample);
 
-        Vector3Int facingDirection =
-            DirectionUtility.ToVector(agent.Facing);
-
-        bool primaryTurnsCorner =
-            primaryDirection.y == 0 &&
-            facingDirection.y == 0 &&
-            primaryDirection != Vector3Int.zero &&
-            facingDirection != Vector3Int.zero &&
-            primaryDirection.x * facingDirection.x +
-            primaryDirection.z * facingDirection.z == 0;
-
-        // A broad voxel corner exposes its new axis before the incoming
-        // lane reaches the centre of the bend. Measure the outgoing arm's
-        // cross-section and keep the incoming heading until that midpoint.
-        if (primaryTurnsCorner &&
-            ShouldContinueToCornerCentre(
-                waterSample,
-                facingDirection,
-                primaryDirection) &&
-            IsWaterAhead(facingDirection) &&
-            TryBeginWaterCurrentMove(
-                facingDirection,
-                applyCentring: false))
-        {
-            return true;
-        }
-
-        if (TryBeginWaterCurrentMove(primaryDirection))
-        {
-            return true;
-        }
-
-        // At a corner or split the primary lane can still continue for water
-        // while the dwarf's 3x3 footprint no longer fits. The cached secondary
-        // direction is the deliberate alternative turn.
         Vector3Int secondaryDirection =
-            world.GetSecondaryWaterFlowDirection(
-                waterSample);
+            world.GetSecondaryWaterFlowDirection(waterSample);
 
-        return TryBeginWaterCurrentMove(secondaryDirection);
+        if (!hasWaterLaneHeading)
+        {
+            waterLaneHeading =
+                primaryDirection != Vector3Int.zero
+                    ? primaryDirection
+                    : secondaryDirection;
+
+            hasWaterLaneHeading =
+                waterLaneHeading != Vector3Int.zero;
+        }
+
+        if (!hasWaterLaneHeading)
+        {
+            return false;
+        }
+
+        // Stay on the current lane while the complete three-wide leading
+        // edge remains water. Local flow changes inside a broad bend cannot
+        // rotate the dwarf early anymore.
+        if (IsWaterAhead(waterLaneHeading) &&
+            TryBeginWaterCurrentMove(waterLaneHeading))
+        {
+            return true;
+        }
+
+        // The lane has ended. Only now may the cached water network select
+        // the next segment. Prefer primary, retain secondary as a branch or
+        // footprint fallback.
+        if (TryAdoptWaterLane(primaryDirection))
+        {
+            return true;
+        }
+
+        if (TryAdoptWaterLane(secondaryDirection))
+        {
+            return true;
+        }
+
+        return false;
     }
 
-    private bool ShouldContinueToCornerCentre(
-        Vector3Int waterSample,
-        Vector3Int incomingDirection,
-        Vector3Int outgoingDirection)
+    private bool TryAdoptWaterLane(Vector3Int direction)
     {
-        if (incomingDirection.y != 0 ||
-            outgoingDirection.y != 0)
+        if (direction == Vector3Int.zero ||
+            direction == -waterLaneHeading)
         {
             return false;
         }
 
-        // Probe one cell into the outgoing arm. Its span along the incoming
-        // axis is the width of that arm at this bend.
-        Vector3Int probe =
-            waterSample + outgoingDirection;
+        Vector3Int previousHeading =
+            waterLaneHeading;
 
-        if (world.GetVoxel(probe).Type != VoxelType.Water)
+        waterLaneHeading = direction;
+
+        if (TryBeginWaterCurrentMove(direction))
         {
-            return false;
+            hasWaterLaneHeading = true;
+            return true;
         }
 
-        int behind = 0;
-        int ahead = 0;
-
-        for (int step = 1;
-             step <= riverCentreScanDistance;
-             step++)
-        {
-            if (world.GetVoxel(
-                    probe - incomingDirection * step).Type !=
-                VoxelType.Water)
-            {
-                break;
-            }
-
-            behind = step;
-        }
-
-        for (int step = 1;
-             step <= riverCentreScanDistance;
-             step++)
-        {
-            if (world.GetVoxel(
-                    probe + incomingDirection * step).Type !=
-                VoxelType.Water)
-            {
-                break;
-            }
-
-            ahead = step;
-        }
-
-        Vector3 minimum =
-            (Vector3)(probe - incomingDirection * behind);
-
-        Vector3 maximum =
-            (Vector3)(probe + incomingDirection * ahead);
-
-        Vector3 cornerCentre =
-            (minimum + maximum) * 0.5f;
-
-        Vector3 remaining =
-            cornerCentre - (Vector3)waterSample;
-
-        float distanceAlongIncoming =
-            remaining.x * incomingDirection.x +
-            remaining.z * incomingDirection.z;
-
-        // Even-width rivers place the centre between two voxel columns.
-        // A quarter-cell tolerance selects the nearest valid anchor column.
-        return distanceAlongIncoming > 0.25f;
+        waterLaneHeading = previousHeading;
+        return false;
     }
 
     private bool IsWaterAhead(Vector3Int direction)
@@ -1373,6 +1336,8 @@ public class DwarfMovement : MonoBehaviour
         currentFallSpeed = 0f;
         currentMoveSpeedMultiplier = 1f;
         deepWaterDistanceTravelled = 0f;
+        hasWaterLaneHeading = false;
+        waterLaneHeading = Vector3Int.zero;
 
         startWorldPosition =
             transform.position;
