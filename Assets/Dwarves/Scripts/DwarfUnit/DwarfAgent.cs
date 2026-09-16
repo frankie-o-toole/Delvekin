@@ -230,6 +230,17 @@ public class DwarfAgent : MonoBehaviour
         DwarfVisibilitySystem.RefreshDwarf(this);
     }
 
+    /// <summary>
+    /// Updates logical occupancy during continuous water movement without
+    /// snapping the visual root back to the centre of the voxel.
+    /// </summary>
+    public void SetCurrentVoxelContinuous(Vector3Int voxel)
+    {
+        CurrentVoxel = voxel;
+        TargetVoxel = voxel;
+        DwarfVisibilitySystem.RefreshDwarf(this);
+    }
+
     public void SetTargetVoxel(Vector3Int voxel)
     {
         TargetVoxel = voxel;

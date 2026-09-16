@@ -14,7 +14,8 @@ public class DwarfMovement : MonoBehaviour
         ClimbingDown,
         LadderTransition,
         Turning,
-        Falling
+        Falling,
+        Drifting
     }
 
     private enum LadderTraversalPhase
@@ -75,6 +76,18 @@ public class DwarfMovement : MonoBehaviour
     [Min(DwarfSpatialRules.Height)]
     private int maximumWaterSurfaceSearch = 64;
 
+    [SerializeField]
+    [Min(0.1f)]
+    private float driftSpeed = 2f;
+
+    [SerializeField]
+    [Min(0.1f)]
+    private float driftLookAhead = 2f;
+
+    [SerializeField]
+    [Range(0.1f, 4f)]
+    private float riverCentrePull = 1.5f;
+
     private VoxelWorld world;
     private DwarfPool pool;
 
@@ -93,6 +106,7 @@ public class DwarfMovement : MonoBehaviour
     // changing the dwarf's travel axis before its current lane actually ends.
     private bool hasWaterLaneHeading;
     private Vector3Int waterLaneHeading;
+    private int observedLaneVersion;
 
     private int fallStartY;
 
@@ -159,6 +173,10 @@ public class DwarfMovement : MonoBehaviour
 
             case MovementState.Falling:
                 UpdateFalling();
+                break;
+
+            case MovementState.Drifting:
+                UpdateDrifting();
                 break;
 
             case MovementState.Walking:
@@ -625,81 +643,245 @@ public class DwarfMovement : MonoBehaviour
         Vector3Int waterSample =
             GetWaterSampleVoxel();
 
-        if (world.GetVoxel(waterSample).Type != VoxelType.Water)
+        if (!world.TryGetWaterLaneSample(
+                waterSample,
+                out _,
+                out int version))
         {
-            hasWaterLaneHeading = false;
-            waterLaneHeading = Vector3Int.zero;
+            observedLaneVersion = 0;
             return false;
         }
 
-        Vector3Int primaryDirection =
-            world.GetFluidFlowDirection(waterSample);
+        observedLaneVersion = version;
+        state = MovementState.Drifting;
+        return true;
+    }
 
-        Vector3Int secondaryDirection =
-            world.GetSecondaryWaterFlowDirection(waterSample);
+    private void UpdateDrifting()
+    {
+        Vector3Int waterSample =
+            GetWaterSampleVoxel();
 
-        if (!hasWaterLaneHeading)
+        if (!world.TryGetWaterLaneSample(
+                waterSample,
+                out WaterLaneSample lane,
+                out int version))
         {
-            waterLaneHeading =
-                primaryDirection != Vector3Int.zero
-                    ? primaryDirection
-                    : secondaryDirection;
-
-            hasWaterLaneHeading =
-                waterLaneHeading != Vector3Int.zero;
+            observedLaneVersion = 0;
+            state = MovementState.Idle;
+            return;
         }
 
-        if (!hasWaterLaneHeading)
+        observedLaneVersion = version;
+
+        Vector3 tangent = lane.Tangent;
+        tangent.y = 0f;
+
+        if (tangent.sqrMagnitude <= 0.0001f)
         {
-            return false;
+            state = MovementState.Idle;
+            return;
         }
 
-        // Stay on the current lane while the complete three-wide leading
-        // edge remains water. Local flow changes inside a broad bend cannot
-        // rotate the dwarf early anymore.
-        if (IsWaterAhead(waterLaneHeading) &&
-            TryBeginWaterCurrentMove(waterLaneHeading))
+        tangent.Normalize();
+
+        Vector3 centreOffset =
+            lane.Centre - transform.position;
+        centreOffset.y = 0f;
+
+        Vector3 lookAheadTarget =
+            lane.Centre +
+            tangent * driftLookAhead;
+
+        Vector3 desired =
+            lookAheadTarget - transform.position;
+        desired.y = 0f;
+
+        Vector3 steering =
+            tangent +
+            desired.normalized +
+            centreOffset * riverCentrePull;
+
+        if (steering.sqrMagnitude <= 0.0001f)
         {
+            steering = tangent;
+        }
+
+        steering.Normalize();
+
+        float waterMultiplier =
+            GetWaterSpeedMultiplier(
+                agent.CurrentVoxel,
+                MovementState.Drifting);
+
+        float distance =
+            driftSpeed *
+            waterMultiplier *
+            Time.deltaTime;
+
+        if (distance <= 0f)
+        {
+            return;
+        }
+
+        Vector3 proposed =
+            transform.position +
+            steering * distance;
+
+        if (!TryApplyDriftPosition(proposed))
+        {
+            // Slide along either axis rather than snapping or rotating early
+            // when the complete 3x3 footprint meets an inside corner.
+            Vector3 xOnly =
+                transform.position +
+                new Vector3(steering.x, 0f, 0f).normalized * distance;
+
+            Vector3 zOnly =
+                transform.position +
+                new Vector3(0f, 0f, steering.z).normalized * distance;
+
+            bool moved =
+                Mathf.Abs(steering.x) >= Mathf.Abs(steering.z)
+                    ? TryApplyDriftPosition(xOnly) ||
+                      TryApplyDriftPosition(zOnly)
+                    : TryApplyDriftPosition(zOnly) ||
+                      TryApplyDriftPosition(xOnly);
+
+            if (!moved)
+            {
+                state = MovementState.Idle;
+                return;
+            }
+        }
+
+        if (agent.VisualRoot != null)
+        {
+            Quaternion targetRotation =
+                Quaternion.LookRotation(steering, Vector3.up);
+
+            agent.VisualRoot.rotation =
+                Quaternion.RotateTowards(
+                    agent.VisualRoot.rotation,
+                    targetRotation,
+                    turnSpeed * Time.deltaTime);
+        }
+
+        SetLogicalFacingFromVector(steering);
+
+        if (UpdateWaterExposure(distance))
+        {
+            return;
+        }
+
+        if (TryReachExit())
+        {
+            return;
+        }
+    }
+
+    private bool TryApplyDriftPosition(Vector3 proposedPosition)
+    {
+        Vector3Int currentAnchor =
+            agent.CurrentVoxel;
+
+        Vector3Int proposedAnchor =
+            DwarfSpatialRules.RootPositionToAnchorVoxel(
+                proposedPosition);
+
+        if (proposedAnchor == currentAnchor)
+        {
+            transform.position = proposedPosition;
             return true;
         }
 
-        // The lane has ended. Only now may the cached water network select
-        // the next segment. Prefer primary, retain secondary as a branch or
-        // footprint fallback.
-        if (TryAdoptWaterLane(primaryDirection))
-        {
-            return true;
-        }
+        Vector3Int horizontalAnchor =
+            new(
+                proposedAnchor.x,
+                currentAnchor.y,
+                proposedAnchor.z);
 
-        if (TryAdoptWaterLane(secondaryDirection))
+        if (TryResolveDriftAnchor(
+                horizontalAnchor,
+                out Vector3Int resolvedAnchor))
         {
+            float verticalOffset =
+                resolvedAnchor.y - currentAnchor.y;
+
+            proposedPosition.y =
+                Mathf.MoveTowards(
+                    transform.position.y,
+                    transform.position.y + verticalOffset,
+                    Mathf.Max(0.01f, driftSpeed * Time.deltaTime));
+
+            transform.position = proposedPosition;
+            agent.SetCurrentVoxelContinuous(resolvedAnchor);
+
+            if (DwarfWorldQueries.HasNoSupport(world, resolvedAnchor))
+            {
+                state = MovementState.Idle;
+            }
+
             return true;
         }
 
         return false;
     }
 
-    private bool TryAdoptWaterLane(Vector3Int direction)
+    private bool TryResolveDriftAnchor(
+        Vector3Int horizontalAnchor,
+        out Vector3Int resolvedAnchor)
     {
-        if (direction == Vector3Int.zero ||
-            direction == -waterLaneHeading)
+        if (DwarfWorldQueries.CanOccupy(world, horizontalAnchor))
         {
-            return false;
-        }
-
-        Vector3Int previousHeading =
-            waterLaneHeading;
-
-        waterLaneHeading = direction;
-
-        if (TryBeginWaterCurrentMove(direction))
-        {
-            hasWaterLaneHeading = true;
+            resolvedAnchor = horizontalAnchor;
             return true;
         }
 
-        waterLaneHeading = previousHeading;
+        Vector3Int stepUp =
+            horizontalAnchor + Vector3Int.up;
+
+        if (DwarfWorldQueries.CanOccupy(world, stepUp) &&
+            DwarfWorldQueries.HasAnySupport(world, stepUp))
+        {
+            resolvedAnchor = stepUp;
+            return true;
+        }
+
+        Vector3Int stepDown =
+            horizontalAnchor + Vector3Int.down;
+
+        if (DwarfWorldQueries.CanOccupy(world, stepDown) &&
+            DwarfWorldQueries.HasAnySupport(world, stepDown))
+        {
+            resolvedAnchor = stepDown;
+            return true;
+        }
+
+        resolvedAnchor = default;
         return false;
+    }
+
+    private void SetLogicalFacingFromVector(Vector3 direction)
+    {
+        PuzzleSide facing;
+
+        if (Mathf.Abs(direction.x) >= Mathf.Abs(direction.z))
+        {
+            facing = direction.x >= 0f
+                ? PuzzleSide.East
+                : PuzzleSide.West;
+        }
+        else
+        {
+            facing = direction.z >= 0f
+                ? PuzzleSide.North
+                : PuzzleSide.South;
+        }
+
+        if (facing != agent.Facing)
+        {
+            agent.SetFacing(facing, snapVisual: false);
+        }
     }
 
     private bool IsWaterAhead(Vector3Int direction)
@@ -1338,6 +1520,7 @@ public class DwarfMovement : MonoBehaviour
         deepWaterDistanceTravelled = 0f;
         hasWaterLaneHeading = false;
         waterLaneHeading = Vector3Int.zero;
+        observedLaneVersion = 0;
 
         startWorldPosition =
             transform.position;
