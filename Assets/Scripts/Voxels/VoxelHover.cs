@@ -173,10 +173,11 @@ public class VoxelHover : MonoBehaviour
             return;
         }
 
-        // Fluid meshes deliberately have no physics collider. In Source mode,
-        // inspect the voxel ray up to the terrain hit and select the first
-        // visible Water cell instead of the solid voxel behind it.
-        if (selectedAction == EditorAction.Source &&
+        // Fluid meshes deliberately have no physics collider. Source and
+        // Erase inspect the voxel ray up to the terrain hit and select the
+        // first visible Water cell instead of the solid voxel behind it.
+        if ((selectedAction == EditorAction.Source ||
+             selectedAction == EditorAction.Erase) &&
             TryFindWaterVoxelAlongRay(
                 ray,
                 hit.distance + 1f,
