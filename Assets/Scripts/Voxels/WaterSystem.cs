@@ -439,7 +439,7 @@ public sealed class WaterSystem : IDisposable
                 additions,
                 Array.Empty<PlanUnit>(),
                 generatesWater: true,
-                sourceBody.TotalSourceUnitsPerTick));
+                unitsPerTick: sourceBody.TotalSourceUnitsPerTick));
 
         return true;
     }
@@ -666,7 +666,7 @@ public sealed class WaterSystem : IDisposable
             additions,
             removals,
             generatesWater: false,
-            MaximumTransferredUnitsPerTick);
+            unitsPerTick: MaximumTransferredUnitsPerTick);
     }
 
     private void ApplyNextRedistributionTick()
@@ -843,7 +843,7 @@ public sealed class WaterSystem : IDisposable
     private bool CanSearchSourceSpace(
         Vector3Int position,
         int maximumY,
-        IReadOnlyCollection<Vector3Int> originalSourceCells)
+        HashSet<Vector3Int> originalSourceCells)
     {
         if (position.y > maximumY ||
             !world.ContainsExistingChunkAt(position))
