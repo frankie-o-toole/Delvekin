@@ -203,6 +203,21 @@ public class VoxelWorld : MonoBehaviour
             : Vector3.zero;
     }
 
+    public bool TryGetWaterLaneSample(
+        Vector3Int surfacePosition,
+        out WaterLaneSample sample,
+        out int version)
+    {
+        sample = default;
+        version = 0;
+
+        return waterSystem != null &&
+               waterSystem.TryGetLaneSample(
+                   surfacePosition,
+                   out sample,
+                   out version);
+    }
+
     public bool SetWaterAmount(
         Vector3Int worldPosition,
         WaterAmount amount)

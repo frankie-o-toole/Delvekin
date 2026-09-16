@@ -49,12 +49,14 @@ public sealed class WaterSystem : IDisposable
     private readonly List<Vector3Int> portalVoxelBuffer = new();
     private readonly Dictionary<int, WaterBody> bodies = new();
     private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
+    private readonly Dictionary<int, WaterLaneSnapshot> laneSnapshots = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
     private readonly Queue<WaterRedistributionPlan> activePlans = new();
 
     private bool topologyDirty;
     private bool applyingRedistribution;
     private int nextBodyId = 1;
+    private int nextLaneVersion = 1;
     private float redistributionTickTimer;
 
     public bool HasPendingWork =>
@@ -84,6 +86,7 @@ public sealed class WaterSystem : IDisposable
         sources.Clear();
         bodies.Clear();
         bodyByPosition.Clear();
+        laneSnapshots.Clear();
         pendingOpenings.Clear();
         activePlans.Clear();
         redistributionTickTimer = 0f;
@@ -422,6 +425,31 @@ public sealed class WaterSystem : IDisposable
             : Vector3.zero;
     }
 
+    public bool TryGetLaneSample(
+        Vector3Int surfacePosition,
+        out WaterLaneSample sample,
+        out int version)
+    {
+        sample = default;
+        version = 0;
+
+        if (!bodyByPosition.TryGetValue(
+                surfacePosition,
+                out int bodyId) ||
+            !laneSnapshots.TryGetValue(
+                bodyId,
+                out WaterLaneSnapshot snapshot))
+        {
+            return false;
+        }
+
+        version = snapshot.Version;
+
+        return snapshot.TryGetSample(
+            surfacePosition,
+            out sample);
+    }
+
     private void QueueExistingSourceFalls()
     {
         foreach (WaterBody body in bodies.Values)
@@ -492,6 +520,133 @@ public sealed class WaterSystem : IDisposable
         }
     }
 
+
+
+    private void RebuildLaneSnapshots()
+    {
+        Dictionary<int, WaterLaneSnapshot> rebuilt = new();
+
+        foreach (WaterBody body in bodies.Values)
+        {
+            if (body.Kind != WaterBodyKind.SourceFed)
+            {
+                continue;
+            }
+
+            WaterLaneSnapshot snapshot =
+                BuildLaneSnapshot(body);
+
+            if (snapshot.SampleCount > 0)
+            {
+                rebuilt[body.Id] = snapshot;
+            }
+        }
+
+        // Publish completed snapshots together. During redistribution this
+        // method is not called, so dwarfs continue reading the previous set.
+        laneSnapshots.Clear();
+
+        foreach (var pair in rebuilt)
+        {
+            laneSnapshots[pair.Key] = pair.Value;
+        }
+    }
+
+    private WaterLaneSnapshot BuildLaneSnapshot(WaterBody body)
+    {
+        HashSet<Vector3Int> surfaceCells = new();
+
+        foreach (Vector3Int position in body.Cells)
+        {
+            if (!cells.ContainsKey(position + Vector3Int.up))
+            {
+                surfaceCells.Add(position);
+            }
+        }
+
+        Dictionary<Vector3Int, WaterLaneSample> samples = new();
+
+        foreach (Vector3Int position in surfaceCells)
+        {
+            if (!cells.TryGetValue(position, out WaterCell cell) ||
+                cell.Motion != WaterMotion.Flowing)
+            {
+                continue;
+            }
+
+            Vector3Int primary =
+                cell.PrimaryFlowDirection;
+
+            if (primary.y != 0 ||
+                primary == Vector3Int.zero)
+            {
+                continue;
+            }
+
+            Vector3Int lateral =
+                new(primary.z, 0, -primary.x);
+
+            int negativeWidth =
+                CountSurfaceSpan(
+                    surfaceCells,
+                    position,
+                    -lateral);
+
+            int positiveWidth =
+                CountSurfaceSpan(
+                    surfaceCells,
+                    position,
+                    lateral);
+
+            Vector3 negativeEdge =
+                (Vector3)(position - lateral * negativeWidth) +
+                Vector3.one * 0.5f;
+
+            Vector3 positiveEdge =
+                (Vector3)(position + lateral * positiveWidth) +
+                Vector3.one * 0.5f;
+
+            Vector3 centre =
+                (negativeEdge + positiveEdge) * 0.5f;
+
+            Vector3 tangent =
+                GetFlowVector(position);
+
+            samples[position] =
+                new WaterLaneSample(
+                    (Vector3)position + Vector3.one * 0.5f,
+                    centre,
+                    tangent,
+                    negativeWidth + positiveWidth + 1);
+        }
+
+        return new WaterLaneSnapshot(
+            body.Id,
+            nextLaneVersion++,
+            samples);
+    }
+
+    private static int CountSurfaceSpan(
+        HashSet<Vector3Int> surfaceCells,
+        Vector3Int origin,
+        Vector3Int direction)
+    {
+        int distance = 0;
+
+        // A generous guard protects malformed/open water surfaces while still
+        // supporting rivers wider than any intended gameplay construction.
+        for (int step = 1; step <= 256; step++)
+        {
+            if (!surfaceCells.Contains(origin + direction * step))
+            {
+                break;
+            }
+
+            distance = step;
+        }
+
+        return distance;
+    }
 
     private HashSet<Vector3Int> GetOutletCells(WaterBody body)
     {
@@ -1581,6 +1736,7 @@ public sealed class WaterSystem : IDisposable
         }
 
         RebuildFlowFields();
+        RebuildLaneSnapshots();
     }
 
     private bool TouchesWater(Vector3Int position)
