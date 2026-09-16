@@ -155,6 +155,7 @@ public static class DwarfWorldQueries
     {
         return
             type == VoxelType.Air ||
+            type == VoxelType.Water ||
             type == VoxelType.SpawnPoint ||
             type == VoxelType.ExitPoint;
     }
