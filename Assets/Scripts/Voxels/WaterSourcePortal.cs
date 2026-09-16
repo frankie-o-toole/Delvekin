@@ -12,6 +12,7 @@ public sealed class WaterSourcePortal : WaterPortal
     private int supplyUnitsPerTick = 128;
 
     private bool registered;
+    private int registeredStateHash = int.MinValue;
 
     public int SupplyUnitsPerTick => Mathf.Max(1, supplyUnitsPerTick);
 
@@ -24,6 +25,25 @@ public sealed class WaterSourcePortal : WaterPortal
     private void Start()
     {
         Register();
+    }
+
+    private void Update()
+    {
+        if (!registered)
+        {
+            Register();
+            return;
+        }
+
+        int currentStateHash = CalculateStateHash();
+
+        if (currentStateHash == registeredStateHash)
+        {
+            return;
+        }
+
+        registeredStateHash = currentStateHash;
+        voxelWorld.NotifyWaterSourcePortalChanged(this);
     }
 
     private void OnEnable()
@@ -58,6 +78,24 @@ public sealed class WaterSourcePortal : WaterPortal
 
         registered =
             voxelWorld.RegisterWaterSourcePortal(this);
+
+        if (registered)
+        {
+            registeredStateHash = CalculateStateHash();
+        }
+    }
+
+    private int CalculateStateHash()
+    {
+        unchecked
+        {
+            int hash = MinimumVoxel.GetHashCode();
+            hash = hash * 31 + Size.GetHashCode();
+            hash = hash * 31 + Facing.GetHashCode();
+            hash = hash * 31 + maximumLevelOffset;
+            hash = hash * 31 + supplyUnitsPerTick;
+            return hash;
+        }
     }
 
     private void Unregister()

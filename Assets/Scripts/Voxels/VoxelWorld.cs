@@ -217,6 +217,11 @@ public class VoxelWorld : MonoBehaviour
         waterSystem?.UnregisterSourcePortal(portal);
     }
 
+    public void NotifyWaterSourcePortalChanged(WaterSourcePortal portal)
+    {
+        waterSystem?.NotifySourcePortalChanged(portal);
+    }
+
     public bool RegisterWaterOutletPortal(WaterOutletPortal portal)
     {
         if (waterSystem == null)
@@ -231,6 +236,11 @@ public class VoxelWorld : MonoBehaviour
     public void UnregisterWaterOutletPortal(WaterOutletPortal portal)
     {
         waterSystem?.UnregisterOutletPortal(portal);
+    }
+
+    public void NotifyWaterOutletPortalChanged(WaterOutletPortal portal)
+    {
+        waterSystem?.NotifyOutletPortalChanged(portal);
     }
 
     public bool ToggleWaterSource(Vector3Int worldPosition)

@@ -9,6 +9,7 @@ public sealed class WaterOutletPortal : WaterPortal
     private int capacityOverride;
 
     private bool registered;
+    private int registeredStateHash = int.MinValue;
 
     public int Capacity =>
         capacityOverride > 0
@@ -21,6 +22,25 @@ public sealed class WaterOutletPortal : WaterPortal
     private void Start()
     {
         Register();
+    }
+
+    private void Update()
+    {
+        if (!registered)
+        {
+            Register();
+            return;
+        }
+
+        int currentStateHash = CalculateStateHash();
+
+        if (currentStateHash == registeredStateHash)
+        {
+            return;
+        }
+
+        registeredStateHash = currentStateHash;
+        voxelWorld.NotifyWaterOutletPortalChanged(this);
     }
 
     private void OnEnable()
@@ -55,6 +75,23 @@ public sealed class WaterOutletPortal : WaterPortal
 
         registered =
             voxelWorld.RegisterWaterOutletPortal(this);
+
+        if (registered)
+        {
+            registeredStateHash = CalculateStateHash();
+        }
+    }
+
+    private int CalculateStateHash()
+    {
+        unchecked
+        {
+            int hash = MinimumVoxel.GetHashCode();
+            hash = hash * 31 + Size.GetHashCode();
+            hash = hash * 31 + Facing.GetHashCode();
+            hash = hash * 31 + capacityOverride;
+            return hash;
+        }
     }
 
     private void Unregister()

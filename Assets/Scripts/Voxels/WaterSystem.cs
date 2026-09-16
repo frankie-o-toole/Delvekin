@@ -212,6 +212,14 @@ public sealed class WaterSystem : IDisposable
         }
     }
 
+    public void NotifySourcePortalChanged(WaterSourcePortal portal)
+    {
+        if (portal != null && sourcePortals.Contains(portal))
+        {
+            topologyDirty = true;
+        }
+    }
+
     public void RegisterOutletPortal(WaterOutletPortal portal)
     {
         if (portal != null && outletPortals.Add(portal))
@@ -223,6 +231,14 @@ public sealed class WaterSystem : IDisposable
     public void UnregisterOutletPortal(WaterOutletPortal portal)
     {
         if (portal != null && outletPortals.Remove(portal))
+        {
+            topologyDirty = true;
+        }
+    }
+
+    public void NotifyOutletPortalChanged(WaterOutletPortal portal)
+    {
+        if (portal != null && outletPortals.Contains(portal))
         {
             topologyDirty = true;
         }
@@ -1090,6 +1106,13 @@ public sealed class WaterSystem : IDisposable
                 }
             }
 
+            if (touchedBodies.Count == 0)
+            {
+                Debug.LogWarning(
+                    $"Water Source Portal '{portal.name}' does not overlap " +
+                    "any Water voxel.");
+            }
+
             foreach (int bodyId in touchedBodies)
             {
                 if (!bodies.TryGetValue(bodyId, out WaterBody body))
@@ -1123,6 +1146,13 @@ public sealed class WaterSystem : IDisposable
                 {
                     touchedBodies.Add(bodyId);
                 }
+            }
+
+            if (touchedBodies.Count == 0)
+            {
+                Debug.LogWarning(
+                    $"Water Outlet Portal '{portal.name}' does not overlap " +
+                    "any Water voxel.");
             }
 
             foreach (int bodyId in touchedBodies)
