@@ -153,17 +153,40 @@ public sealed class WaterSystem : IDisposable
 
         pendingOpenings.Clear();
 
+        WaterBody sourceBody = null;
+
         foreach (int bodyId in affectedBodyIds)
         {
-            if (!bodies.TryGetValue(
-                    bodyId,
-                    out WaterBody body) ||
-                body.Kind != WaterBodyKind.Finite)
+            if (!bodies.TryGetValue(bodyId, out WaterBody body) ||
+                body.Kind != WaterBodyKind.SourceFed)
             {
                 continue;
             }
 
-            BuildFiniteRedistributionPlan(body, openings);
+            if (sourceBody == null ||
+                body.MaximumSourceLevelY >
+                sourceBody.MaximumSourceLevelY)
+            {
+                sourceBody = body;
+            }
+        }
+
+        if (sourceBody != null)
+        {
+            BuildSourceFedRedistributionPlan(sourceBody, openings);
+        }
+        else
+        {
+            foreach (int bodyId in affectedBodyIds)
+            {
+                if (bodies.TryGetValue(
+                        bodyId,
+                        out WaterBody body) &&
+                    body.Kind == WaterBodyKind.Finite)
+                {
+                    BuildFiniteRedistributionPlan(body, openings);
+                }
+            }
         }
 
         topologyDirty = false;
@@ -308,6 +331,117 @@ public sealed class WaterSystem : IDisposable
         return cells.TryGetValue(position, out WaterCell cell)
             ? cell.PrimaryFlowDirection
             : Vector3Int.zero;
+    }
+
+    private bool BuildSourceFedRedistributionPlan(
+        WaterBody sourceBody,
+        IReadOnlyCollection<Vector3Int> allOpenings)
+    {
+        HashSet<Vector3Int> sourceCells =
+            new(sourceBody.Cells);
+        List<Vector3Int> relevantOpenings = new();
+
+        foreach (Vector3Int opening in allOpenings)
+        {
+            foreach (Vector3Int direction in CardinalDirections)
+            {
+                if (sourceCells.Contains(opening + direction))
+                {
+                    relevantOpenings.Add(opening);
+                    break;
+                }
+            }
+        }
+
+        if (relevantOpenings.Count == 0)
+        {
+            return false;
+        }
+
+        HashSet<Vector3Int> visited = new();
+        Dictionary<Vector3Int, int> distance = new();
+        Queue<Vector3Int> frontier = new();
+
+        foreach (Vector3Int opening in relevantOpenings)
+        {
+            if (!CanSearchSourceSpace(
+                    opening,
+                    sourceBody.MaximumSourceLevelY,
+                    sourceCells) ||
+                !visited.Add(opening))
+            {
+                continue;
+            }
+
+            distance[opening] = 0;
+            frontier.Enqueue(opening);
+        }
+
+        List<PlanUnit> additions = new();
+        bool searchLimitReached = false;
+
+        while (frontier.Count > 0)
+        {
+            Vector3Int position = frontier.Dequeue();
+            int currentDistance = distance[position];
+            VoxelType type = world.GetVoxel(position).Type;
+
+            if (type == VoxelType.Air)
+            {
+                additions.Add(
+                    new PlanUnit(position, currentDistance));
+                additions.Add(
+                    new PlanUnit(position, currentDistance));
+            }
+
+            if (visited.Count >= MaximumRedistributionCells)
+            {
+                searchLimitReached = true;
+                break;
+            }
+
+            foreach (Vector3Int direction in CardinalDirections)
+            {
+                Vector3Int neighbour = position + direction;
+
+                if (!CanSearchSourceSpace(
+                        neighbour,
+                        sourceBody.MaximumSourceLevelY,
+                        sourceCells) ||
+                    !visited.Add(neighbour))
+                {
+                    continue;
+                }
+
+                distance[neighbour] = currentDistance + 1;
+                frontier.Enqueue(neighbour);
+            }
+        }
+
+        if (searchLimitReached)
+        {
+            Debug.LogWarning(
+                $"Source-fed water body {sourceBody.Id} fill aborted: " +
+                $"reachable space exceeded {MaximumRedistributionCells} cells.");
+
+            return false;
+        }
+
+        if (additions.Count == 0)
+        {
+            return false;
+        }
+
+        additions.Sort(ComparePlanAdditions);
+
+        activePlans.Enqueue(
+            new WaterRedistributionPlan(
+                additions,
+                Array.Empty<PlanUnit>(),
+                generatesWater: true,
+                sourceBody.TotalSourceUnitsPerTick));
+
+        return true;
     }
 
     private bool BuildFiniteRedistributionPlan(
@@ -528,7 +662,11 @@ public sealed class WaterSystem : IDisposable
         additions.Sort(ComparePlanAdditions);
         removals.Sort(ComparePlanRemovals);
 
-        return new WaterRedistributionPlan(additions, removals);
+        return new WaterRedistributionPlan(
+            additions,
+            removals,
+            generatesWater: false,
+            MaximumTransferredUnitsPerTick);
     }
 
     private void ApplyNextRedistributionTick()
@@ -543,14 +681,21 @@ public sealed class WaterSystem : IDisposable
 
         Dictionary<Vector3Int, int> amountDeltas = new();
         int transferredUnits = 0;
+        int tickBudget = Mathf.Min(
+            MaximumTransferredUnitsPerTick,
+            plan.UnitsPerTick);
 
-        while (transferredUnits <
-                   MaximumTransferredUnitsPerTick &&
+        while (transferredUnits < tickBudget &&
                plan.TryTakeTransfer(
                    out Vector3Int source,
-                   out Vector3Int destination))
+                   out Vector3Int destination,
+                   out bool generated))
         {
-            AddDelta(amountDeltas, source, -1);
+            if (!generated)
+            {
+                AddDelta(amountDeltas, source, -1);
+            }
+
             AddDelta(amountDeltas, destination, +1);
             transferredUnits++;
         }
@@ -693,6 +838,32 @@ public sealed class WaterSystem : IDisposable
         return comparison != 0
             ? comparison
             : left.Position.z.CompareTo(right.Position.z);
+    }
+
+    private bool CanSearchSourceSpace(
+        Vector3Int position,
+        int maximumY,
+        IReadOnlyCollection<Vector3Int> originalSourceCells)
+    {
+        if (position.y > maximumY ||
+            !world.ContainsExistingChunkAt(position))
+        {
+            return false;
+        }
+
+        VoxelType type = world.GetVoxel(position).Type;
+
+        if (type == VoxelType.Air)
+        {
+            return true;
+        }
+
+        // Water belonging to another body may be crossed so a connected
+        // finite lake inherits the source. Do not traverse back through the
+        // original source body and escape through unrelated authored shores.
+        return
+            type == VoxelType.Water &&
+            !originalSourceCells.Contains(position);
     }
 
     private bool CanSearchAir(
@@ -881,21 +1052,28 @@ public sealed class WaterSystem : IDisposable
     {
         private readonly IReadOnlyList<PlanUnit> additions;
         private readonly IReadOnlyList<PlanUnit> removals;
+        private readonly bool generatesWater;
 
         private int additionIndex;
         private int removalIndex;
         private int allowedDistance;
 
+        public int UnitsPerTick { get; }
+
         public bool IsComplete =>
             additionIndex >= additions.Count &&
-            removalIndex >= removals.Count;
+            (generatesWater || removalIndex >= removals.Count);
 
         public WaterRedistributionPlan(
             IReadOnlyList<PlanUnit> additions,
-            IReadOnlyList<PlanUnit> removals)
+            IReadOnlyList<PlanUnit> removals,
+            bool generatesWater,
+            int unitsPerTick)
         {
             this.additions = additions;
             this.removals = removals;
+            this.generatesWater = generatesWater;
+            UnitsPerTick = Mathf.Max(1, unitsPerTick);
         }
 
         public void AdvanceFlowFront(int depth)
@@ -905,23 +1083,29 @@ public sealed class WaterSystem : IDisposable
 
         public bool TryTakeTransfer(
             out Vector3Int source,
-            out Vector3Int destination)
+            out Vector3Int destination,
+            out bool generated)
         {
             source = default;
             destination = default;
+            generated = generatesWater;
 
             if (additionIndex >= additions.Count ||
-                removalIndex >= removals.Count ||
-                additions[additionIndex].Distance > allowedDistance)
+                additions[additionIndex].Distance > allowedDistance ||
+                (!generatesWater && removalIndex >= removals.Count))
             {
                 return false;
             }
 
             destination = additions[additionIndex].Position;
-            source = removals[removalIndex].Position;
-
             additionIndex++;
-            removalIndex++;
+
+            if (!generatesWater)
+            {
+                source = removals[removalIndex].Position;
+                removalIndex++;
+            }
+
             return true;
         }
     }
