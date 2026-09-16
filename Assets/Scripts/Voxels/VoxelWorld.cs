@@ -47,6 +47,8 @@ public class VoxelWorld : MonoBehaviour
     private readonly Dictionary<Vector3Int, FluidChunkRenderer>
         fluidChunkRenderers = new();
 
+    private Transform chunkRoot;
+
     private readonly HashSet<Vector3Int> dirtyFluidChunks = new();
 
     private readonly List<Vector3Int> spawnPoints =
@@ -682,11 +684,15 @@ public class VoxelWorld : MonoBehaviour
     private void CreateChunkRenderer(
         Chunk chunk)
     {
+        EnsureChunkRoot();
+
         GameObject go =
             new(
                 $"Chunk {chunk.ChunkCoordinate}");
 
-        go.transform.position =
+        go.transform.SetParent(chunkRoot, false);
+
+        go.transform.localPosition =
             new Vector3(
                 chunk.ChunkCoordinate.x *
                 Chunk.ChunkSize,
@@ -728,6 +734,26 @@ public class VoxelWorld : MonoBehaviour
         fluidChunkRenderers.Add(
             chunk.ChunkCoordinate,
             fluidRenderer);
+    }
+
+    private void EnsureChunkRoot()
+    {
+        if (chunkRoot != null)
+        {
+            return;
+        }
+
+        Transform existing = transform.Find("Runtime Chunks");
+
+        if (existing != null)
+        {
+            chunkRoot = existing;
+            return;
+        }
+
+        GameObject root = new("Runtime Chunks");
+        root.transform.SetParent(transform, false);
+        chunkRoot = root.transform;
     }
 
     // =====================================================
