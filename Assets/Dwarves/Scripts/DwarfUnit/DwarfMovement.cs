@@ -71,6 +71,10 @@ public class DwarfMovement : MonoBehaviour
     [Min(1)]
     private int riverCentreScanDistance = 12;
 
+    [SerializeField]
+    [Min(DwarfSpatialRules.Height)]
+    private int maximumWaterSurfaceSearch = 64;
+
     private VoxelWorld world;
     private DwarfPool pool;
 
@@ -613,9 +617,12 @@ public class DwarfMovement : MonoBehaviour
 
     private bool TryBeginWaterCurrentMove()
     {
+        Vector3Int waterSample =
+            GetWaterSampleVoxel();
+
         Vector3Int primaryDirection =
             world.GetFluidFlowDirection(
-                agent.CurrentVoxel);
+                waterSample);
 
         Vector3Int facingDirection =
             DirectionUtility.ToVector(agent.Facing);
@@ -650,7 +657,7 @@ public class DwarfMovement : MonoBehaviour
         // direction is the deliberate alternative turn.
         Vector3Int secondaryDirection =
             world.GetSecondaryWaterFlowDirection(
-                agent.CurrentVoxel);
+                waterSample);
 
         return TryBeginWaterCurrentMove(secondaryDirection);
     }
@@ -663,7 +670,7 @@ public class DwarfMovement : MonoBehaviour
         }
 
         Vector3Int target =
-            agent.CurrentVoxel + direction;
+            GetWaterSampleVoxel() + direction;
 
         // Require water across the three-wide leading edge. One stray corner
         // voxel must not keep a dwarf travelling into a shoreline.
@@ -824,7 +831,7 @@ public class DwarfMovement : MonoBehaviour
              step++)
         {
             Vector3Int position =
-                agent.CurrentVoxel + direction * step;
+                GetWaterSampleVoxel() + direction * step;
 
             if (world.GetVoxel(position).Type != VoxelType.Water)
             {
@@ -844,11 +851,18 @@ public class DwarfMovement : MonoBehaviour
         Vector3Int lateral =
             new(flowDirection.z, 0, -flowDirection.x);
 
+        Vector3Int waterAnchor =
+            new(
+                anchor.x,
+                GetWaterSampleVoxel().y,
+                anchor.z);
+
         for (int offset = -DwarfSpatialRules.HalfWidth;
              offset <= DwarfSpatialRules.HalfWidth;
              offset++)
         {
-            if (world.GetVoxel(anchor + lateral * offset).Type !=
+            if (world.GetVoxel(
+                    waterAnchor + lateral * offset).Type !=
                 VoxelType.Water)
             {
                 return false;
@@ -856,6 +870,37 @@ public class DwarfMovement : MonoBehaviour
         }
 
         return true;
+    }
+
+    private Vector3Int GetWaterSampleVoxel()
+    {
+        Vector3Int sample =
+            agent.CurrentVoxel;
+
+        if (world.GetVoxel(sample).Type != VoxelType.Water)
+        {
+            return sample;
+        }
+
+        // Current and river width belong to the shared water surface, not to
+        // the dwarf's foot height. Stop at the first non-water cell so a
+        // separate body above cannot be sampled accidentally.
+        for (int step = 1;
+             step <= maximumWaterSurfaceSearch;
+             step++)
+        {
+            Vector3Int above =
+                agent.CurrentVoxel + Vector3Int.up * step;
+
+            if (world.GetVoxel(above).Type != VoxelType.Water)
+            {
+                break;
+            }
+
+            sample = above;
+        }
+
+        return sample;
     }
 
     private void SetFacingToDirection(Vector3Int direction)
