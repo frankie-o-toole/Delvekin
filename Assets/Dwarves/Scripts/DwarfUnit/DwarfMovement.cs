@@ -617,6 +617,28 @@ public class DwarfMovement : MonoBehaviour
             world.GetFluidFlowDirection(
                 agent.CurrentVoxel);
 
+        Vector3Int facingDirection =
+            DirectionUtility.ToVector(agent.Facing);
+
+        bool primaryTurnsCorner =
+            primaryDirection.y == 0 &&
+            facingDirection.y == 0 &&
+            primaryDirection != Vector3Int.zero &&
+            facingDirection != Vector3Int.zero &&
+            Vector3Int.Dot(primaryDirection, facingDirection) == 0;
+
+        // A broad voxel corner exposes its new axis several cells before the
+        // current lane actually ends. Preserve the dwarf's incoming momentum
+        // until its complete footprint can no longer advance through water.
+        if (primaryTurnsCorner &&
+            IsWaterAhead(facingDirection) &&
+            TryBeginWaterCurrentMove(
+                facingDirection,
+                applyCentring: false))
+        {
+            return true;
+        }
+
         if (TryBeginWaterCurrentMove(primaryDirection))
         {
             return true;
@@ -632,8 +654,38 @@ public class DwarfMovement : MonoBehaviour
         return TryBeginWaterCurrentMove(secondaryDirection);
     }
 
+    private bool IsWaterAhead(Vector3Int direction)
+    {
+        if (direction.y != 0)
+        {
+            return false;
+        }
+
+        Vector3Int target =
+            agent.CurrentVoxel + direction;
+
+        // Require water across the three-wide leading edge. One stray corner
+        // voxel must not keep a dwarf travelling into a shoreline.
+        Vector3Int lateral =
+            new(direction.z, 0, -direction.x);
+
+        for (int offset = -DwarfSpatialRules.HalfWidth;
+             offset <= DwarfSpatialRules.HalfWidth;
+             offset++)
+        {
+            if (world.GetVoxel(target + lateral * offset).Type !=
+                VoxelType.Water)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private bool TryBeginWaterCurrentMove(
-        Vector3Int currentDirection)
+        Vector3Int currentDirection,
+        bool applyCentring = true)
     {
         if (currentDirection == Vector3Int.zero)
         {
@@ -643,7 +695,9 @@ public class DwarfMovement : MonoBehaviour
         // Horizontal rivers gently centre a dwarf before advancing it.
         // This keeps its 3x3 footprint away from the banks without snapping.
         Vector3Int movementDirection =
-            GetRiverCentreCorrection(currentDirection);
+            applyCentring
+                ? GetRiverCentreCorrection(currentDirection)
+                : Vector3Int.zero;
 
         if (movementDirection == Vector3Int.zero)
         {
