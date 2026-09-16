@@ -653,8 +653,6 @@ public class DwarfMovement : MonoBehaviour
             return false;
         }
 
-        SetFacingToDirection(movementDirection);
-
         Vector3Int target =
             agent.CurrentVoxel +
             movementDirection;
@@ -663,6 +661,7 @@ public class DwarfMovement : MonoBehaviour
         {
             if (DwarfWorldQueries.HasAnySupport(world, target))
             {
+                SetFacingToDirection(movementDirection);
                 MoveToVoxel(target, MovementState.Walking);
                 return true;
             }
@@ -673,12 +672,14 @@ public class DwarfMovement : MonoBehaviour
             if (DwarfWorldQueries.CanOccupy(world, stepDown) &&
                 DwarfWorldQueries.HasAnySupport(world, stepDown))
             {
+                SetFacingToDirection(movementDirection);
                 MoveToVoxel(
                     stepDown,
                     MovementState.SteppingDown);
                 return true;
             }
 
+            SetFacingToDirection(movementDirection);
             MoveToVoxel(target, MovementState.Walking);
             return true;
         }
@@ -691,6 +692,7 @@ public class DwarfMovement : MonoBehaviour
             if (DwarfWorldQueries.CanOccupy(world, stepUp) &&
                 DwarfWorldQueries.HasAnySupport(world, stepUp))
             {
+                SetFacingToDirection(movementDirection);
                 MoveToVoxel(
                     stepUp,
                     MovementState.SteppingUp);
@@ -698,8 +700,9 @@ public class DwarfMovement : MonoBehaviour
             }
         }
 
-        // Keep the current-facing direction. Ordinary movement below will
-        // apply the existing shoreline collision and turn-around rules.
+        // Keep the previous facing when the 3x3x5 footprint cannot take
+        // the current yet. Ordinary movement can advance toward the corner
+        // until the turn is spatially valid, or apply shoreline turn-around.
         return false;
     }
 
