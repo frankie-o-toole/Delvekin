@@ -119,12 +119,12 @@ public class VoxelWorld : MonoBehaviour
             return;
         }
 
-        // Stable water owns no active work. The method is only entered while
-        // an edit or a previous transfer has left water cells awake.
+        // Water only performs deferred body-topology work after edits.
+        // Clean bodies have no Update cost beyond this boolean check.
         if (waterSystem != null &&
-            waterSystem.HasAwakeWater)
+            waterSystem.HasPendingWork)
         {
-            waterSystem.Tick(Time.deltaTime);
+            waterSystem.ProcessPendingWork();
         }
 
         fluidSimulation?.Tick(Time.deltaTime);

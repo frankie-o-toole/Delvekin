@@ -4,33 +4,35 @@ using UnityEngine;
 
 /// <summary>
 /// Owns Water runtime state independently from the legacy Lava solver.
-/// Water is simulated only while cells are awake. Stable water has no
-/// per-frame search cost.
+///
+/// Authored water never moves or searches for exits by itself. Connected
+/// WaterBody topology is rebuilt once after relevant voxel edits and remains
+/// completely idle while the world is unchanged.
 /// </summary>
 public sealed class WaterSystem : IDisposable
 {
     public const int MaximumAmount = (int)WaterAmount.Full;
 
-    private const float TickInterval = 0.1f;
-    private const int MaximumStepsPerFrame = 4;
-
-    private static readonly Vector3Int[] HorizontalDirections =
+    private static readonly Vector3Int[] CardinalDirections =
     {
         Vector3Int.forward,
         Vector3Int.right,
         Vector3Int.back,
-        Vector3Int.left
+        Vector3Int.left,
+        Vector3Int.up,
+        Vector3Int.down
     };
 
     private readonly VoxelWorld world;
     private readonly Dictionary<Vector3Int, WaterCell> cells = new();
-    private readonly Queue<Vector3Int> awakeCells = new();
-    private readonly HashSet<Vector3Int> queuedCells = new();
+    private readonly Dictionary<int, WaterBody> bodies = new();
+    private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
 
-    private float tickAccumulator;
-    private bool applyingWaterEdit;
+    private bool topologyDirty;
+    private int nextBodyId = 1;
 
-    public bool HasAwakeWater => awakeCells.Count > 0;
+    public bool HasPendingWork => topologyDirty;
+    public int BodyCount => bodies.Count;
 
     public WaterSystem(VoxelWorld world)
     {
@@ -49,9 +51,9 @@ public sealed class WaterSystem : IDisposable
     public void ResetFromWorld()
     {
         cells.Clear();
-        awakeCells.Clear();
-        queuedCells.Clear();
-        tickAccumulator = 0f;
+        bodies.Clear();
+        bodyByPosition.Clear();
+        nextBodyId = 1;
 
         world.ForEachVoxel(
             (position, voxel) =>
@@ -62,27 +64,23 @@ public sealed class WaterSystem : IDisposable
                         new WaterCell(WaterAmount.Full);
                 }
             });
+
+        topologyDirty = cells.Count > 0;
     }
 
-    public void Tick(float deltaTime)
+    /// <summary>
+    /// Resolves deferred topology work once. Multiple voxel edits performed
+    /// in the same frame collapse into this single rebuild.
+    /// </summary>
+    public void ProcessPendingWork()
     {
-        if (!HasAwakeWater)
+        if (!topologyDirty)
         {
-            tickAccumulator = 0f;
             return;
         }
 
-        tickAccumulator += deltaTime;
-        int steps = 0;
-
-        while (tickAccumulator >= TickInterval &&
-               steps < MaximumStepsPerFrame &&
-               HasAwakeWater)
-        {
-            tickAccumulator -= TickInterval;
-            SimulateAwakePass();
-            steps++;
-        }
+        RebuildBodies();
+        topologyDirty = false;
     }
 
     public bool TryGetCell(
@@ -90,6 +88,17 @@ public sealed class WaterSystem : IDisposable
         out WaterCell cell)
     {
         return cells.TryGetValue(position, out cell);
+    }
+
+    public bool TryGetBody(
+        Vector3Int position,
+        out WaterBody body)
+    {
+        body = null;
+
+        return
+            bodyByPosition.TryGetValue(position, out int bodyId) &&
+            bodies.TryGetValue(bodyId, out body);
     }
 
     public int GetAmount(Vector3Int position)
@@ -122,7 +131,7 @@ public sealed class WaterSystem : IDisposable
 
         cell.Amount = amount;
         cells[position] = cell;
-        WakeNeighborhood(position);
+        topologyDirty = true;
 
         if (refreshVisuals)
         {
@@ -173,162 +182,59 @@ public sealed class WaterSystem : IDisposable
             : Vector3Int.zero;
     }
 
-    private void SimulateAwakePass()
+    private void RebuildBodies()
     {
-        int passCount = awakeCells.Count;
+        bodies.Clear();
+        bodyByPosition.Clear();
 
-        for (int index = 0; index < passCount; index++)
+        HashSet<Vector3Int> unassigned = new(cells.Keys);
+        Queue<Vector3Int> frontier = new();
+
+        while (unassigned.Count > 0)
         {
-            Vector3Int position = awakeCells.Dequeue();
-            queuedCells.Remove(position);
+            Vector3Int start = default;
 
-            if (!cells.ContainsKey(position))
+            foreach (Vector3Int position in unassigned)
             {
-                continue;
+                start = position;
+                break;
             }
 
-            TryMoveWater(position);
+            WaterBody body = new(nextBodyId++);
+            bodies.Add(body.Id, body);
+
+            unassigned.Remove(start);
+            frontier.Enqueue(start);
+
+            while (frontier.Count > 0)
+            {
+                Vector3Int position = frontier.Dequeue();
+                bodyByPosition[position] = body.Id;
+                body.AddCell(position, GetAmount(position));
+
+                foreach (Vector3Int direction in CardinalDirections)
+                {
+                    Vector3Int neighbour = position + direction;
+
+                    if (!unassigned.Remove(neighbour))
+                    {
+                        continue;
+                    }
+
+                    frontier.Enqueue(neighbour);
+                }
+            }
         }
     }
 
-    private bool TryMoveWater(Vector3Int source)
+    private bool TouchesWater(Vector3Int position)
     {
-        Vector3Int below = source + Vector3Int.down;
-
-        if (TryTransferDown(source, below))
+        if (cells.ContainsKey(position))
         {
             return true;
         }
 
-        int directionOffset =
-            Mathf.Abs(
-                source.x * 73856093 ^
-                source.y * 19349663 ^
-                source.z * 83492791) %
-            HorizontalDirections.Length;
-
-        // Prefer a horizontal cell that immediately leads downward.
-        for (int index = 0;
-             index < HorizontalDirections.Length;
-             index++)
-        {
-            Vector3Int direction =
-                HorizontalDirections[
-                    (index + directionOffset) %
-                    HorizontalDirections.Length];
-
-            Vector3Int target = source + direction;
-
-            if (CanDrainFrom(target) &&
-                TryTransfer(
-                    source,
-                    target,
-                    GetAmount(source)))
-            {
-                return true;
-            }
-        }
-
-        // A body may create a half-height shore on supported ground.
-        // A single isolated voxel deliberately does not split outward.
-        if (GetAmount(source) == MaximumAmount &&
-            HasCardinalWaterNeighbour(source))
-        {
-            for (int index = 0;
-                 index < HorizontalDirections.Length;
-                 index++)
-            {
-                Vector3Int direction =
-                    HorizontalDirections[
-                        (index + directionOffset) %
-                        HorizontalDirections.Length];
-
-                Vector3Int target = source + direction;
-
-                if (CanReceiveShoreWater(target) &&
-                    TryTransfer(source, target, 1))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
-    }
-
-    private bool TryTransferDown(
-        Vector3Int source,
-        Vector3Int target)
-    {
-        if (!world.ContainsExistingChunkAt(target))
-        {
-            return false;
-        }
-
-        VoxelType targetType = world.GetVoxel(target).Type;
-
-        if (targetType == VoxelType.Air)
-        {
-            return TryTransfer(
-                source,
-                target,
-                GetAmount(source));
-        }
-
-        if (targetType != VoxelType.Water)
-        {
-            return false;
-        }
-
-        int capacity = MaximumAmount - GetAmount(target);
-
-        return capacity > 0 &&
-               TryTransfer(
-                   source,
-                   target,
-                   Mathf.Min(GetAmount(source), capacity));
-    }
-
-    private bool CanDrainFrom(Vector3Int position)
-    {
-        if (!world.ContainsExistingChunkAt(position) ||
-            world.GetVoxel(position).Type != VoxelType.Air)
-        {
-            return false;
-        }
-
-        Vector3Int below = position + Vector3Int.down;
-
-        if (!world.ContainsExistingChunkAt(below))
-        {
-            return false;
-        }
-
-        VoxelType belowType = world.GetVoxel(below).Type;
-
-        return belowType == VoxelType.Air ||
-               (belowType == VoxelType.Water &&
-                GetAmount(below) < MaximumAmount);
-    }
-
-    private bool CanReceiveShoreWater(Vector3Int position)
-    {
-        if (!world.ContainsExistingChunkAt(position) ||
-            world.GetVoxel(position).Type != VoxelType.Air)
-        {
-            return false;
-        }
-
-        Vector3Int below = position + Vector3Int.down;
-
-        return world.ContainsExistingChunkAt(below) &&
-               world.GetVoxel(below).Type != VoxelType.Air &&
-               world.GetVoxel(below).Type != VoxelType.Water;
-    }
-
-    private bool HasCardinalWaterNeighbour(Vector3Int position)
-    {
-        foreach (Vector3Int direction in HorizontalDirections)
+        foreach (Vector3Int direction in CardinalDirections)
         {
             if (cells.ContainsKey(position + direction))
             {
@@ -336,127 +242,7 @@ public sealed class WaterSystem : IDisposable
             }
         }
 
-        return cells.ContainsKey(position + Vector3Int.up) ||
-               cells.ContainsKey(position + Vector3Int.down);
-    }
-
-    private bool TryTransfer(
-        Vector3Int source,
-        Vector3Int target,
-        int requestedAmount)
-    {
-        int sourceAmount = GetAmount(source);
-
-        if (sourceAmount <= 0 ||
-            requestedAmount <= 0 ||
-            !world.ContainsExistingChunkAt(target))
-        {
-            return false;
-        }
-
-        VoxelType targetType = world.GetVoxel(target).Type;
-
-        if (targetType != VoxelType.Air &&
-            targetType != VoxelType.Water)
-        {
-            return false;
-        }
-
-        int targetAmount = GetAmount(target);
-        int transferAmount = Mathf.Min(
-            requestedAmount,
-            Mathf.Min(
-                sourceAmount,
-                MaximumAmount - targetAmount));
-
-        if (transferAmount <= 0)
-        {
-            return false;
-        }
-
-        int remainingSource = sourceAmount - transferAmount;
-        int resultingTarget = targetAmount + transferAmount;
-
-        applyingWaterEdit = true;
-
-        try
-        {
-            Dictionary<Vector3Int, Voxel> voxelChanges = new();
-
-            if (remainingSource == 0)
-            {
-                cells.Remove(source);
-                voxelChanges[source] =
-                    new Voxel(VoxelType.Air);
-            }
-            else
-            {
-                WaterCell sourceCell = cells[source];
-                sourceCell.Amount =
-                    (WaterAmount)remainingSource;
-                cells[source] = sourceCell;
-            }
-
-            if (targetAmount == 0)
-            {
-                cells[target] =
-                    new WaterCell(
-                        (WaterAmount)resultingTarget);
-                voxelChanges[target] =
-                    new Voxel(VoxelType.Water);
-            }
-            else
-            {
-                WaterCell targetCell = cells[target];
-                targetCell.Amount =
-                    (WaterAmount)resultingTarget;
-                cells[target] = targetCell;
-            }
-
-            if (voxelChanges.Count > 0)
-            {
-                world.SetFluidVoxelStates(voxelChanges);
-            }
-        }
-        finally
-        {
-            applyingWaterEdit = false;
-        }
-
-        WakeNeighborhood(source);
-        WakeNeighborhood(target);
-
-        world.RefreshVoxelVisuals(
-            new[]
-            {
-                source,
-                target
-            });
-
-        return true;
-    }
-
-    private void WakeNeighborhood(Vector3Int position)
-    {
-        WakeIfWater(position);
-        WakeIfWater(position + Vector3Int.up);
-        WakeIfWater(position + Vector3Int.down);
-
-        foreach (Vector3Int direction in HorizontalDirections)
-        {
-            WakeIfWater(position + direction);
-        }
-    }
-
-    private void WakeIfWater(Vector3Int position)
-    {
-        if (!cells.ContainsKey(position) ||
-            !queuedCells.Add(position))
-        {
-            return;
-        }
-
-        awakeCells.Enqueue(position);
+        return false;
     }
 
     private void HandleVoxelChanged(
@@ -464,15 +250,13 @@ public sealed class WaterSystem : IDisposable
         Voxel previous,
         Voxel current)
     {
-        if (applyingWaterEdit)
-        {
-            return;
-        }
+        bool waterOccupancyChanged =
+            previous.Type == VoxelType.Water ||
+            current.Type == VoxelType.Water;
 
         if (previous.Type == VoxelType.Water)
         {
             cells.Remove(position);
-            queuedCells.Remove(position);
         }
 
         if (current.Type == VoxelType.Water)
@@ -481,6 +265,11 @@ public sealed class WaterSystem : IDisposable
                 new WaterCell(WaterAmount.Full);
         }
 
-        WakeNeighborhood(position);
+        // Terrain edits matter only when they touch Water. This flag is
+        // deferred, so a line or box edit still causes one body rebuild.
+        if (waterOccupancyChanged || TouchesWater(position))
+        {
+            topologyDirty = true;
+        }
     }
 }
