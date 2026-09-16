@@ -53,8 +53,8 @@ public sealed class WaterOutletPortal : WaterPortal
             return;
         }
 
-        voxelWorld.RegisterWaterOutletPortal(this);
-        registered = true;
+        registered =
+            voxelWorld.RegisterWaterOutletPortal(this);
     }
 
     private void Unregister()

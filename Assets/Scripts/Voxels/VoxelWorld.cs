@@ -201,9 +201,15 @@ public class VoxelWorld : MonoBehaviour
         return waterSystem?.SetAmounts(worldPositions, amount) ?? 0;
     }
 
-    public void RegisterWaterSourcePortal(WaterSourcePortal portal)
+    public bool RegisterWaterSourcePortal(WaterSourcePortal portal)
     {
-        waterSystem?.RegisterSourcePortal(portal);
+        if (waterSystem == null)
+        {
+            return false;
+        }
+
+        waterSystem.RegisterSourcePortal(portal);
+        return true;
     }
 
     public void UnregisterWaterSourcePortal(WaterSourcePortal portal)
@@ -211,9 +217,15 @@ public class VoxelWorld : MonoBehaviour
         waterSystem?.UnregisterSourcePortal(portal);
     }
 
-    public void RegisterWaterOutletPortal(WaterOutletPortal portal)
+    public bool RegisterWaterOutletPortal(WaterOutletPortal portal)
     {
-        waterSystem?.RegisterOutletPortal(portal);
+        if (waterSystem == null)
+        {
+            return false;
+        }
+
+        waterSystem.RegisterOutletPortal(portal);
+        return true;
     }
 
     public void UnregisterWaterOutletPortal(WaterOutletPortal portal)

@@ -387,6 +387,33 @@ public sealed class WaterSystem : IDisposable
                 {
                     pendingOpenings.Add(below);
                 }
+
+                foreach (Vector3Int direction in CardinalDirections)
+                {
+                    if (direction.y != 0)
+                    {
+                        continue;
+                    }
+
+                    Vector3Int edge = position + direction;
+                    Vector3Int belowEdge = edge + Vector3Int.down;
+
+                    if (!world.ContainsExistingChunkAt(edge) ||
+                        !world.ContainsExistingChunkAt(belowEdge) ||
+                        world.GetVoxel(edge).Type != VoxelType.Air)
+                    {
+                        continue;
+                    }
+
+                    VoxelType supportType =
+                        world.GetVoxel(belowEdge).Type;
+
+                    if (supportType == VoxelType.Air ||
+                        supportType == VoxelType.Water)
+                    {
+                        pendingOpenings.Add(edge);
+                    }
+                }
             }
         }
     }
