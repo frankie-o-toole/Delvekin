@@ -173,6 +173,33 @@ public class VoxelHover : MonoBehaviour
             return;
         }
 
+        // Fluid meshes deliberately have no physics collider. In Source mode,
+        // inspect the voxel ray up to the terrain hit and select the first
+        // visible Water cell instead of the solid voxel behind it.
+        if (selectedAction == EditorAction.Source &&
+            TryFindWaterVoxelAlongRay(
+                ray,
+                hit.distance + 1f,
+                out Vector3Int waterVoxel))
+        {
+            hoveredVoxel = waterVoxel;
+            placementVoxel = waterVoxel;
+            hasValidVoxelTarget = true;
+
+            if (hoveredVoxel != lastVoxel)
+            {
+                lastVoxel = hoveredVoxel;
+                MoveHighlight(hoveredVoxel);
+            }
+
+            if (!highlight.gameObject.activeSelf)
+            {
+                highlight.gameObject.SetActive(true);
+            }
+
+            return;
+        }
+
         Vector3 insidePoint =
             hit.point -
             hit.normal * 0.01f;
@@ -204,6 +231,44 @@ public class VoxelHover : MonoBehaviour
         {
             highlight.gameObject.SetActive(true);
         }
+    }
+
+    private bool TryFindWaterVoxelAlongRay(
+        Ray ray,
+        float maximumDistance,
+        out Vector3Int waterVoxel)
+    {
+        waterVoxel = default;
+
+        const float sampleDistance = 0.2f;
+        Vector3Int previousPosition =
+            new(int.MinValue, int.MinValue, int.MinValue);
+
+        for (float distance = 0f;
+             distance <= maximumDistance;
+             distance += sampleDistance)
+        {
+            Vector3Int position =
+                Vector3Int.FloorToInt(ray.GetPoint(distance));
+
+            if (position == previousPosition)
+            {
+                continue;
+            }
+
+            previousPosition = position;
+
+            if (!VoxelVisibilitySystem.IsVoxelVisible(position) ||
+                voxelWorld.GetVoxel(position).Type != VoxelType.Water)
+            {
+                continue;
+            }
+
+            waterVoxel = position;
+            return true;
+        }
+
+        return false;
     }
 
     private void ClearHover()
