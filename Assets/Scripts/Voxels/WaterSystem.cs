@@ -31,6 +31,9 @@ public sealed class WaterSystem : IDisposable
     private readonly VoxelWorld world;
     private readonly Dictionary<Vector3Int, WaterCell> cells = new();
     private readonly Dictionary<Vector3Int, WaterSource> sources = new();
+    private readonly HashSet<WaterSourcePortal> sourcePortals = new();
+    private readonly HashSet<WaterOutletPortal> outletPortals = new();
+    private readonly List<Vector3Int> portalVoxelBuffer = new();
     private readonly Dictionary<int, WaterBody> bodies = new();
     private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
@@ -190,6 +193,38 @@ public sealed class WaterSystem : IDisposable
         }
 
         topologyDirty = false;
+    }
+
+    public void RegisterSourcePortal(WaterSourcePortal portal)
+    {
+        if (portal != null && sourcePortals.Add(portal))
+        {
+            topologyDirty = true;
+        }
+    }
+
+    public void UnregisterSourcePortal(WaterSourcePortal portal)
+    {
+        if (portal != null && sourcePortals.Remove(portal))
+        {
+            topologyDirty = true;
+        }
+    }
+
+    public void RegisterOutletPortal(WaterOutletPortal portal)
+    {
+        if (portal != null && outletPortals.Add(portal))
+        {
+            topologyDirty = true;
+        }
+    }
+
+    public void UnregisterOutletPortal(WaterOutletPortal portal)
+    {
+        if (portal != null && outletPortals.Remove(portal))
+        {
+            topologyDirty = true;
+        }
     }
 
     public bool IsSource(Vector3Int position)
@@ -983,6 +1018,69 @@ public sealed class WaterSystem : IDisposable
                 bodies.TryGetValue(bodyId, out WaterBody body))
             {
                 body.AddSource(source);
+            }
+        }
+
+        foreach (WaterSourcePortal portal in sourcePortals)
+        {
+            if (portal == null)
+            {
+                continue;
+            }
+
+            portalVoxelBuffer.Clear();
+            portal.GetCoveredVoxels(portalVoxelBuffer);
+            HashSet<int> touchedBodies = new();
+
+            foreach (Vector3Int position in portalVoxelBuffer)
+            {
+                if (bodyByPosition.TryGetValue(position, out int bodyId))
+                {
+                    touchedBodies.Add(bodyId);
+                }
+            }
+
+            foreach (int bodyId in touchedBodies)
+            {
+                if (!bodies.TryGetValue(bodyId, out WaterBody body))
+                {
+                    continue;
+                }
+
+                body.AddSource(
+                    new WaterSource(
+                        portal.MinimumVoxel,
+                        portal.MaximumLevelY,
+                        portal.SupplyUnitsPerTick,
+                        portal.Direction));
+            }
+        }
+
+        foreach (WaterOutletPortal portal in outletPortals)
+        {
+            if (portal == null)
+            {
+                continue;
+            }
+
+            portalVoxelBuffer.Clear();
+            portal.GetCoveredVoxels(portalVoxelBuffer);
+            HashSet<int> touchedBodies = new();
+
+            foreach (Vector3Int position in portalVoxelBuffer)
+            {
+                if (bodyByPosition.TryGetValue(position, out int bodyId))
+                {
+                    touchedBodies.Add(bodyId);
+                }
+            }
+
+            foreach (int bodyId in touchedBodies)
+            {
+                if (bodies.TryGetValue(bodyId, out WaterBody body))
+                {
+                    body.AddOutlet(portal);
+                }
             }
         }
     }

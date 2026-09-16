@@ -11,6 +11,7 @@ public sealed class WaterBody
 {
     private readonly HashSet<Vector3Int> cells = new();
     private readonly List<WaterSource> sources = new();
+    private readonly List<WaterOutletPortal> outlets = new();
 
     public int Id { get; }
     public WaterBodyKind Kind =>
@@ -20,10 +21,12 @@ public sealed class WaterBody
     public int HighestCellY { get; internal set; }
     public int CellCount => cells.Count;
     public int SourceCount => sources.Count;
+    public int OutletCount => outlets.Count;
     public int MaximumSourceLevelY { get; private set; }
     public int TotalSourceUnitsPerTick { get; private set; }
     public IReadOnlyCollection<Vector3Int> Cells => cells;
     public IReadOnlyList<WaterSource> Sources => sources;
+    public IReadOnlyList<WaterOutletPortal> Outlets => outlets;
 
     internal WaterBody(int id)
     {
@@ -37,6 +40,14 @@ public sealed class WaterBody
         cells.Add(position);
         AmountUnits += amountUnits;
         HighestCellY = Mathf.Max(HighestCellY, position.y);
+    }
+
+    internal void AddOutlet(WaterOutletPortal outlet)
+    {
+        if (outlet != null && !outlets.Contains(outlet))
+        {
+            outlets.Add(outlet);
+        }
     }
 
     internal void AddSource(WaterSource source)

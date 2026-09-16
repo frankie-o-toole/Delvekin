@@ -199,6 +199,26 @@ public class VoxelWorld : MonoBehaviour
         return waterSystem?.SetAmounts(worldPositions, amount) ?? 0;
     }
 
+    public void RegisterWaterSourcePortal(WaterSourcePortal portal)
+    {
+        waterSystem?.RegisterSourcePortal(portal);
+    }
+
+    public void UnregisterWaterSourcePortal(WaterSourcePortal portal)
+    {
+        waterSystem?.UnregisterSourcePortal(portal);
+    }
+
+    public void RegisterWaterOutletPortal(WaterOutletPortal portal)
+    {
+        waterSystem?.RegisterOutletPortal(portal);
+    }
+
+    public void UnregisterWaterOutletPortal(WaterOutletPortal portal)
+    {
+        waterSystem?.UnregisterOutletPortal(portal);
+    }
+
     public bool ToggleWaterSource(Vector3Int worldPosition)
     {
         return waterSystem != null &&
