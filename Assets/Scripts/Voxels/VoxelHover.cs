@@ -16,7 +16,8 @@ public class VoxelHover : MonoBehaviour
     private enum EditorAction
     {
         Place,
-        Erase
+        Erase,
+        Source
     }
 
     [Header("References")]
@@ -61,7 +62,7 @@ public class VoxelHover : MonoBehaviour
 
     private const float EditorUiScale = 2.5f;
     private const float EditorPanelWidth = 190f;
-    private const float EditorPanelHeight = 205f;
+    private const float EditorPanelHeight = 235f;
     private const float EditorPanelMargin = 10f;
 
     private void Awake()
@@ -424,6 +425,25 @@ public class VoxelHover : MonoBehaviour
             return;
         }
 
+        if (selectedAction == EditorAction.Source)
+        {
+            int changedSources = 0;
+
+            foreach (Vector3Int position in positions)
+            {
+                if (voxelWorld.ToggleWaterSource(position))
+                {
+                    changedSources++;
+                }
+            }
+
+            Debug.Log(
+                $"Source {selectedShape}: toggled " +
+                $"{changedSources} water source(s).");
+
+            return;
+        }
+
         VoxelType targetType = selectedAction == EditorAction.Place
             ? selectedVoxelType
             : VoxelType.Air;
@@ -769,7 +789,18 @@ public class VoxelHover : MonoBehaviour
         GUILayout.BeginHorizontal();
         DrawActionButton(EditorAction.Place);
         DrawActionButton(EditorAction.Erase);
+        DrawActionButton(EditorAction.Source);
         GUILayout.EndHorizontal();
+
+        if (selectedVoxelType == VoxelType.Water &&
+            hasValidVoxelTarget &&
+            voxelWorld.GetVoxel(hoveredVoxel).Type == VoxelType.Water)
+        {
+            string sourceState =
+                voxelWorld.IsWaterSource(hoveredVoxel) ? "Yes" : "No";
+
+            GUILayout.Label($"Hovered source: {sourceState}");
+        }
 
         GUILayout.Label("LMB drag: apply   Shift: straight");
         GUILayout.Label("Ctrl+Z: undo");

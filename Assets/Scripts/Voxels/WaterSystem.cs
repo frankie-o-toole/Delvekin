@@ -30,6 +30,7 @@ public sealed class WaterSystem : IDisposable
 
     private readonly VoxelWorld world;
     private readonly Dictionary<Vector3Int, WaterCell> cells = new();
+    private readonly Dictionary<Vector3Int, WaterSource> sources = new();
     private readonly Dictionary<int, WaterBody> bodies = new();
     private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
@@ -64,6 +65,7 @@ public sealed class WaterSystem : IDisposable
     public void ResetFromWorld()
     {
         cells.Clear();
+        sources.Clear();
         bodies.Clear();
         bodyByPosition.Clear();
         pendingOpenings.Clear();
@@ -165,6 +167,48 @@ public sealed class WaterSystem : IDisposable
         }
 
         topologyDirty = false;
+    }
+
+    public bool IsSource(Vector3Int position)
+    {
+        return sources.ContainsKey(position);
+    }
+
+    public bool ToggleSource(Vector3Int position)
+    {
+        if (!cells.ContainsKey(position) ||
+            world.GetVoxel(position).Type != VoxelType.Water)
+        {
+            return false;
+        }
+
+        if (sources.Remove(position))
+        {
+            topologyDirty = true;
+            Debug.Log($"Removed Water source at {position}.");
+            return true;
+        }
+
+        int maximumLevelY = position.y;
+
+        if (TryGetBody(position, out WaterBody body))
+        {
+            maximumLevelY = body.HighestCellY;
+        }
+
+        sources[position] = new WaterSource(
+            position,
+            maximumLevelY,
+            MaximumTransferredUnitsPerTick,
+            Vector3Int.forward);
+
+        topologyDirty = true;
+
+        Debug.Log(
+            $"Added Water source at {position}, " +
+            $"maximum level Y={maximumLevelY}.");
+
+        return true;
     }
 
     public bool TryGetCell(
@@ -759,6 +803,17 @@ public sealed class WaterSystem : IDisposable
                 }
             }
         }
+
+        foreach (WaterSource source in sources.Values)
+        {
+            if (bodyByPosition.TryGetValue(
+                    source.Position,
+                    out int bodyId) &&
+                bodies.TryGetValue(bodyId, out WaterBody body))
+            {
+                body.AddSource(source);
+            }
+        }
     }
 
     private bool TouchesWater(Vector3Int position)
@@ -796,6 +851,7 @@ public sealed class WaterSystem : IDisposable
         if (previous.Type == VoxelType.Water)
         {
             cells.Remove(position);
+            sources.Remove(position);
         }
 
         if (current.Type == VoxelType.Water)

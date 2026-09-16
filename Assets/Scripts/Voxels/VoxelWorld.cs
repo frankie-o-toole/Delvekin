@@ -199,6 +199,18 @@ public class VoxelWorld : MonoBehaviour
         return waterSystem?.SetAmounts(worldPositions, amount) ?? 0;
     }
 
+    public bool ToggleWaterSource(Vector3Int worldPosition)
+    {
+        return waterSystem != null &&
+               waterSystem.ToggleSource(worldPosition);
+    }
+
+    public bool IsWaterSource(Vector3Int worldPosition)
+    {
+        return waterSystem != null &&
+               waterSystem.IsSource(worldPosition);
+    }
+
     private void Start()
     {
         ChunkRefreshSystem.OnRefreshRequested +=
