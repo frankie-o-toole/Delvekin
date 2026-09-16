@@ -127,6 +127,7 @@ public sealed class WaterSystem : IDisposable
         {
             RebuildBodies();
             topologyDirty = false;
+            QueueExistingSourceFalls();
         }
 
         if (pendingOpenings.Count == 0)
@@ -366,6 +367,28 @@ public sealed class WaterSystem : IDisposable
         return cells.TryGetValue(position, out WaterCell cell)
             ? cell.PrimaryFlowDirection
             : Vector3Int.zero;
+    }
+
+    private void QueueExistingSourceFalls()
+    {
+        foreach (WaterBody body in bodies.Values)
+        {
+            if (body.Kind != WaterBodyKind.SourceFed)
+            {
+                continue;
+            }
+
+            foreach (Vector3Int position in body.Cells)
+            {
+                Vector3Int below = position + Vector3Int.down;
+
+                if (world.ContainsExistingChunkAt(below) &&
+                    world.GetVoxel(below).Type == VoxelType.Air)
+                {
+                    pendingOpenings.Add(below);
+                }
+            }
+        }
     }
 
     private bool BuildSourceFedRedistributionPlan(
