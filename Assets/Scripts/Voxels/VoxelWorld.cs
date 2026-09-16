@@ -186,6 +186,14 @@ public class VoxelWorld : MonoBehaviour
             : Vector3Int.zero;
     }
 
+    public Vector3 GetWaterFlowVector(
+        Vector3Int worldPosition)
+    {
+        return GetVoxel(worldPosition).Type == VoxelType.Water
+            ? waterSystem?.GetFlowVector(worldPosition) ?? Vector3.zero
+            : Vector3.zero;
+    }
+
     public bool SetWaterAmount(
         Vector3Int worldPosition,
         WaterAmount amount)

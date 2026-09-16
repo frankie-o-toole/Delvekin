@@ -9,6 +9,10 @@ public class DwarfAgent : MonoBehaviour
     [SerializeField]
     private Collider selectionCollider;
 
+    [Header("Water")]
+    [SerializeField]
+    private bool hasFlotation;
+
     public bool IsActive { get; private set; }
 
     /// <summary>
@@ -21,6 +25,9 @@ public class DwarfAgent : MonoBehaviour
     public PuzzleSide Facing { get; private set; }
 
     public bool IsFrozen { get; private set; }
+
+    public bool HasFlotation =>
+        hasFlotation;
 
     public Transform VisualRoot =>
         visualRoot;
@@ -205,6 +212,11 @@ public class DwarfAgent : MonoBehaviour
     public void Unfreeze()
     {
         IsFrozen = false;
+    }
+
+    public void SetFlotation(bool enabled)
+    {
+        hasFlotation = enabled;
     }
 
     public void SetCurrentVoxel(Vector3Int voxel)

@@ -54,6 +54,23 @@ public class DwarfMovement : MonoBehaviour
     [SerializeField]
     private int fatalFallDistance = 5;
 
+    [Header("Water")]
+    [SerializeField]
+    [Range(0.1f, 1f)]
+    private float wadingSpeedMultiplier = 0.6f;
+
+    [SerializeField]
+    [Range(0.1f, 1f)]
+    private float deepWaterSpeedMultiplier = 0.4f;
+
+    [SerializeField]
+    [Min(1f)]
+    private float drowningDistance = 12f;
+
+    [SerializeField]
+    [Min(1)]
+    private int riverCentreScanDistance = 12;
+
     private VoxelWorld world;
     private DwarfPool pool;
 
@@ -65,6 +82,8 @@ public class DwarfMovement : MonoBehaviour
 
     private float moveProgress;
     private float currentFallSpeed;
+    private float currentMoveSpeedMultiplier = 1f;
+    private float deepWaterDistanceTravelled;
 
     private int fallStartY;
 
@@ -172,6 +191,11 @@ public class DwarfMovement : MonoBehaviour
             agent.CurrentVoxel))
         {
             BeginFall();
+            return;
+        }
+
+        if (TryBeginWaterCurrentMove())
+        {
             return;
         }
 
@@ -302,7 +326,8 @@ public class DwarfMovement : MonoBehaviour
     {
         moveProgress +=
             Time.deltaTime *
-            moveSpeed;
+            moveSpeed *
+            currentMoveSpeedMultiplier;
 
         float progress =
             Mathf.Clamp01(
@@ -350,6 +375,16 @@ public class DwarfMovement : MonoBehaviour
 
         agent.SetCurrentVoxel(
             pendingTargetVoxel);
+
+        float travelledDistance =
+            Vector3.Distance(
+                startWorldPosition,
+                targetWorldPosition);
+
+        if (UpdateWaterExposure(travelledDistance))
+        {
+            return;
+        }
 
         moveProgress = 0f;
         state = MovementState.Idle;
@@ -569,7 +604,277 @@ public class DwarfMovement : MonoBehaviour
                 .AnchorVoxelToRootPosition(targetVoxel);
 
         moveProgress = 0f;
+        currentMoveSpeedMultiplier =
+            GetWaterSpeedMultiplier(
+                targetVoxel,
+                movementState);
         state = movementState;
+    }
+
+    private bool TryBeginWaterCurrentMove()
+    {
+        Vector3Int currentDirection =
+            world.GetFluidFlowDirection(
+                agent.CurrentVoxel);
+
+        if (currentDirection == Vector3Int.zero)
+        {
+            return false;
+        }
+
+        // Horizontal rivers gently centre a dwarf before advancing it.
+        // This keeps its 3x3 footprint away from the banks without snapping.
+        Vector3Int movementDirection =
+            GetRiverCentreCorrection(currentDirection);
+
+        if (movementDirection == Vector3Int.zero)
+        {
+            movementDirection = currentDirection;
+        }
+
+        if (movementDirection.y < 0)
+        {
+            Vector3Int below =
+                agent.CurrentVoxel + Vector3Int.down;
+
+            if (DwarfWorldQueries.CanOccupy(world, below))
+            {
+                MoveToVoxel(
+                    below,
+                    MovementState.SteppingDown);
+                return true;
+            }
+
+            return false;
+        }
+
+        if (movementDirection.y != 0)
+        {
+            return false;
+        }
+
+        SetFacingToDirection(movementDirection);
+
+        Vector3Int target =
+            agent.CurrentVoxel +
+            movementDirection;
+
+        if (DwarfWorldQueries.CanOccupy(world, target))
+        {
+            if (DwarfWorldQueries.HasAnySupport(world, target))
+            {
+                MoveToVoxel(target, MovementState.Walking);
+                return true;
+            }
+
+            Vector3Int stepDown =
+                target + Vector3Int.down;
+
+            if (DwarfWorldQueries.CanOccupy(world, stepDown) &&
+                DwarfWorldQueries.HasAnySupport(world, stepDown))
+            {
+                MoveToVoxel(
+                    stepDown,
+                    MovementState.SteppingDown);
+                return true;
+            }
+
+            MoveToVoxel(target, MovementState.Walking);
+            return true;
+        }
+
+        if (DwarfWorldQueries.IsOneVoxelRise(world, target))
+        {
+            Vector3Int stepUp =
+                target + Vector3Int.up;
+
+            if (DwarfWorldQueries.CanOccupy(world, stepUp) &&
+                DwarfWorldQueries.HasAnySupport(world, stepUp))
+            {
+                MoveToVoxel(
+                    stepUp,
+                    MovementState.SteppingUp);
+                return true;
+            }
+        }
+
+        // Keep the current-facing direction. Ordinary movement below will
+        // apply the existing shoreline collision and turn-around rules.
+        return false;
+    }
+
+    private Vector3Int GetRiverCentreCorrection(
+        Vector3Int flowDirection)
+    {
+        if (flowDirection.y != 0)
+        {
+            return Vector3Int.zero;
+        }
+
+        Vector3Int right =
+            new(flowDirection.z, 0, -flowDirection.x);
+
+        int rightWater =
+            CountWaterCells(right);
+        int leftWater =
+            CountWaterCells(-right);
+
+        // A difference of one still places the 3-wide footprint acceptably
+        // close to centre. Correct only larger, clearly readable offsets.
+        if (Mathf.Abs(rightWater - leftWater) < 2)
+        {
+            return Vector3Int.zero;
+        }
+
+        Vector3Int correction =
+            rightWater > leftWater
+                ? right
+                : -right;
+
+        Vector3Int target =
+            agent.CurrentVoxel + correction;
+
+        return HasWaterAcrossFootprint(target, flowDirection)
+            ? correction
+            : Vector3Int.zero;
+    }
+
+    private int CountWaterCells(Vector3Int direction)
+    {
+        int count = 0;
+
+        for (int step = 1;
+             step <= riverCentreScanDistance;
+             step++)
+        {
+            Vector3Int position =
+                agent.CurrentVoxel + direction * step;
+
+            if (world.GetVoxel(position).Type != VoxelType.Water)
+            {
+                break;
+            }
+
+            count++;
+        }
+
+        return count;
+    }
+
+    private bool HasWaterAcrossFootprint(
+        Vector3Int anchor,
+        Vector3Int flowDirection)
+    {
+        Vector3Int lateral =
+            new(flowDirection.z, 0, -flowDirection.x);
+
+        for (int offset = -DwarfSpatialRules.HalfWidth;
+             offset <= DwarfSpatialRules.HalfWidth;
+             offset++)
+        {
+            if (world.GetVoxel(anchor + lateral * offset).Type !=
+                VoxelType.Water)
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private void SetFacingToDirection(Vector3Int direction)
+    {
+        PuzzleSide facing = direction switch
+        {
+            var value when value == Vector3Int.forward =>
+                PuzzleSide.North,
+            var value when value == Vector3Int.right =>
+                PuzzleSide.East,
+            var value when value == Vector3Int.back =>
+                PuzzleSide.South,
+            var value when value == Vector3Int.left =>
+                PuzzleSide.West,
+            _ => agent.Facing
+        };
+
+        if (facing != agent.Facing)
+        {
+            agent.SetFacing(facing);
+        }
+    }
+
+    private float GetWaterSpeedMultiplier(
+        Vector3Int targetVoxel,
+        MovementState movementState)
+    {
+        if (movementState == MovementState.ClimbingUp ||
+            movementState == MovementState.ClimbingDown ||
+            movementState == MovementState.LadderTransition)
+        {
+            return 1f;
+        }
+
+        float depth = Mathf.Max(
+            GetWaterDepth(agent.CurrentVoxel),
+            GetWaterDepth(targetVoxel));
+
+        if (depth < 2.5f)
+        {
+            return 1f;
+        }
+
+        return depth < DwarfSpatialRules.Height
+            ? wadingSpeedMultiplier
+            : deepWaterSpeedMultiplier;
+    }
+
+    private float GetWaterDepth(Vector3Int anchor)
+    {
+        float depth = 0f;
+
+        for (int y = 0;
+             y < DwarfSpatialRules.Height;
+             y++)
+        {
+            Vector3Int position =
+                anchor + Vector3Int.up * y;
+
+            if (world.GetVoxel(position).Type != VoxelType.Water)
+            {
+                break;
+            }
+
+            depth += world.GetFluidFill01(position);
+        }
+
+        return depth;
+    }
+
+    private bool UpdateWaterExposure(float travelledDistance)
+    {
+        float depth =
+            GetWaterDepth(agent.CurrentVoxel);
+
+        if (depth < DwarfSpatialRules.Height ||
+            agent.HasFlotation)
+        {
+            deepWaterDistanceTravelled = 0f;
+            return false;
+        }
+
+        deepWaterDistanceTravelled += travelledDistance;
+
+        if (deepWaterDistanceTravelled < drowningDistance)
+        {
+            return false;
+        }
+
+        Debug.Log(
+            $"{agent.name} drowned after travelling " +
+            $"{deepWaterDistanceTravelled:0.0} voxel(s) in deep water.");
+
+        Die();
+        return true;
     }
 
     /// <summary>
@@ -868,6 +1173,8 @@ public class DwarfMovement : MonoBehaviour
 
         moveProgress = 0f;
         currentFallSpeed = 0f;
+        currentMoveSpeedMultiplier = 1f;
+        deepWaterDistanceTravelled = 0f;
 
         startWorldPosition =
             transform.position;
