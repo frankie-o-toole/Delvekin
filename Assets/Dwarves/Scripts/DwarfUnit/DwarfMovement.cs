@@ -635,10 +635,14 @@ public class DwarfMovement : MonoBehaviour
             primaryDirection.x * facingDirection.x +
             primaryDirection.z * facingDirection.z == 0;
 
-        // A broad voxel corner exposes its new axis several cells before the
-        // current lane actually ends. Preserve the dwarf's incoming momentum
-        // until its complete footprint can no longer advance through water.
+        // A broad voxel corner exposes its new axis before the incoming
+        // lane reaches the centre of the bend. Measure the outgoing arm's
+        // cross-section and keep the incoming heading until that midpoint.
         if (primaryTurnsCorner &&
+            ShouldContinueToCornerCentre(
+                waterSample,
+                facingDirection,
+                primaryDirection) &&
             IsWaterAhead(facingDirection) &&
             TryBeginWaterCurrentMove(
                 facingDirection,
@@ -660,6 +664,79 @@ public class DwarfMovement : MonoBehaviour
                 waterSample);
 
         return TryBeginWaterCurrentMove(secondaryDirection);
+    }
+
+    private bool ShouldContinueToCornerCentre(
+        Vector3Int waterSample,
+        Vector3Int incomingDirection,
+        Vector3Int outgoingDirection)
+    {
+        if (incomingDirection.y != 0 ||
+            outgoingDirection.y != 0)
+        {
+            return false;
+        }
+
+        // Probe one cell into the outgoing arm. Its span along the incoming
+        // axis is the width of that arm at this bend.
+        Vector3Int probe =
+            waterSample + outgoingDirection;
+
+        if (world.GetVoxel(probe).Type != VoxelType.Water)
+        {
+            return false;
+        }
+
+        int behind = 0;
+        int ahead = 0;
+
+        for (int step = 1;
+             step <= riverCentreScanDistance;
+             step++)
+        {
+            if (world.GetVoxel(
+                    probe - incomingDirection * step).Type !=
+                VoxelType.Water)
+            {
+                break;
+            }
+
+            behind = step;
+        }
+
+        for (int step = 1;
+             step <= riverCentreScanDistance;
+             step++)
+        {
+            if (world.GetVoxel(
+                    probe + incomingDirection * step).Type !=
+                VoxelType.Water)
+            {
+                break;
+            }
+
+            ahead = step;
+        }
+
+        Vector3 minimum =
+            (Vector3)(probe - incomingDirection * behind);
+
+        Vector3 maximum =
+            (Vector3)(probe + incomingDirection * ahead);
+
+        Vector3 cornerCentre =
+            (minimum + maximum) * 0.5f;
+
+        Vector3 remaining =
+            cornerCentre - (Vector3)waterSample;
+
+        float distanceAlongIncoming =
+            remaining.x * incomingDirection.x +
+            remaining.z * incomingDirection.z;
+
+        // Even-width rivers place the centre between two voxel columns.
+        // A quarter-cell tolerance selects the nearest valid anchor column.
+        return distanceAlongIncoming > 0.25f;
     }
 
     private bool IsWaterAhead(Vector3Int direction)
