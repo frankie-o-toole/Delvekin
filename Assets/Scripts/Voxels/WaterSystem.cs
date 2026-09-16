@@ -13,6 +13,10 @@ public sealed class WaterSystem : IDisposable
     public const int MaximumAmount = (int)WaterAmount.Full;
 
     private const int MaximumRedistributionCells = 65536;
+    private const float RedistributionTickInterval = 0.15f;
+    private const int FlowDepthPerTick = 3;
+    private const int MaximumTransferredUnitsPerTick = 128;
+    private const int MaximumCatchUpTicksPerFrame = 2;
 
     private static readonly Vector3Int[] CardinalDirections =
     {
@@ -29,13 +33,17 @@ public sealed class WaterSystem : IDisposable
     private readonly Dictionary<int, WaterBody> bodies = new();
     private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
+    private readonly Queue<WaterRedistributionPlan> activePlans = new();
 
     private bool topologyDirty;
     private bool applyingRedistribution;
     private int nextBodyId = 1;
+    private float redistributionTickTimer;
 
     public bool HasPendingWork =>
-        topologyDirty || pendingOpenings.Count > 0;
+        topologyDirty ||
+        pendingOpenings.Count > 0 ||
+        activePlans.Count > 0;
 
     public int BodyCount => bodies.Count;
 
@@ -59,6 +67,8 @@ public sealed class WaterSystem : IDisposable
         bodies.Clear();
         bodyByPosition.Clear();
         pendingOpenings.Clear();
+        activePlans.Clear();
+        redistributionTickTimer = 0f;
         nextBodyId = 1;
 
         world.ForEachVoxel(
@@ -78,12 +88,35 @@ public sealed class WaterSystem : IDisposable
     /// Collapses all edits made since the previous frame into one topology
     /// pass and at most one redistribution per touched finite body.
     /// </summary>
-    public void ProcessPendingWork()
+    public void ProcessPendingWork(float deltaTime)
     {
         if (!HasPendingWork)
         {
+            redistributionTickTimer = 0f;
             return;
         }
+
+        if (activePlans.Count > 0)
+        {
+            redistributionTickTimer += deltaTime;
+            int ticks = 0;
+
+            while (redistributionTickTimer >=
+                       RedistributionTickInterval &&
+                   ticks < MaximumCatchUpTicksPerFrame &&
+                   activePlans.Count > 0)
+            {
+                redistributionTickTimer -=
+                    RedistributionTickInterval;
+
+                ApplyNextRedistributionTick();
+                ticks++;
+            }
+
+            return;
+        }
+
+        redistributionTickTimer = 0f;
 
         if (topologyDirty)
         {
@@ -118,8 +151,6 @@ public sealed class WaterSystem : IDisposable
 
         pendingOpenings.Clear();
 
-        bool redistributed = false;
-
         foreach (int bodyId in affectedBodyIds)
         {
             if (!bodies.TryGetValue(
@@ -130,15 +161,7 @@ public sealed class WaterSystem : IDisposable
                 continue;
             }
 
-            if (RedistributeFiniteBody(body, openings))
-            {
-                redistributed = true;
-            }
-        }
-
-        if (redistributed)
-        {
-            RebuildBodies();
+            BuildFiniteRedistributionPlan(body, openings);
         }
 
         topologyDirty = false;
@@ -243,7 +266,7 @@ public sealed class WaterSystem : IDisposable
             : Vector3Int.zero;
     }
 
-    private bool RedistributeFiniteBody(
+    private bool BuildFiniteRedistributionPlan(
         WaterBody body,
         IReadOnlyCollection<Vector3Int> allOpenings)
     {
@@ -384,50 +407,161 @@ public sealed class WaterSystem : IDisposable
             return false;
         }
 
-        return ApplyRedistribution(bodyCells, desiredAmounts);
+        WaterRedistributionPlan plan =
+            CreateRedistributionPlan(
+                bodyCells,
+                desiredAmounts,
+                relevantOpenings,
+                airDistance);
+
+        if (plan == null)
+        {
+            return false;
+        }
+
+        activePlans.Enqueue(plan);
+        return true;
     }
 
-    private bool ApplyRedistribution(
-        HashSet<Vector3Int> previousPositions,
-        IReadOnlyDictionary<Vector3Int, int> desiredAmounts)
+    private WaterRedistributionPlan CreateRedistributionPlan(
+        IReadOnlyCollection<Vector3Int> previousPositions,
+        IReadOnlyDictionary<Vector3Int, int> desiredAmounts,
+        IReadOnlyList<Vector3Int> openings,
+        IReadOnlyDictionary<Vector3Int, int> airDistance)
+    {
+        List<PlanUnit> additions = new();
+        List<PlanUnit> removals = new();
+        HashSet<Vector3Int> allPositions =
+            new(previousPositions);
+
+        foreach (Vector3Int position in desiredAmounts.Keys)
+        {
+            allPositions.Add(position);
+        }
+
+        foreach (Vector3Int position in allPositions)
+        {
+            int previousAmount = GetAmount(position);
+            int desiredAmount =
+                desiredAmounts.TryGetValue(position, out int value)
+                    ? value
+                    : 0;
+
+            int distance =
+                airDistance.TryGetValue(position, out int airSteps)
+                    ? airSteps
+                    : DistanceToNearestOpening(position, openings);
+
+            for (int unit = previousAmount;
+                 unit < desiredAmount;
+                 unit++)
+            {
+                additions.Add(new PlanUnit(position, distance));
+            }
+
+            for (int unit = desiredAmount;
+                 unit < previousAmount;
+                 unit++)
+            {
+                removals.Add(new PlanUnit(position, distance));
+            }
+        }
+
+        if (additions.Count == 0)
+        {
+            return null;
+        }
+
+        if (additions.Count != removals.Count)
+        {
+            Debug.LogError(
+                "Finite water plan rejected because its added and " +
+                "removed half-units do not match.");
+
+            return null;
+        }
+
+        additions.Sort(ComparePlanAdditions);
+        removals.Sort(ComparePlanRemovals);
+
+        return new WaterRedistributionPlan(additions, removals);
+    }
+
+    private void ApplyNextRedistributionTick()
+    {
+        if (activePlans.Count == 0)
+        {
+            return;
+        }
+
+        WaterRedistributionPlan plan = activePlans.Peek();
+        plan.AdvanceFlowFront(FlowDepthPerTick);
+
+        Dictionary<Vector3Int, int> amountDeltas = new();
+        int transferredUnits = 0;
+
+        while (transferredUnits <
+                   MaximumTransferredUnitsPerTick &&
+               plan.TryTakeTransfer(
+                   out Vector3Int source,
+                   out Vector3Int destination))
+        {
+            AddDelta(amountDeltas, source, -1);
+            AddDelta(amountDeltas, destination, +1);
+            transferredUnits++;
+        }
+
+        if (amountDeltas.Count > 0)
+        {
+            ApplyAmountDeltas(amountDeltas);
+        }
+
+        if (!plan.IsComplete)
+        {
+            return;
+        }
+
+        activePlans.Dequeue();
+        RebuildBodies();
+        topologyDirty = false;
+    }
+
+    private void ApplyAmountDeltas(
+        IReadOnlyDictionary<Vector3Int, int> amountDeltas)
     {
         Dictionary<Vector3Int, Voxel> voxelChanges = new();
         HashSet<Vector3Int> visualChanges = new();
-        bool changed = false;
 
         applyingRedistribution = true;
 
         try
         {
-            foreach (Vector3Int position in previousPositions)
-            {
-                if (desiredAmounts.ContainsKey(position))
-                {
-                    continue;
-                }
-
-                cells.Remove(position);
-                voxelChanges[position] =
-                    new Voxel(VoxelType.Air);
-                visualChanges.Add(position);
-                changed = true;
-            }
-
-            foreach (var pair in desiredAmounts)
+            foreach (var pair in amountDeltas)
             {
                 Vector3Int position = pair.Key;
-                int desiredAmount = pair.Value;
                 int previousAmount = GetAmount(position);
+                int resultingAmount = previousAmount + pair.Value;
 
-                if (previousAmount == desiredAmount)
+                if (resultingAmount < 0 ||
+                    resultingAmount > MaximumAmount)
                 {
+                    Debug.LogError(
+                        $"Invalid water amount {resultingAmount} at " +
+                        $"{position} during redistribution.");
+
                     continue;
                 }
 
-                if (previousAmount == 0)
+                if (resultingAmount == 0)
+                {
+                    cells.Remove(position);
+                    voxelChanges[position] =
+                        new Voxel(VoxelType.Air);
+                }
+                else if (previousAmount == 0)
                 {
                     cells[position] =
-                        new WaterCell((WaterAmount)desiredAmount);
+                        new WaterCell((WaterAmount)resultingAmount);
 
                     voxelChanges[position] =
                         new Voxel(VoxelType.Water);
@@ -435,12 +569,11 @@ public sealed class WaterSystem : IDisposable
                 else
                 {
                     WaterCell cell = cells[position];
-                    cell.Amount = (WaterAmount)desiredAmount;
+                    cell.Amount = (WaterAmount)resultingAmount;
                     cells[position] = cell;
                 }
 
                 visualChanges.Add(position);
-                changed = true;
             }
 
             if (voxelChanges.Count > 0)
@@ -457,8 +590,65 @@ public sealed class WaterSystem : IDisposable
         {
             world.RefreshVoxelVisuals(visualChanges);
         }
+    }
 
-        return changed;
+    private static void AddDelta(
+        IDictionary<Vector3Int, int> deltas,
+        Vector3Int position,
+        int amount)
+    {
+        deltas.TryGetValue(position, out int current);
+        deltas[position] = current + amount;
+    }
+
+    private static int ComparePlanAdditions(
+        PlanUnit left,
+        PlanUnit right)
+    {
+        int comparison = left.Distance.CompareTo(right.Distance);
+
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = left.Position.y.CompareTo(right.Position.y);
+
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = left.Position.x.CompareTo(right.Position.x);
+
+        return comparison != 0
+            ? comparison
+            : left.Position.z.CompareTo(right.Position.z);
+    }
+
+    private static int ComparePlanRemovals(
+        PlanUnit left,
+        PlanUnit right)
+    {
+        int comparison = right.Position.y.CompareTo(left.Position.y);
+
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = right.Distance.CompareTo(left.Distance);
+
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = left.Position.x.CompareTo(right.Position.x);
+
+        return comparison != 0
+            ? comparison
+            : left.Position.z.CompareTo(right.Position.z);
     }
 
     private bool CanSearchAir(
@@ -628,6 +818,69 @@ public sealed class WaterSystem : IDisposable
         if (waterOccupancyChanged || openedTerrain)
         {
             topologyDirty = true;
+        }
+    }
+
+    private sealed class WaterRedistributionPlan
+    {
+        private readonly IReadOnlyList<PlanUnit> additions;
+        private readonly IReadOnlyList<PlanUnit> removals;
+
+        private int additionIndex;
+        private int removalIndex;
+        private int allowedDistance;
+
+        public bool IsComplete =>
+            additionIndex >= additions.Count &&
+            removalIndex >= removals.Count;
+
+        public WaterRedistributionPlan(
+            IReadOnlyList<PlanUnit> additions,
+            IReadOnlyList<PlanUnit> removals)
+        {
+            this.additions = additions;
+            this.removals = removals;
+        }
+
+        public void AdvanceFlowFront(int depth)
+        {
+            allowedDistance += depth;
+        }
+
+        public bool TryTakeTransfer(
+            out Vector3Int source,
+            out Vector3Int destination)
+        {
+            source = default;
+            destination = default;
+
+            if (additionIndex >= additions.Count ||
+                removalIndex >= removals.Count ||
+                additions[additionIndex].Distance > allowedDistance)
+            {
+                return false;
+            }
+
+            destination = additions[additionIndex].Position;
+            source = removals[removalIndex].Position;
+
+            additionIndex++;
+            removalIndex++;
+            return true;
+        }
+    }
+
+    private readonly struct PlanUnit
+    {
+        public Vector3Int Position { get; }
+        public int Distance { get; }
+
+        public PlanUnit(
+            Vector3Int position,
+            int distance)
+        {
+            Position = position;
+            Distance = distance;
         }
     }
 

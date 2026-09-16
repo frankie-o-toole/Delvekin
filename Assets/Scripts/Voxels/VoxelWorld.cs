@@ -124,7 +124,7 @@ public class VoxelWorld : MonoBehaviour
         if (waterSystem != null &&
             waterSystem.HasPendingWork)
         {
-            waterSystem.ProcessPendingWork();
+            waterSystem.ProcessPendingWork(Time.deltaTime);
         }
 
         fluidSimulation?.Tick(Time.deltaTime);
