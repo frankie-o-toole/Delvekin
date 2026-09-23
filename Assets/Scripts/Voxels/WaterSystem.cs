@@ -1789,7 +1789,15 @@ public sealed class WaterSystem : IDisposable
             current.Type == VoxelType.Air &&
             TouchesWater(position);
 
-        if (openedTerrain)
+        // Removing a Water voxel is also an opening. This matters especially
+        // for source-fed rivers: the edited cell must be offered back to the
+        // neighbouring source body so the source can refill it. Previously
+        // the topology rebuilt, but no redistribution plan was ever queued.
+        bool openedWaterCell =
+            previous.Type == VoxelType.Water &&
+            current.Type == VoxelType.Air;
+
+        if (openedTerrain || openedWaterCell)
         {
             pendingOpenings.Add(position);
         }
