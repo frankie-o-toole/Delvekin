@@ -270,8 +270,9 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             levelDefinition.RemoveEntity(entityId);
     }
 
-    public int CaptureVoxelPrefab()
+    public int CaptureVoxelPrefab(out int capturedEntityCount)
     {
+        capturedEntityCount = 0;
         if (Application.isPlaying ||
             levelDefinition == null ||
             prefabCaptureTarget == null)
@@ -330,10 +331,28 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
                     record.Amount));
         }
 
+        List<LevelEntityRecord> localEntities = new();
+
+        foreach (LevelEntityRecord record in
+                 levelDefinition.Entities)
+        {
+            if (record != null &&
+                record.IsFullyInside(
+                    prefabCaptureMinimum,
+                    maximumInclusive))
+            {
+                localEntities.Add(
+                    record.CreatePrefabLocal(
+                        prefabCaptureMinimum));
+            }
+        }
+
         prefabCaptureTarget.ReplaceContent(
             captureSize,
-            localVoxels);
+            localVoxels,
+            localEntities);
 
+        capturedEntityCount = localEntities.Count;
         return localVoxels.Count;
     }
 
@@ -423,7 +442,9 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
                 states.Add(LevelVoxelState.Occupied(record));
             }
 
-            return states.Count > 0;
+            return
+                states.Count > 0 ||
+                prefabPlacementSource.Entities.Count > 0;
         }
 
         states.Capacity = (int)volume;
@@ -450,12 +471,56 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         return true;
     }
 
-    public int ApplyVoxelPrefab(Vector3Int origin)
+    public bool TryBuildPrefabEntities(
+        Vector3Int origin,
+        out List<LevelEntityRecord> entities)
     {
+        entities = new List<LevelEntityRecord>();
+
+        if (prefabPlacementSource == null)
+        {
+            return false;
+        }
+
+        Vector3Int rotatedSize = GetRotatedPrefabSize();
+        Vector3Int maximumInclusive =
+            origin + rotatedSize - Vector3Int.one;
+
+        if (!levelDefinition.ContainsWorldPosition(origin) ||
+            !levelDefinition.ContainsWorldPosition(maximumInclusive))
+        {
+            return false;
+        }
+
+        foreach (LevelEntityRecord template in
+                 prefabPlacementSource.Entities)
+        {
+            if (template != null)
+            {
+                entities.Add(
+                    template.CreatePlacedCopy(
+                        origin,
+                        prefabPlacementSource.Size,
+                        (int)prefabPlacementRotation));
+            }
+        }
+
+        return true;
+    }
+
+    public int ApplyVoxelPrefab(
+        Vector3Int origin,
+        out int placedEntityCount)
+    {
+        placedEntityCount = 0;
+
         if (!TryBuildPrefabPlacement(
                 origin,
                 out List<LevelVoxelState> targetStates,
-                out _))
+                out _) ||
+            !TryBuildPrefabEntities(
+                origin,
+                out List<LevelEntityRecord> placedEntities))
         {
             return -1;
         }
@@ -492,20 +557,30 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             }
         }
 
-        if (changed == 0)
+        if (changed > 0)
         {
-            return 0;
+            levelDefinition.RestoreStates(targetStates);
+
+            if (voxelWorld.HasLoadedChunks)
+            {
+                voxelWorld.SetAuthoringVoxelStates(targetStates);
+            }
+            else
+            {
+                voxelWorld.LoadLevelDefinition(levelDefinition);
+            }
         }
 
-        levelDefinition.RestoreStates(targetStates);
-
-        if (voxelWorld.HasLoadedChunks)
+        foreach (LevelEntityRecord entity in placedEntities)
         {
-            voxelWorld.SetAuthoringVoxelStates(targetStates);
+            levelDefinition.UpsertEntity(entity);
         }
-        else
+
+        placedEntityCount = placedEntities.Count;
+
+        if (placedEntityCount > 0)
         {
-            voxelWorld.LoadLevelDefinition(levelDefinition);
+            RebuildAuthoringEntities();
         }
 
         return changed;
@@ -519,17 +594,17 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         return quarterTurns switch
         {
             1 => new Vector3Int(
-                sourceSize.z - 1 - position.z,
+                position.z,
                 position.y,
-                position.x),
+                sourceSize.x - 1 - position.x),
             2 => new Vector3Int(
                 sourceSize.x - 1 - position.x,
                 position.y,
                 sourceSize.z - 1 - position.z),
             3 => new Vector3Int(
-                position.z,
+                sourceSize.z - 1 - position.z,
                 position.y,
-                sourceSize.x - 1 - position.x),
+                position.x),
             _ => position
         };
     }
