@@ -270,6 +270,14 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             levelDefinition.RemoveEntity(entityId);
     }
 
+    public void SetPrefabCaptureBounds(
+        Vector3Int minimum,
+        Vector3Int size)
+    {
+        prefabCaptureMinimum = minimum;
+        prefabCaptureSize = ClampPositiveSize(size);
+    }
+
     public int CaptureVoxelPrefab(out int capturedEntityCount)
     {
         capturedEntityCount = 0;
