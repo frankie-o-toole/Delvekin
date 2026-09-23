@@ -113,37 +113,48 @@ public sealed class LevelAuthoringRootEditor : Editor
 
         UpdateCurrentVoxel(root, current.mousePosition, false);
 
+        int controlId = GUIUtility.GetControlID(
+            "DelvekinLevelVoxelTool".GetHashCode(),
+            FocusType.Passive);
+
         if (current.type == EventType.Layout && hasCurrentVoxel)
         {
-            HandleUtility.AddDefaultControl(
-                GUIUtility.GetControlID(FocusType.Passive));
+            HandleUtility.AddDefaultControl(controlId);
         }
 
         DrawToolPreview(root);
 
-        if (current.alt || current.button != 0)
+        if (current.alt)
         {
             return;
         }
 
         if (current.type == EventType.MouseDown &&
+            current.button == 0 &&
             hasCurrentVoxel)
         {
+            GUIUtility.hotControl = controlId;
             dragStart = currentVoxel;
             isDragging = true;
             current.Use();
             return;
         }
 
-        if (current.type == EventType.MouseDrag && isDragging)
+        if (current.type == EventType.MouseDrag &&
+            GUIUtility.hotControl == controlId &&
+            isDragging)
         {
             current.Use();
             SceneView.RepaintAll();
             return;
         }
 
-        if (current.type == EventType.MouseUp && isDragging)
+        if (current.type == EventType.MouseUp &&
+            current.button == 0 &&
+            GUIUtility.hotControl == controlId &&
+            isDragging)
         {
+            GUIUtility.hotControl = 0;
             isDragging = false;
 
             if (hasCurrentVoxel &&
@@ -163,6 +174,12 @@ public sealed class LevelAuthoringRootEditor : Editor
                 if (changed > 0)
                 {
                     EditorUtility.SetDirty(root.Definition);
+
+                    Debug.Log(
+                        $"{root.Action} {root.Shape}: changed " +
+                        $"{changed} authored voxel(s).",
+                        root.Definition);
+
                     SceneView.RepaintAll();
                 }
             }
