@@ -100,6 +100,129 @@ public sealed class LevelEntityRecord
         return record;
     }
 
+    public bool IsFullyInside(
+        Vector3Int minimum,
+        Vector3Int maximumInclusive)
+    {
+        Vector3Int entityMinimum = MinimumVoxel;
+        Vector3Int entityMaximum =
+            entityMinimum + volumeSize - Vector3Int.one;
+
+        return
+            entityMinimum.x >= minimum.x &&
+            entityMinimum.y >= minimum.y &&
+            entityMinimum.z >= minimum.z &&
+            entityMaximum.x <= maximumInclusive.x &&
+            entityMaximum.y <= maximumInclusive.y &&
+            entityMaximum.z <= maximumInclusive.z;
+    }
+
+    public LevelEntityRecord CreatePrefabLocal(
+        Vector3Int prefabOrigin)
+    {
+        LevelEntityRecord result = Clone();
+        result.position -= (Vector3)prefabOrigin;
+
+        if (result.overrideMaximumFillY)
+        {
+            result.maximumFillY -= prefabOrigin.y;
+        }
+
+        return result;
+    }
+
+    public LevelEntityRecord CreatePlacedCopy(
+        Vector3Int placementOrigin,
+        Vector3Int sourceSize,
+        int quarterTurns)
+    {
+        int turns = ((quarterTurns % 4) + 4) % 4;
+        LevelEntityRecord result = Clone();
+        Vector3 localPosition = position;
+
+        result.entityId = Guid.NewGuid().ToString("N");
+        result.position =
+            (Vector3)placementOrigin +
+            RotateLocalPosition(
+                localPosition,
+                sourceSize,
+                turns);
+
+        result.volumeSize = turns % 2 == 0
+            ? volumeSize
+            : new Vector3Int(
+                volumeSize.z,
+                volumeSize.y,
+                volumeSize.x);
+
+        result.facing = RotateFacing(facing, turns);
+        result.rotation =
+            Quaternion.Euler(0f, 90f * turns, 0f) *
+            rotation;
+
+        if (result.overrideMaximumFillY)
+        {
+            result.maximumFillY += placementOrigin.y;
+        }
+
+        result.EnsureValid();
+        return result;
+    }
+
+    private static Vector3 RotateLocalPosition(
+        Vector3 position,
+        Vector3Int sourceSize,
+        int quarterTurns)
+    {
+        return quarterTurns switch
+        {
+            1 => new Vector3(
+                position.z,
+                position.y,
+                sourceSize.x - position.x),
+            2 => new Vector3(
+                sourceSize.x - position.x,
+                position.y,
+                sourceSize.z - position.z),
+            3 => new Vector3(
+                sourceSize.z - position.z,
+                position.y,
+                position.x),
+            _ => position
+        };
+    }
+
+    private static PuzzleSide RotateFacing(
+        PuzzleSide value,
+        int quarterTurns)
+    {
+        string[] horizontal =
+        {
+            "North",
+            "East",
+            "South",
+            "West"
+        };
+
+        int current = Array.IndexOf(
+            horizontal,
+            value.ToString());
+
+        if (current < 0)
+        {
+            return value;
+        }
+
+        string rotatedName =
+            horizontal[(current + quarterTurns) % horizontal.Length];
+
+        return Enum.TryParse(
+            rotatedName,
+            out PuzzleSide rotated)
+            ? rotated
+            : value;
+    }
+
     public LevelEntityRecord Clone()
     {
         return new LevelEntityRecord
