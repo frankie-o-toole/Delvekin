@@ -605,6 +605,7 @@ public class VoxelWorld : MonoBehaviour
 
         if (Application.isPlaying)
         {
+            runtimeEntityRoot.gameObject.SetActive(false);
             Destroy(runtimeEntityRoot.gameObject);
         }
         else
