@@ -8,6 +8,10 @@ public abstract class WaterPortal : MonoBehaviour
     [HideInInspector]
     private string entityId;
 
+    [SerializeField]
+    [HideInInspector]
+    private LevelDefinition authoringDefinition;
+
     [Header("Portal Volume")]
     [SerializeField]
     private Vector3Int size = Vector3Int.one;
@@ -20,16 +24,21 @@ public abstract class WaterPortal : MonoBehaviour
     protected VoxelWorld voxelWorld;
 
     public string EntityId => entityId;
+    public LevelDefinition AuthoringDefinition => authoringDefinition;
     public Vector3Int Size => size;
     public PuzzleSide Facing => facing;
     public Vector3Int Direction => DirectionUtility.ToVector(facing);
     public VoxelWorld World => voxelWorld;
 
-    public void ConfigureIdentity(string newEntityId)
+    public void ConfigureIdentity(
+        string newEntityId,
+        LevelDefinition ownerDefinition = null)
     {
         entityId = string.IsNullOrWhiteSpace(newEntityId)
             ? Guid.NewGuid().ToString("N")
             : newEntityId;
+
+        authoringDefinition = ownerDefinition;
     }
 
     public void EnsureIdentity()
