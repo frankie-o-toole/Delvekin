@@ -53,6 +53,7 @@ public class VoxelWorld : MonoBehaviour
         fluidChunkRenderers = new();
 
     private Transform chunkRoot;
+    private Transform runtimeEntityRoot;
 
     private readonly HashSet<Vector3Int> dirtyFluidChunks = new();
 
@@ -540,6 +541,8 @@ public class VoxelWorld : MonoBehaviour
 
     public void ClearWorld()
     {
+        ClearRuntimeEntities();
+
         foreach (
             ChunkRenderer renderer
             in chunkRenderers.Values)
@@ -565,6 +568,51 @@ public class VoxelWorld : MonoBehaviour
 
         chunkRenderers.Clear();
         fluidChunkRenderers.Clear();
+    }
+
+    private void BuildRuntimeEntities(
+        IReadOnlyList<LevelEntityRecord> records)
+    {
+        ClearRuntimeEntities();
+
+        if (!Application.isPlaying ||
+            records == null ||
+            records.Count == 0)
+        {
+            return;
+        }
+
+        GameObject rootObject = new("Runtime Entities");
+        rootObject.transform.SetParent(transform, false);
+        runtimeEntityRoot = rootObject.transform;
+
+        foreach (LevelEntityRecord record in records)
+        {
+            LevelEntityFactory.CreateWaterPortal(
+                record,
+                this,
+                runtimeEntityRoot,
+                runtimeCopy: true);
+        }
+    }
+
+    private void ClearRuntimeEntities()
+    {
+        if (runtimeEntityRoot == null)
+        {
+            return;
+        }
+
+        if (Application.isPlaying)
+        {
+            Destroy(runtimeEntityRoot.gameObject);
+        }
+        else
+        {
+            DestroyImmediate(runtimeEntityRoot.gameObject);
+        }
+
+        runtimeEntityRoot = null;
     }
 
     // =====================================================
@@ -665,6 +713,11 @@ public class VoxelWorld : MonoBehaviour
         }
 
         fluidSimulation?.ResetFromWorld();
+
+        if (Application.isPlaying)
+        {
+            BuildRuntimeEntities(snapshot.Entities);
+        }
 
         ChunkRefreshSystem.RequestFullRefresh();
 
