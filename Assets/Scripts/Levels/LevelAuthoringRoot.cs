@@ -383,6 +383,21 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         }
     }
 
+    private void Awake()
+    {
+        if (!Application.isPlaying)
+        {
+            return;
+        }
+
+        Transform entityRoot = FindAuthoringEntitiesRoot();
+
+        if (entityRoot != null)
+        {
+            entityRoot.gameObject.SetActive(false);
+        }
+    }
+
     private void OnValidate()
     {
         maximumVoxelsPerOperation =
