@@ -46,6 +46,8 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     [SerializeField]
     private int maximumVoxelsPerOperation = 32768;
 
+    private bool rebuildingAuthoringEntities;
+
     public LevelDefinition Definition => levelDefinition;
     public VoxelWorld World => voxelWorld;
     public bool VoxelToolEnabled => voxelToolEnabled;
@@ -54,6 +56,9 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     public VoxelType Material => material;
     public WaterAmount SelectedWaterAmount => waterAmount;
     public PuzzleSide Facing => facing;
+    public bool IsRebuildingAuthoringEntities =>
+        rebuildingAuthoringEntities;
+
     public int MaximumVoxelsPerOperation =>
         Mathf.Max(1, maximumVoxelsPerOperation);
 
@@ -66,7 +71,9 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             return false;
         }
 
+        MigrateLegacyScenePortals();
         voxelWorld.LoadLevelDefinition(levelDefinition);
+        RebuildAuthoringEntities();
         return true;
     }
 
@@ -78,7 +85,136 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         }
 
         voxelWorld.ClearWorld();
+        ClearAuthoringEntities();
         return true;
+    }
+
+    public bool RebuildAuthoringEntities()
+    {
+        if (Application.isPlaying ||
+            levelDefinition == null ||
+            voxelWorld == null)
+        {
+            return false;
+        }
+
+        rebuildingAuthoringEntities = true;
+
+        try
+        {
+            Transform entityRoot =
+                GetOrCreateAuthoringEntitiesRoot();
+
+            for (int index = entityRoot.childCount - 1;
+                 index >= 0;
+                 index--)
+            {
+                DestroyImmediate(
+                    entityRoot.GetChild(index).gameObject);
+            }
+
+            foreach (LevelEntityRecord record in
+                     levelDefinition.Entities)
+            {
+                WaterPortal portal =
+                    LevelEntityFactory.CreateWaterPortal(
+                        record,
+                        voxelWorld,
+                        entityRoot,
+                        runtimeCopy: false);
+
+                portal?.ConfigureIdentity(
+                    record.EntityId,
+                    levelDefinition);
+            }
+        }
+        finally
+        {
+            rebuildingAuthoringEntities = false;
+        }
+
+        return true;
+    }
+
+    public bool CaptureAuthoringEntities()
+    {
+        if (Application.isPlaying ||
+            levelDefinition == null)
+        {
+            return false;
+        }
+
+        Transform entityRoot = FindAuthoringEntitiesRoot();
+        List<LevelEntityRecord> records = new();
+
+        if (entityRoot != null)
+        {
+            WaterPortal[] portals =
+                entityRoot.GetComponentsInChildren<WaterPortal>(
+                    includeInactive: true);
+
+            foreach (WaterPortal portal in portals)
+            {
+                if (portal == null ||
+                    (portal.AuthoringDefinition != null &&
+                     portal.AuthoringDefinition != levelDefinition))
+                {
+                    continue;
+                }
+
+                portal.ConfigureIdentity(
+                    portal.EntityId,
+                    levelDefinition);
+
+                LevelEntityRecord record =
+                    portal.CreateEntityRecord();
+
+                if (record != null)
+                {
+                    records.Add(record);
+                }
+            }
+        }
+
+        levelDefinition.ReplaceEntities(records);
+        return true;
+    }
+
+    public bool SynchronizeAuthoringPortal(WaterPortal portal)
+    {
+        if (Application.isPlaying ||
+            rebuildingAuthoringEntities ||
+            levelDefinition == null ||
+            portal == null ||
+            (portal.AuthoringDefinition != null &&
+             portal.AuthoringDefinition != levelDefinition))
+        {
+            return false;
+        }
+
+        portal.ConfigureIdentity(
+            portal.EntityId,
+            levelDefinition);
+
+        LevelEntityRecord record =
+            portal.CreateEntityRecord();
+
+        if (record == null)
+        {
+            return false;
+        }
+
+        levelDefinition.UpsertEntity(record);
+        return true;
+    }
+
+    public bool RemoveAuthoringEntity(string entityId)
+    {
+        return
+            !Application.isPlaying &&
+            !rebuildingAuthoringEntities &&
+            levelDefinition != null &&
+            levelDefinition.RemoveEntity(entityId);
     }
 
     public List<LevelVoxelState> CaptureVoxelStates(
@@ -145,8 +281,6 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             }
             else
             {
-                // Script reloads reset VoxelWorld's non-serialized chunk maps
-                // even when old preview meshes are still visible.
                 voxelWorld.LoadLevelDefinition(levelDefinition);
             }
         }
@@ -159,6 +293,20 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         return transform.Find("Authoring Entities");
     }
 
+    public Transform GetOrCreateAuthoringEntitiesRoot()
+    {
+        Transform existing = FindAuthoringEntitiesRoot();
+
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        GameObject parent = new("Authoring Entities");
+        parent.transform.SetParent(transform, false);
+        return parent.transform;
+    }
+
     public bool CaptureRuntimeWorld()
     {
         if (!Application.isPlaying ||
@@ -169,6 +317,70 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         }
 
         return voxelWorld.CaptureCurrentWorld(levelDefinition);
+    }
+
+    private void MigrateLegacyScenePortals()
+    {
+        if (levelDefinition == null ||
+            levelDefinition.Entities.Count > 0)
+        {
+            return;
+        }
+
+        Transform entityRoot = FindAuthoringEntitiesRoot();
+
+        if (entityRoot == null)
+        {
+            return;
+        }
+
+        WaterPortal[] portals =
+            entityRoot.GetComponentsInChildren<WaterPortal>(
+                includeInactive: true);
+
+        bool hasUnownedPortal = false;
+
+        foreach (WaterPortal portal in portals)
+        {
+            if (portal != null &&
+                portal.AuthoringDefinition == null)
+            {
+                hasUnownedPortal = true;
+                break;
+            }
+        }
+
+        if (hasUnownedPortal)
+        {
+            CaptureAuthoringEntities();
+        }
+    }
+
+    private void ClearAuthoringEntities()
+    {
+        Transform entityRoot = FindAuthoringEntitiesRoot();
+
+        if (entityRoot == null)
+        {
+            return;
+        }
+
+        rebuildingAuthoringEntities = true;
+
+        try
+        {
+            for (int index = entityRoot.childCount - 1;
+                 index >= 0;
+                 index--)
+            {
+                DestroyImmediate(
+                    entityRoot.GetChild(index).gameObject);
+            }
+        }
+        finally
+        {
+            rebuildingAuthoringEntities = false;
+        }
     }
 
     private void OnValidate()
