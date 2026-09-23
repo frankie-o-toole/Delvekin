@@ -14,6 +14,20 @@ public enum LevelAuthoringAction
     Erase
 }
 
+public enum LevelPrefabPlacementMode
+{
+    Additive,
+    ReplaceVolume
+}
+
+public enum LevelPrefabRotation
+{
+    Degrees0,
+    Degrees90,
+    Degrees180,
+    Degrees270
+}
+
 public sealed class LevelAuthoringRoot : MonoBehaviour
 {
     [SerializeField]
@@ -56,11 +70,26 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     [SerializeField]
     private Vector3Int prefabCaptureSize = Vector3Int.one;
 
+    [Header("Voxel Prefab Placement")]
+    [SerializeField]
+    private bool prefabPlacementEnabled;
+
+    [SerializeField]
+    private LevelPrefabDefinition prefabPlacementSource;
+
+    [SerializeField]
+    private LevelPrefabPlacementMode prefabPlacementMode =
+        LevelPrefabPlacementMode.Additive;
+
+    [SerializeField]
+    private LevelPrefabRotation prefabPlacementRotation;
+
     private bool rebuildingAuthoringEntities;
 
     public LevelDefinition Definition => levelDefinition;
     public VoxelWorld World => voxelWorld;
-    public bool VoxelToolEnabled => voxelToolEnabled;
+    public bool VoxelToolEnabled =>
+        voxelToolEnabled && !prefabPlacementEnabled;
     public LevelAuthoringAction Action => action;
     public LevelAuthoringShape Shape => shape;
     public VoxelType Material => material;
@@ -74,6 +103,13 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         prefabCaptureMinimum;
     public Vector3Int PrefabCaptureSize =>
         ClampPositiveSize(prefabCaptureSize);
+    public bool PrefabPlacementEnabled => prefabPlacementEnabled;
+    public LevelPrefabDefinition PrefabPlacementSource =>
+        prefabPlacementSource;
+    public LevelPrefabPlacementMode PrefabPlacementMode =>
+        prefabPlacementMode;
+    public LevelPrefabRotation PrefabPlacementRotation =>
+        prefabPlacementRotation;
 
     public int MaximumVoxelsPerOperation =>
         Mathf.Max(1, maximumVoxelsPerOperation);
@@ -299,6 +335,243 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             localVoxels);
 
         return localVoxels.Count;
+    }
+
+    public Vector3Int GetRotatedPrefabSize()
+    {
+        if (prefabPlacementSource == null)
+        {
+            return Vector3Int.one;
+        }
+
+        Vector3Int sourceSize = prefabPlacementSource.Size;
+        int turns = (int)prefabPlacementRotation;
+
+        return turns % 2 == 0
+            ? sourceSize
+            : new Vector3Int(
+                sourceSize.z,
+                sourceSize.y,
+                sourceSize.x);
+    }
+
+    public void RotatePrefabPlacement()
+    {
+        prefabPlacementRotation =
+            (LevelPrefabRotation)(
+                ((int)prefabPlacementRotation + 1) % 4);
+    }
+
+    public bool TryBuildPrefabPlacement(
+        Vector3Int origin,
+        out List<LevelVoxelState> states,
+        out Vector3Int rotatedSize)
+    {
+        states = new List<LevelVoxelState>();
+        rotatedSize = GetRotatedPrefabSize();
+
+        if (Application.isPlaying ||
+            levelDefinition == null ||
+            prefabPlacementSource == null)
+        {
+            return false;
+        }
+
+        long volume =
+            (long)rotatedSize.x *
+            rotatedSize.y *
+            rotatedSize.z;
+
+        Vector3Int maximumInclusive =
+            origin + rotatedSize - Vector3Int.one;
+
+        if (volume > MaximumVoxelsPerOperation ||
+            !levelDefinition.ContainsWorldPosition(origin) ||
+            !levelDefinition.ContainsWorldPosition(maximumInclusive))
+        {
+            return false;
+        }
+
+        Dictionary<Vector3Int, LevelVoxelRecord> occupied = new();
+
+        foreach (LevelVoxelRecord sourceRecord in
+                 prefabPlacementSource.Voxels)
+        {
+            Vector3Int localPosition = RotateLocalPosition(
+                sourceRecord.Position,
+                prefabPlacementSource.Size,
+                (int)prefabPlacementRotation);
+
+            Vector3Int worldPosition = origin + localPosition;
+
+            occupied[worldPosition] = new LevelVoxelRecord(
+                worldPosition,
+                sourceRecord.Type,
+                RotateFacing(
+                    sourceRecord.Facing,
+                    (int)prefabPlacementRotation),
+                sourceRecord.Amount);
+        }
+
+        if (prefabPlacementMode ==
+            LevelPrefabPlacementMode.Additive)
+        {
+            states.Capacity = occupied.Count;
+
+            foreach (LevelVoxelRecord record in occupied.Values)
+            {
+                states.Add(LevelVoxelState.Occupied(record));
+            }
+
+            return states.Count > 0;
+        }
+
+        states.Capacity = (int)volume;
+
+        for (int x = 0; x < rotatedSize.x; x++)
+        {
+            for (int y = 0; y < rotatedSize.y; y++)
+            {
+                for (int z = 0; z < rotatedSize.z; z++)
+                {
+                    Vector3Int worldPosition =
+                        origin + new Vector3Int(x, y, z);
+
+                    states.Add(
+                        occupied.TryGetValue(
+                            worldPosition,
+                            out LevelVoxelRecord record)
+                            ? LevelVoxelState.Occupied(record)
+                            : LevelVoxelState.Empty(worldPosition));
+                }
+            }
+        }
+
+        return true;
+    }
+
+    public int ApplyVoxelPrefab(Vector3Int origin)
+    {
+        if (!TryBuildPrefabPlacement(
+                origin,
+                out List<LevelVoxelState> targetStates,
+                out _))
+        {
+            return -1;
+        }
+
+        List<Vector3Int> positions =
+            new(targetStates.Count);
+
+        foreach (LevelVoxelState state in targetStates)
+        {
+            positions.Add(state.Position);
+        }
+
+        List<LevelVoxelState> before =
+            levelDefinition.CaptureStates(positions);
+
+        int changed = 0;
+
+        for (int index = 0; index < targetStates.Count; index++)
+        {
+            if (!StatesMatch(before[index], targetStates[index]))
+            {
+                changed++;
+            }
+        }
+
+        if (changed == 0)
+        {
+            return 0;
+        }
+
+        levelDefinition.RestoreStates(targetStates);
+
+        if (voxelWorld.HasLoadedChunks)
+        {
+            voxelWorld.SetAuthoringVoxelStates(targetStates);
+        }
+        else
+        {
+            voxelWorld.LoadLevelDefinition(levelDefinition);
+        }
+
+        return changed;
+    }
+
+    private static Vector3Int RotateLocalPosition(
+        Vector3Int position,
+        Vector3Int sourceSize,
+        int quarterTurns)
+    {
+        return quarterTurns switch
+        {
+            1 => new Vector3Int(
+                sourceSize.z - 1 - position.z,
+                position.y,
+                position.x),
+            2 => new Vector3Int(
+                sourceSize.x - 1 - position.x,
+                position.y,
+                sourceSize.z - 1 - position.z),
+            3 => new Vector3Int(
+                position.z,
+                position.y,
+                sourceSize.x - 1 - position.x),
+            _ => position
+        };
+    }
+
+    private static PuzzleSide RotateFacing(
+        PuzzleSide facing,
+        int quarterTurns)
+    {
+        string[] horizontal =
+        {
+            "North",
+            "East",
+            "South",
+            "West"
+        };
+
+        int current = System.Array.IndexOf(
+            horizontal,
+            facing.ToString());
+
+        if (current < 0)
+        {
+            return facing;
+        }
+
+        string rotatedName =
+            horizontal[(current + quarterTurns) % horizontal.Length];
+
+        return System.Enum.TryParse(
+            rotatedName,
+            out PuzzleSide rotated)
+            ? rotated
+            : facing;
+    }
+
+    private static bool StatesMatch(
+        LevelVoxelState left,
+        LevelVoxelState right)
+    {
+        if (left.HasVoxel != right.HasVoxel)
+        {
+            return false;
+        }
+
+        if (!left.HasVoxel)
+        {
+            return true;
+        }
+
+        return
+            left.Record.Type == right.Record.Type &&
+            left.Record.Facing == right.Record.Facing &&
+            left.Record.Amount == right.Record.Amount;
     }
 
     public List<LevelVoxelState> CaptureVoxelStates(
