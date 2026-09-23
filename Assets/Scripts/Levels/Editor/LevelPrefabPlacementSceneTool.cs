@@ -63,7 +63,8 @@ public static class LevelPrefabPlacementSceneTool
         if (current.alt ||
             current.type != EventType.MouseDown ||
             current.button != 0 ||
-            !hasCurrentOrigin)
+            !hasCurrentOrigin ||
+            HandleUtility.nearestControl != controlId)
         {
             return;
         }
