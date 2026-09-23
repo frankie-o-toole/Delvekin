@@ -22,9 +22,30 @@ public sealed class LevelAuthoringRootEditor : Editor
 
     public override void OnInspectorGUI()
     {
+        LevelDefinition previousDefinition =
+            Root.Definition;
+
         DrawDefaultInspector();
 
         LevelAuthoringRoot root = Root;
+
+        if (!Application.isPlaying &&
+            previousDefinition != root.Definition &&
+            root.World != null)
+        {
+            if (root.Definition != null)
+            {
+                root.RebuildPreview();
+            }
+            else
+            {
+                root.World.SetStartingLevel(null);
+                root.ClearPreview();
+            }
+
+            EditorUtility.SetDirty(root.World);
+            SceneView.RepaintAll();
+        }
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField(
