@@ -72,6 +72,7 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         }
 
         MigrateLegacyScenePortals();
+        voxelWorld.SetStartingLevel(levelDefinition);
         voxelWorld.LoadLevelDefinition(levelDefinition);
         RebuildAuthoringEntities();
         return true;
@@ -84,6 +85,7 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             return false;
         }
 
+        voxelWorld.SetStartingLevel(null);
         voxelWorld.ClearWorld();
         ClearAuthoringEntities();
         return true;
@@ -388,6 +390,11 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         if (!Application.isPlaying)
         {
             return;
+        }
+
+        if (voxelWorld != null)
+        {
+            voxelWorld.SetStartingLevel(levelDefinition);
         }
 
         Transform entityRoot = FindAuthoringEntitiesRoot();
