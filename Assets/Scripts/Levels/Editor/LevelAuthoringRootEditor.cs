@@ -64,10 +64,6 @@ public sealed class LevelAuthoringRootEditor : Editor
         {
             if (GUILayout.Button("Capture Runtime World To Definition"))
             {
-                Undo.RecordObject(
-                    root.Definition,
-                    "Capture Runtime World");
-
                 if (root.CaptureRuntimeWorld())
                 {
                     EditorUtility.SetDirty(root.Definition);
