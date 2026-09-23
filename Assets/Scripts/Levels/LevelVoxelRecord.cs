@@ -20,22 +20,25 @@ public struct LevelVoxelRecord
     public VoxelType Type => type;
     public PuzzleSide Facing => facing;
 
-    public WaterAmount WaterAmount =>
-        type == VoxelType.Water
-            ? waterAmount
-            : WaterAmount.Full;
+    public WaterAmount Amount =>
+        type == VoxelType.Water &&
+        waterAmount == global::WaterAmount.Half
+            ? global::WaterAmount.Half
+            : global::WaterAmount.Full;
 
     public LevelVoxelRecord(
         Vector3Int position,
         VoxelType type,
         PuzzleSide facing,
-        WaterAmount waterAmount = WaterAmount.Full)
+        WaterAmount waterAmount = global::WaterAmount.Full)
     {
         this.position = position;
         this.type = type;
         this.facing = facing;
-        this.waterAmount = type == VoxelType.Water
-            ? waterAmount
-            : WaterAmount.Full;
+        this.waterAmount =
+            type == VoxelType.Water &&
+            waterAmount == global::WaterAmount.Half
+                ? global::WaterAmount.Half
+                : global::WaterAmount.Full;
     }
 }

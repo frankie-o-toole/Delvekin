@@ -632,7 +632,7 @@ public class VoxelWorld : MonoBehaviour
             if (record.Type == VoxelType.Water)
             {
                 authoredWaterAmounts[record.Position] =
-                    record.WaterAmount;
+                    record.Amount;
             }
         }
 
@@ -653,7 +653,7 @@ public class VoxelWorld : MonoBehaviour
             foreach (LevelVoxelRecord record in snapshot.Voxels)
             {
                 if (record.Type == VoxelType.Water &&
-                    record.WaterAmount == WaterAmount.Half)
+                    record.Amount == WaterAmount.Half)
                 {
                     waterSystem.SetAmount(
                         record.Position,

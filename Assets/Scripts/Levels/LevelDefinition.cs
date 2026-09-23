@@ -162,7 +162,7 @@ public sealed class LevelDefinition : ScriptableObject
             a.Position == b.Position &&
             a.Type == b.Type &&
             a.Facing == b.Facing &&
-            a.WaterAmount == b.WaterAmount;
+            a.Amount == b.Amount;
     }
 
     private static int CompareRecords(
