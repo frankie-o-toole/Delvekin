@@ -3,6 +3,11 @@ using UnityEngine;
 
 public class VoxelWorld : MonoBehaviour
 {
+    [Header("Level Authoring")]
+    [Tooltip("Persistent authored level. When empty, the existing generated-level fallback is used.")]
+    [SerializeField]
+    private LevelDefinition startingLevel;
+
     [Header("Camera")]
     [SerializeField]
     private CameraStateController cameraStateController;
@@ -295,11 +300,18 @@ public class VoxelWorld : MonoBehaviour
         ChunkRefreshSystem.OnSliceRefreshRequested +=
             RebuildSliceChunks;
 
-        LoadGeneratedLevel(
-            1234,
-            5,
-            4,
-            5);
+        if (startingLevel != null)
+        {
+            LoadLevelDefinition(startingLevel);
+        }
+        else
+        {
+            LoadGeneratedLevel(
+                1234,
+                5,
+                4,
+                5);
+        }
     }
 
     private void OnDestroy()
@@ -312,6 +324,83 @@ public class VoxelWorld : MonoBehaviour
 
         ChunkRefreshSystem.OnSliceRefreshRequested -=
             RebuildSliceChunks;
+    }
+
+    // =====================================================
+    // LEVEL AUTHORING
+    // =====================================================
+
+    public bool CaptureCurrentWorld(LevelDefinition target)
+    {
+        if (target == null || chunks.Count == 0)
+        {
+            return false;
+        }
+
+        bool foundBounds = false;
+        Vector3Int minimumChunk = Vector3Int.zero;
+        Vector3Int maximumChunk = Vector3Int.zero;
+        List<LevelVoxelRecord> records = new();
+
+        foreach (var pair in chunks)
+        {
+            Vector3Int chunkCoordinate = pair.Key;
+            Chunk chunk = pair.Value;
+
+            if (!foundBounds)
+            {
+                minimumChunk = chunkCoordinate;
+                maximumChunk = chunkCoordinate;
+                foundBounds = true;
+            }
+            else
+            {
+                minimumChunk = Vector3Int.Min(
+                    minimumChunk,
+                    chunkCoordinate);
+
+                maximumChunk = Vector3Int.Max(
+                    maximumChunk,
+                    chunkCoordinate);
+            }
+
+            for (int x = 0; x < Chunk.ChunkSize; x++)
+            {
+                for (int y = 0; y < Chunk.ChunkSize; y++)
+                {
+                    for (int z = 0; z < Chunk.ChunkSize; z++)
+                    {
+                        Voxel voxel = chunk.GetVoxel(x, y, z);
+
+                        if (voxel.Type == VoxelType.Air)
+                        {
+                            continue;
+                        }
+
+                        records.Add(
+                            new LevelVoxelRecord(
+                                new Vector3Int(
+                                    chunkCoordinate.x * Chunk.ChunkSize + x,
+                                    chunkCoordinate.y * Chunk.ChunkSize + y,
+                                    chunkCoordinate.z * Chunk.ChunkSize + z),
+                                voxel.Type,
+                                voxel.Facing));
+                    }
+                }
+            }
+        }
+
+        if (!foundBounds)
+        {
+            return false;
+        }
+
+        target.ReplaceContent(
+            minimumChunk,
+            maximumChunk - minimumChunk + Vector3Int.one,
+            records);
+
+        return true;
     }
 
     // =====================================================
@@ -431,17 +520,110 @@ public class VoxelWorld : MonoBehaviour
         {
             if (renderer != null)
             {
-                Destroy(
-                    renderer.gameObject);
+                if (Application.isPlaying)
+                {
+                    Destroy(renderer.gameObject);
+                }
+                else
+                {
+                    DestroyImmediate(renderer.gameObject);
+                }
             }
         }
 
         spawnPoints.Clear();
+        exitPoints.Clear();
 
         chunks.Clear();
 
         chunkRenderers.Clear();
         fluidChunkRenderers.Clear();
+    }
+
+    // =====================================================
+    // LEVEL DEFINITIONS
+    // =====================================================
+
+    public void LoadLevelDefinition(LevelDefinition definition)
+    {
+        if (definition == null)
+        {
+            Debug.LogError("Cannot load a null LevelDefinition.", this);
+            return;
+        }
+
+        LevelDefinition.RuntimeSnapshot snapshot =
+            definition.CreateRuntimeSnapshot();
+
+        fluidSimulationStarted = false;
+        ClearWorld();
+
+        VoxelVisibilitySystem.SetToInitialPuzzleState();
+
+        Vector3Int minimumChunk = snapshot.OriginInChunks;
+        Vector3Int sizeInChunks = snapshot.SizeInChunks;
+
+        for (int cx = 0; cx < sizeInChunks.x; cx++)
+        {
+            for (int cy = 0; cy < sizeInChunks.y; cy++)
+            {
+                for (int cz = 0; cz < sizeInChunks.z; cz++)
+                {
+                    Vector3Int chunkCoordinate =
+                        minimumChunk + new Vector3Int(cx, cy, cz);
+
+                    chunks.Add(
+                        chunkCoordinate,
+                        new Chunk(chunkCoordinate));
+                }
+            }
+        }
+
+        foreach (LevelVoxelRecord record in snapshot.Voxels)
+        {
+            Vector3Int chunkCoordinate =
+                VoxelMath.WorldToChunkCoord(record.Position);
+
+            if (!chunks.TryGetValue(
+                    chunkCoordinate,
+                    out Chunk chunk))
+            {
+                Debug.LogWarning(
+                    $"Skipping authored voxel outside level bounds at " +
+                    $"{record.Position}.",
+                    definition);
+                continue;
+            }
+
+            Vector3Int localPosition =
+                VoxelMath.WorldToLocalVoxel(record.Position);
+
+            chunk.SetVoxel(
+                localPosition.x,
+                localPosition.y,
+                localPosition.z,
+                new Voxel(record.Type, record.Facing));
+        }
+
+        foreach (Chunk chunk in chunks.Values)
+        {
+            CreateChunkRenderer(chunk);
+        }
+
+        RefreshWorldSpatialState(recenterCamera: true);
+
+        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
+        VoxelVisibilitySystem.ResetVisibility();
+
+        waterSystem?.ResetFromWorld();
+        fluidSimulation?.ResetFromWorld();
+
+        ChunkRefreshSystem.RequestFullRefresh();
+
+        Debug.Log(
+            $"Loaded LevelDefinition '{definition.name}' as an isolated " +
+            $"runtime copy ({snapshot.Voxels.Count} authored voxels).",
+            definition);
     }
 
     // =====================================================
@@ -792,22 +974,26 @@ public class VoxelWorld : MonoBehaviour
 
     private void EnsureChunkRoot()
     {
-        if (chunkRoot != null)
+        if (chunkRoot == null)
         {
-            return;
+            Transform existing = transform.Find("Runtime Chunks");
+
+            if (existing != null)
+            {
+                chunkRoot = existing;
+            }
+            else
+            {
+                GameObject root = new("Runtime Chunks");
+                root.transform.SetParent(transform, false);
+                chunkRoot = root.transform;
+            }
         }
 
-        Transform existing = transform.Find("Runtime Chunks");
-
-        if (existing != null)
-        {
-            chunkRoot = existing;
-            return;
-        }
-
-        GameObject root = new("Runtime Chunks");
-        root.transform.SetParent(transform, false);
-        chunkRoot = root.transform;
+        chunkRoot.gameObject.hideFlags =
+            Application.isPlaying
+                ? HideFlags.None
+                : HideFlags.DontSaveInEditor;
     }
 
     // =====================================================
