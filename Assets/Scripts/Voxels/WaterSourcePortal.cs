@@ -25,6 +25,17 @@ public sealed class WaterSourcePortal : WaterPortal
     public bool OverrideMaximumFillY => overrideMaximumFillY;
     public int MaximumFillY => maximumFillY;
 
+    public void ConfigureSource(
+        bool useMaximumFillYOverride,
+        int configuredMaximumFillY,
+        int configuredSupplyUnitsPerTick)
+    {
+        overrideMaximumFillY = useMaximumFillYOverride;
+        maximumFillY = configuredMaximumFillY;
+        supplyUnitsPerTick =
+            Mathf.Max(1, configuredSupplyUnitsPerTick);
+    }
+
     protected override Color GizmoColor =>
         new(0.15f, 1f, 0.35f, 1f);
 
