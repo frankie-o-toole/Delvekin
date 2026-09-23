@@ -130,11 +130,35 @@ public sealed class LevelAuthoringRootEditor : Editor
             }
 
             EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("Capture Entities"))
+            {
+                Undo.RecordObject(
+                    root.Definition,
+                    "Capture Authoring Entities");
+
+                if (root.CaptureAuthoringEntities())
+                {
+                    EditorUtility.SetDirty(root.Definition);
+                    AssetDatabase.SaveAssets();
+                }
+            }
+
+            if (GUILayout.Button("Rebuild Entities"))
+            {
+                root.RebuildAuthoringEntities();
+                SceneView.RepaintAll();
+            }
+
+            EditorGUILayout.EndHorizontal();
         }
 
         EditorGUILayout.HelpBox(
-            "Water portals are persistent scene entities. They snap to the " +
-            "voxel grid and register automatically when Play Mode starts.",
+            "Authoring entities are owned by the LevelDefinition. Edit Mode " +
+            "objects are editable proxies; Play Mode receives isolated " +
+            "runtime copies.",
             MessageType.None);
 
         EditorGUILayout.HelpBox(
@@ -179,11 +203,22 @@ public sealed class LevelAuthoringRootEditor : Editor
 
         T portal = portalObject.AddComponent<T>();
 
+        portal.ConfigureIdentity(
+            null,
+            root.Definition);
+
         portal.Configure(
             root.World,
             minimum,
             Vector3Int.one,
             PuzzleSide.North);
+
+        Undo.RecordObject(
+            root.Definition,
+            $"Create {objectName} Record");
+
+        root.SynchronizeAuthoringPortal(portal);
+        EditorUtility.SetDirty(root.Definition);
 
         Selection.activeGameObject = portalObject;
         EditorGUIUtility.PingObject(portalObject);
