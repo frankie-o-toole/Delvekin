@@ -7,7 +7,7 @@ using UnityEngine;
     menuName = "Delvekin/Level Definition")]
 public sealed class LevelDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     [SerializeField]
     private int schemaVersion = CurrentSchemaVersion;
@@ -27,11 +27,16 @@ public sealed class LevelDefinition : ScriptableObject
     [SerializeField]
     private List<LevelVoxelRecord> voxels = new();
 
+    [Tooltip("Persistent non-voxel gameplay entities owned by this level.")]
+    [SerializeField]
+    private List<LevelEntityRecord> entities = new();
+
     public int SchemaVersion => schemaVersion;
     public string DisplayName => displayName;
     public Vector3Int OriginInChunks => originInChunks;
     public Vector3Int SizeInChunks => sizeInChunks;
     public IReadOnlyList<LevelVoxelRecord> Voxels => voxels;
+    public IReadOnlyList<LevelEntityRecord> Entities => entities;
 
     public RuntimeSnapshot CreateRuntimeSnapshot()
     {
@@ -40,7 +45,8 @@ public sealed class LevelDefinition : ScriptableObject
             displayName,
             originInChunks,
             sizeInChunks,
-            new List<LevelVoxelRecord>(voxels));
+            new List<LevelVoxelRecord>(voxels),
+            CloneEntities(entities));
     }
 
     public void ReplaceContent(
@@ -54,6 +60,54 @@ public sealed class LevelDefinition : ScriptableObject
         voxels = newVoxels != null
             ? new List<LevelVoxelRecord>(newVoxels)
             : new List<LevelVoxelRecord>();
+    }
+
+    public void ReplaceEntities(
+        IEnumerable<LevelEntityRecord> newEntities)
+    {
+        entities = CloneEntities(newEntities);
+        schemaVersion = CurrentSchemaVersion;
+    }
+
+    public void UpsertEntity(LevelEntityRecord record)
+    {
+        if (record == null)
+        {
+            return;
+        }
+
+        record.EnsureValid();
+        entities ??= new List<LevelEntityRecord>();
+
+        for (int index = 0; index < entities.Count; index++)
+        {
+            if (entities[index] != null &&
+                entities[index].EntityId == record.EntityId)
+            {
+                entities[index] = record.Clone();
+                schemaVersion = CurrentSchemaVersion;
+                return;
+            }
+        }
+
+        entities.Add(record.Clone());
+        schemaVersion = CurrentSchemaVersion;
+    }
+
+    public bool RemoveEntity(string entityId)
+    {
+        if (string.IsNullOrWhiteSpace(entityId) ||
+            entities == null)
+        {
+            return false;
+        }
+
+        int removed = entities.RemoveAll(
+            record =>
+                record != null &&
+                record.EntityId == entityId);
+
+        return removed > 0;
     }
 
     public bool TryGetVoxelRecord(
@@ -271,6 +325,36 @@ public sealed class LevelDefinition : ScriptableObject
 
         sizeInChunks = ClampSize(sizeInChunks);
         voxels ??= new List<LevelVoxelRecord>();
+        entities ??= new List<LevelEntityRecord>();
+
+        foreach (LevelEntityRecord entity in entities)
+        {
+            entity?.EnsureValid();
+        }
+    }
+
+    private static List<LevelEntityRecord> CloneEntities(
+        IEnumerable<LevelEntityRecord> source)
+    {
+        List<LevelEntityRecord> result = new();
+
+        if (source == null)
+        {
+            return result;
+        }
+
+        foreach (LevelEntityRecord record in source)
+        {
+            if (record == null)
+            {
+                continue;
+            }
+
+            record.EnsureValid();
+            result.Add(record.Clone());
+        }
+
+        return result;
     }
 
     private static Vector3Int ClampSize(Vector3Int size)
@@ -288,19 +372,22 @@ public sealed class LevelDefinition : ScriptableObject
         public Vector3Int OriginInChunks { get; }
         public Vector3Int SizeInChunks { get; }
         public IReadOnlyList<LevelVoxelRecord> Voxels { get; }
+        public IReadOnlyList<LevelEntityRecord> Entities { get; }
 
         public RuntimeSnapshot(
             int schemaVersion,
             string displayName,
             Vector3Int originInChunks,
             Vector3Int sizeInChunks,
-            IReadOnlyList<LevelVoxelRecord> voxels)
+            IReadOnlyList<LevelVoxelRecord> voxels,
+            IReadOnlyList<LevelEntityRecord> entities)
         {
             SchemaVersion = schemaVersion;
             DisplayName = displayName;
             OriginInChunks = originInChunks;
             SizeInChunks = sizeInChunks;
             Voxels = voxels;
+            Entities = entities;
         }
     }
 }
