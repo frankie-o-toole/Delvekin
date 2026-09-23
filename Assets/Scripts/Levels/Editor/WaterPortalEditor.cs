@@ -28,6 +28,7 @@ public sealed class WaterPortalEditor : Editor
                 WaterPortal portal = (WaterPortal)selected;
                 portal.SnapToVoxelGrid();
                 EditorUtility.SetDirty(portal);
+                Synchronize(portal);
             }
 
             SceneView.RepaintAll();
@@ -45,6 +46,13 @@ public sealed class WaterPortalEditor : Editor
     private void OnSceneGUI()
     {
         WaterPortal portal = Portal;
+
+        if (portal.transform.hasChanged)
+        {
+            portal.SnapToVoxelGrid();
+            portal.transform.hasChanged = false;
+            Synchronize(portal);
+        }
 
         boundsHandle.center =
             (Vector3)portal.MinimumVoxel +
@@ -88,7 +96,29 @@ public sealed class WaterPortalEditor : Editor
             portal.Facing);
 
         EditorUtility.SetDirty(portal);
+        Synchronize(portal);
         DrawFacingLabel(portal);
+    }
+
+    private static void Synchronize(WaterPortal portal)
+    {
+        LevelAuthoringRoot root =
+            portal.GetComponentInParent<LevelAuthoringRoot>();
+
+        if (root == null ||
+            root.Definition == null)
+        {
+            return;
+        }
+
+        Undo.RecordObject(
+            root.Definition,
+            "Edit Authoring Entity");
+
+        if (root.SynchronizeAuthoringPortal(portal))
+        {
+            EditorUtility.SetDirty(root.Definition);
+        }
     }
 
     private static void DrawFacingLabel(WaterPortal portal)
