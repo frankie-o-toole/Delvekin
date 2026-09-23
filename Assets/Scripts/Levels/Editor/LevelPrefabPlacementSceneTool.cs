@@ -72,7 +72,9 @@ public static class LevelPrefabPlacementSceneTool
             root.Definition,
             "Place voxel prefab");
 
-        int changed = root.ApplyVoxelPrefab(currentOrigin);
+        int changed = root.ApplyVoxelPrefab(
+            currentOrigin,
+            out int placedEntities);
 
         if (changed >= 0)
         {
@@ -81,7 +83,8 @@ public static class LevelPrefabPlacementSceneTool
             Debug.Log(
                 $"Placed '{root.PrefabPlacementSource.DisplayName}' at " +
                 $"{currentOrigin} with {root.PrefabPlacementRotation}; " +
-                $"changed {changed} voxel(s).",
+                $"changed {changed} voxel(s) and placed " +
+                $"{placedEntities} authoring entity/entities.",
                 root.Definition);
         }
         else
@@ -174,6 +177,33 @@ public static class LevelPrefabPlacementSceneTool
             if (drawn >= MaximumPreviewCubes)
             {
                 break;
+            }
+        }
+
+        if (root.TryBuildPrefabEntities(
+                currentOrigin,
+                out List<LevelEntityRecord> entities))
+        {
+            foreach (LevelEntityRecord entity in entities)
+            {
+                Handles.color =
+                    entity.Type == LevelEntityType.WaterSource
+                        ? new Color(0.15f, 1f, 0.35f, 0.95f)
+                        : new Color(1f, 0.2f, 0.85f, 0.95f);
+
+                Handles.DrawWireCube(
+                    entity.Position,
+                    entity.VolumeSize);
+
+                Vector3 direction =
+                    DirectionUtility.ToVector(entity.Facing);
+
+                Handles.DrawLine(
+                    entity.Position,
+                    entity.Position + direction *
+                    (Mathf.Max(
+                        entity.VolumeSize.x,
+                        entity.VolumeSize.z) * 0.75f + 0.5f));
             }
         }
 
