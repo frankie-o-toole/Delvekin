@@ -146,7 +146,9 @@ public abstract class WaterPortal : MonoBehaviour
         LevelAuthoringRoot root =
             GetComponentInParent<LevelAuthoringRoot>();
 
-        if (root == null || root.Definition == null)
+        if (root == null ||
+            root.Definition == null ||
+            root.IsRebuildingAuthoringEntities)
         {
             return;
         }
