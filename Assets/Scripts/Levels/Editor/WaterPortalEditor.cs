@@ -14,14 +14,23 @@ public sealed class WaterPortalEditor : Editor
     public override void OnInspectorGUI()
     {
         serializedObject.Update();
+
+        EditorGUI.BeginChangeCheck();
         DrawDefaultInspector();
+        bool changed = EditorGUI.EndChangeCheck();
+
         serializedObject.ApplyModifiedProperties();
 
-        foreach (Object selected in targets)
+        if (changed)
         {
-            WaterPortal portal = (WaterPortal)selected;
-            portal.SnapToVoxelGrid();
-            EditorUtility.SetDirty(portal);
+            foreach (Object selected in targets)
+            {
+                WaterPortal portal = (WaterPortal)selected;
+                portal.SnapToVoxelGrid();
+                EditorUtility.SetDirty(portal);
+            }
+
+            SceneView.RepaintAll();
         }
 
         if (targets.Length != 1)
@@ -122,13 +131,10 @@ public sealed class WaterPortalEditor : Editor
             }
 
             bool isWater =
-                root.World != null
-                    ? root.World.GetVoxel(position).Type ==
-                      VoxelType.Water
-                    : root.Definition.TryGetVoxelRecord(
-                          position,
-                          out LevelVoxelRecord record) &&
-                      record.Type == VoxelType.Water;
+                root.Definition.TryGetVoxelRecord(
+                    position,
+                    out LevelVoxelRecord record) &&
+                record.Type == VoxelType.Water;
 
             if (isWater)
             {
