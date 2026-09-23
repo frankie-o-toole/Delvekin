@@ -181,6 +181,54 @@ public sealed class LevelAuthoringRootEditor : Editor
             EditorGUILayout.EndHorizontal();
         }
 
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField(
+            "Voxel Prefab Capture",
+            EditorStyles.boldLabel);
+
+        using (new EditorGUI.DisabledScope(
+                   Application.isPlaying ||
+                   root.Definition == null ||
+                   root.PrefabCaptureTarget == null))
+        {
+            if (GUILayout.Button("Capture Box To Voxel Prefab"))
+            {
+                Undo.RecordObject(
+                    root.PrefabCaptureTarget,
+                    "Capture Voxel Prefab");
+
+                int captured = root.CaptureVoxelPrefab();
+
+                if (captured >= 0)
+                {
+                    EditorUtility.SetDirty(
+                        root.PrefabCaptureTarget);
+
+                    AssetDatabase.SaveAssets();
+
+                    Debug.Log(
+                        $"Captured {captured} non-Air voxel(s) in a " +
+                        $"{root.PrefabCaptureSize} volume to " +
+                        $"'{root.PrefabCaptureTarget.name}'.",
+                        root.PrefabCaptureTarget);
+                }
+                else
+                {
+                    Debug.LogWarning(
+                        "Voxel prefab capture failed. Ensure the entire " +
+                        "yellow capture volume is inside the level bounds " +
+                        "and does not exceed Maximum Voxels Per Operation.",
+                        root);
+                }
+            }
+        }
+
+        EditorGUILayout.HelpBox(
+            "The yellow wireframe is the capture volume. Captured voxels " +
+            "are normalized to local coordinates; implicit Air and the full " +
+            "volume size are preserved by the prefab definition.",
+            MessageType.None);
+
         EditorGUILayout.HelpBox(
             "Authoring entities are owned by the LevelDefinition. Edit Mode " +
             "objects are editable proxies; Play Mode receives isolated " +
