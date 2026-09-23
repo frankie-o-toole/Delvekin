@@ -1800,13 +1800,18 @@ public sealed class WaterSystem : IDisposable
             Vector3Int.up
         };
 
-        private readonly Queue<Vector3Int> frontier = new();
+        private readonly SortedSet<SourceFrontierNode> frontier =
+            new(
+                Comparer<SourceFrontierNode>.Create(
+                    CompareFrontierNodes));
+
         private readonly HashSet<Vector3Int> discovered = new();
         private readonly HashSet<Vector3Int> originalSourceCells;
         private readonly int maximumFillY;
 
         private Vector3Int pendingDestination;
         private int pendingDestinationUnits;
+        private int nextSequence;
 
         public int UnitsPerTick { get; }
 
@@ -1828,7 +1833,7 @@ public sealed class WaterSystem : IDisposable
             {
                 if (discovered.Add(opening))
                 {
-                    frontier.Enqueue(opening);
+                    Enqueue(opening);
                 }
             }
         }
@@ -1858,7 +1863,10 @@ public sealed class WaterSystem : IDisposable
                     break;
                 }
 
-                Vector3Int position = frontier.Dequeue();
+                SourceFrontierNode next = frontier.Min;
+                frontier.Remove(next);
+
+                Vector3Int position = next.Position;
                 searchedCells++;
 
                 if (!CanOccupyOrCross(world, position))
@@ -1874,7 +1882,7 @@ public sealed class WaterSystem : IDisposable
                         CanOccupyOrCross(world, neighbour))
                     {
                         discovered.Add(neighbour);
-                        frontier.Enqueue(neighbour);
+                        Enqueue(neighbour);
                     }
                 }
 
@@ -1886,6 +1894,14 @@ public sealed class WaterSystem : IDisposable
                 pendingDestination = position;
                 pendingDestinationUnits = MaximumAmount;
             }
+        }
+
+        private void Enqueue(Vector3Int position)
+        {
+            frontier.Add(
+                new SourceFrontierNode(
+                    position,
+                    nextSequence++));
         }
 
         private bool CanOccupyOrCross(
@@ -1904,6 +1920,32 @@ public sealed class WaterSystem : IDisposable
                 type == VoxelType.Air ||
                 (type == VoxelType.Water &&
                  !originalSourceCells.Contains(position));
+        }
+
+        private static int CompareFrontierNodes(
+            SourceFrontierNode left,
+            SourceFrontierNode right)
+        {
+            int comparison =
+                left.Position.y.CompareTo(right.Position.y);
+
+            return comparison != 0
+                ? comparison
+                : left.Sequence.CompareTo(right.Sequence);
+        }
+
+        private readonly struct SourceFrontierNode
+        {
+            public Vector3Int Position { get; }
+            public int Sequence { get; }
+
+            public SourceFrontierNode(
+                Vector3Int position,
+                int sequence)
+            {
+                Position = position;
+                Sequence = sequence;
+            }
         }
     }
 
