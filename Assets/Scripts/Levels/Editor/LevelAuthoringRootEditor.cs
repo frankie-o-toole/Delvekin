@@ -407,7 +407,8 @@ public sealed class LevelAuthoringRootEditor : Editor
 
         if (current.type == EventType.MouseDown &&
             current.button == 0 &&
-            hasCurrentVoxel)
+            hasCurrentVoxel &&
+            HandleUtility.nearestControl == controlId)
         {
             GUIUtility.hotControl = controlId;
             dragStart = currentVoxel;
