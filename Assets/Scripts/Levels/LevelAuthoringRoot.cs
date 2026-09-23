@@ -137,6 +137,11 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         return changed;
     }
 
+    public Transform FindAuthoringEntitiesRoot()
+    {
+        return transform.Find("Authoring Entities");
+    }
+
     public bool CaptureRuntimeWorld()
     {
         if (!Application.isPlaying ||

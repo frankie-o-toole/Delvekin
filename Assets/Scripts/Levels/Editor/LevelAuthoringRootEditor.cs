@@ -103,6 +103,40 @@ public sealed class LevelAuthoringRootEditor : Editor
             EditorGUILayout.EndHorizontal();
         }
 
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField(
+            "Authoring Entities",
+            EditorStyles.boldLabel);
+
+        using (new EditorGUI.DisabledScope(
+                   Application.isPlaying ||
+                   root.Definition == null ||
+                   root.World == null))
+        {
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("Create Water Source"))
+            {
+                CreateWaterPortal<WaterSourcePortal>(
+                    root,
+                    "Water Source");
+            }
+
+            if (GUILayout.Button("Create Water Outlet"))
+            {
+                CreateWaterPortal<WaterOutletPortal>(
+                    root,
+                    "Water Outlet");
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        EditorGUILayout.HelpBox(
+            "Water portals are persistent scene entities. They snap to the " +
+            "voxel grid and register automatically when Play Mode starts.",
+            MessageType.None);
+
         EditorGUILayout.HelpBox(
             Application.isPlaying
                 ? "Runtime changes affect the world copy. Capture only " +
@@ -111,6 +145,96 @@ public sealed class LevelAuthoringRootEditor : Editor
                   "for Line/Box. Hold Shift to axis-lock Line. Alt remains " +
                   "available for Scene View navigation.",
             MessageType.None);
+    }
+
+    private static void CreateWaterPortal<T>(
+        LevelAuthoringRoot root,
+        string objectName)
+        where T : WaterPortal
+    {
+        Transform entityRoot = root.FindAuthoringEntitiesRoot();
+
+        if (entityRoot == null)
+        {
+            GameObject parent =
+                new("Authoring Entities");
+
+            Undo.RegisterCreatedObjectUndo(
+                parent,
+                "Create Authoring Entities Root");
+
+            parent.transform.SetParent(root.transform, false);
+            entityRoot = parent.transform;
+        }
+
+        Vector3Int minimum = GetSuggestedPortalVoxel(root);
+
+        GameObject portalObject = new(objectName);
+
+        Undo.RegisterCreatedObjectUndo(
+            portalObject,
+            $"Create {objectName}");
+
+        portalObject.transform.SetParent(entityRoot, true);
+
+        T portal = portalObject.AddComponent<T>();
+
+        portal.Configure(
+            root.World,
+            minimum,
+            Vector3Int.one,
+            PuzzleSide.North);
+
+        Selection.activeGameObject = portalObject;
+        EditorGUIUtility.PingObject(portalObject);
+        SceneView.RepaintAll();
+    }
+
+    private static Vector3Int GetSuggestedPortalVoxel(
+        LevelAuthoringRoot root)
+    {
+        Vector3Int candidate;
+
+        if (SceneView.lastActiveSceneView != null)
+        {
+            candidate = Vector3Int.FloorToInt(
+                SceneView.lastActiveSceneView.pivot);
+        }
+        else
+        {
+            Vector3 minimum =
+                (Vector3)(
+                    root.Definition.OriginInChunks *
+                    Chunk.ChunkSize);
+
+            Vector3 size =
+                (Vector3)(
+                    root.Definition.SizeInChunks *
+                    Chunk.ChunkSize);
+
+            candidate = Vector3Int.FloorToInt(
+                minimum + size * 0.5f);
+        }
+
+        if (root.Definition.ContainsWorldPosition(candidate))
+        {
+            return candidate;
+        }
+
+        Vector3Int minimumVoxel =
+            root.Definition.OriginInChunks *
+            Chunk.ChunkSize;
+
+        Vector3Int maximumVoxel =
+            minimumVoxel +
+            root.Definition.SizeInChunks *
+            Chunk.ChunkSize -
+            Vector3Int.one;
+
+        return new Vector3Int(
+            Mathf.Clamp(candidate.x, minimumVoxel.x, maximumVoxel.x),
+            Mathf.Clamp(candidate.y, minimumVoxel.y, maximumVoxel.y),
+            Mathf.Clamp(candidate.z, minimumVoxel.z, maximumVoxel.z));
     }
 
     private void OnSceneGUI()

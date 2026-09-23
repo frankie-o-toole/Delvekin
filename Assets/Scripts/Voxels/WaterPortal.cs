@@ -17,6 +17,28 @@ public abstract class WaterPortal : MonoBehaviour
     public Vector3Int Size => size;
     public PuzzleSide Facing => facing;
     public Vector3Int Direction => DirectionUtility.ToVector(facing);
+    public VoxelWorld World => voxelWorld;
+
+    public void Configure(
+        VoxelWorld world,
+        Vector3Int minimumVoxel,
+        Vector3Int newSize,
+        PuzzleSide newFacing)
+    {
+        voxelWorld = world;
+        size = ClampSize(newSize);
+        facing = newFacing;
+        transform.position =
+            (Vector3)minimumVoxel + (Vector3)size * 0.5f;
+    }
+
+    public void SnapToVoxelGrid()
+    {
+        size = ClampSize(size);
+        Vector3Int minimum = MinimumVoxel;
+        transform.position =
+            (Vector3)minimum + (Vector3)size * 0.5f;
+    }
 
     public Vector3Int MinimumVoxel
     {
@@ -62,9 +84,16 @@ public abstract class WaterPortal : MonoBehaviour
 
     protected virtual void OnValidate()
     {
-        size.x = Mathf.Max(1, size.x);
-        size.y = Mathf.Max(1, size.y);
-        size.z = Mathf.Max(1, size.z);
+        size = ClampSize(size);
+        SnapToVoxelGrid();
+    }
+
+    private static Vector3Int ClampSize(Vector3Int value)
+    {
+        return new Vector3Int(
+            Mathf.Max(1, value.x),
+            Mathf.Max(1, value.y),
+            Mathf.Max(1, value.z));
     }
 
     protected abstract Color GizmoColor { get; }
