@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEditor;
+using UnityEditor.IMGUI.Controls;
 using UnityEngine;
 
 [CustomEditor(typeof(LevelAuthoringRoot))]
@@ -11,6 +12,7 @@ public sealed class LevelAuthoringRootEditor : Editor
 
     private readonly Stack<List<LevelVoxelState>> undoHistory = new();
     private readonly Stack<List<LevelVoxelState>> redoHistory = new();
+    private readonly BoxBoundsHandle prefabCaptureBoundsHandle = new();
 
     private bool isDragging;
     private Vector3Int dragStart;
@@ -353,6 +355,13 @@ public sealed class LevelAuthoringRootEditor : Editor
         LevelAuthoringRoot root = Root;
         Event current = Event.current;
 
+        if (!Application.isPlaying &&
+            root.Definition != null &&
+            root.PrefabCaptureTarget != null)
+        {
+            DrawPrefabCaptureBounds(root);
+        }
+
         if (Application.isPlaying ||
             !root.VoxelToolEnabled ||
             root.Definition == null ||
@@ -464,6 +473,55 @@ public sealed class LevelAuthoringRootEditor : Editor
 
             current.Use();
         }
+    }
+
+    private void DrawPrefabCaptureBounds(
+        LevelAuthoringRoot root)
+    {
+        Vector3 currentSize = root.PrefabCaptureSize;
+
+        prefabCaptureBoundsHandle.center =
+            (Vector3)root.PrefabCaptureMinimum +
+            currentSize * 0.5f;
+
+        prefabCaptureBoundsHandle.size = currentSize;
+        prefabCaptureBoundsHandle.handleColor =
+            new Color(1f, 0.75f, 0.1f, 0.95f);
+
+        EditorGUI.BeginChangeCheck();
+
+        prefabCaptureBoundsHandle.DrawHandle();
+
+        Vector3 movedCenter = Handles.PositionHandle(
+            prefabCaptureBoundsHandle.center,
+            Quaternion.identity);
+
+        if (!EditorGUI.EndChangeCheck())
+        {
+            return;
+        }
+
+        Vector3 rawSize = prefabCaptureBoundsHandle.size;
+
+        Vector3Int snappedSize = new(
+            Mathf.Max(1, Mathf.RoundToInt(Mathf.Abs(rawSize.x))),
+            Mathf.Max(1, Mathf.RoundToInt(Mathf.Abs(rawSize.y))),
+            Mathf.Max(1, Mathf.RoundToInt(Mathf.Abs(rawSize.z))));
+
+        Vector3Int snappedMinimum = Vector3Int.RoundToInt(
+            movedCenter - (Vector3)snappedSize * 0.5f);
+
+        Undo.RecordObject(
+            root,
+            "Edit voxel prefab capture bounds");
+
+        root.SetPrefabCaptureBounds(
+            snappedMinimum,
+            snappedSize);
+
+        EditorUtility.SetDirty(root);
+        SceneView.RepaintAll();
+        Repaint();
     }
 
     private void UpdateCurrentVoxel(
