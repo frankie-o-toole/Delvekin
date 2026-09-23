@@ -146,8 +146,16 @@ public abstract class WaterPortal : MonoBehaviour
         LevelAuthoringRoot root =
             GetComponentInParent<LevelAuthoringRoot>();
 
-        if (root != null &&
-            root.RemoveAuthoringEntity(entityId))
+        if (root == null || root.Definition == null)
+        {
+            return;
+        }
+
+        UnityEditor.Undo.RecordObject(
+            root.Definition,
+            "Delete Authoring Entity");
+
+        if (root.RemoveAuthoringEntity(entityId))
         {
             UnityEditor.EditorUtility.SetDirty(root.Definition);
         }
