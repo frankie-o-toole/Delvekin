@@ -459,16 +459,10 @@ public sealed class WaterSystem : IDisposable
                 continue;
             }
 
-            // A source-to-outlet river is authored as a complete voxel route.
-            // Do not reinterpret every exposed shore or ledge as a new breach
-            // on startup; the outlet is the deliberate hand-off boundary.
-            // Terrain removed later still enters pendingOpenings through
-            // HandleVoxelChanged and is redistributed normally.
-            if (body.OutletCount > 0)
-            {
-                continue;
-            }
-
+            // An outlet is a local hand-off boundary, not a switch that
+            // disables redistribution for the entire water body. Continue
+            // detecting real falls and breaches elsewhere; outlet-covered
+            // cells themselves are excluded below.
             HashSet<Vector3Int> outletCells =
                 GetOutletCells(body);
 
