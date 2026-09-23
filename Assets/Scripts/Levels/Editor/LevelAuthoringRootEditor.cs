@@ -46,7 +46,12 @@ public sealed class LevelAuthoringRootEditor : Editor
         {
             if (GUILayout.Button("Rebuild Edit Mode Preview"))
             {
-                root.RebuildPreview();
+                if (root.RebuildPreview())
+                {
+                    EditorUtility.SetDirty(root.Definition);
+                    AssetDatabase.SaveAssets();
+                }
+
                 SceneView.RepaintAll();
             }
 
