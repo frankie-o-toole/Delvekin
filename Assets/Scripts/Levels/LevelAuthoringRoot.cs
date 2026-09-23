@@ -471,11 +471,22 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         List<LevelVoxelState> before =
             levelDefinition.CaptureStates(positions);
 
+        Dictionary<Vector3Int, LevelVoxelState> beforeByPosition =
+            new(before.Count);
+
+        foreach (LevelVoxelState state in before)
+        {
+            beforeByPosition[state.Position] = state;
+        }
+
         int changed = 0;
 
-        for (int index = 0; index < targetStates.Count; index++)
+        foreach (LevelVoxelState targetState in targetStates)
         {
-            if (!StatesMatch(before[index], targetStates[index]))
+            if (!beforeByPosition.TryGetValue(
+                    targetState.Position,
+                    out LevelVoxelState beforeState) ||
+                !StatesMatch(beforeState, targetState))
             {
                 changed++;
             }
