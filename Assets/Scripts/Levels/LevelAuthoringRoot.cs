@@ -85,7 +85,6 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             return false;
         }
 
-        voxelWorld.SetStartingLevel(null);
         voxelWorld.ClearWorld();
         ClearAuthoringEntities();
         return true;
