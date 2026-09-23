@@ -309,6 +309,11 @@ public class VoxelWorld : MonoBehaviour
                waterSystem.IsSource(worldPosition);
     }
 
+    public void SetStartingLevel(LevelDefinition definition)
+    {
+        startingLevel = definition;
+    }
+
     private void Start()
     {
         ChunkRefreshSystem.OnRefreshRequested +=
