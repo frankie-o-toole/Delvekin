@@ -5,7 +5,14 @@ public sealed class WaterSourcePortal : WaterPortal
 {
     [Header("Source")]
     [SerializeField]
-    private int maximumLevelOffset;
+    [Tooltip(
+        "By default the source preserves the highest authored water surface " +
+        "of the body it overlaps. Enable this to use an explicit world Y.")]
+    private bool overrideMaximumFillY;
+
+    [SerializeField]
+    [Tooltip("Absolute world-space voxel Y used when the override is enabled.")]
+    private int maximumFillY;
 
     [SerializeField]
     [Min(1)]
@@ -15,9 +22,8 @@ public sealed class WaterSourcePortal : WaterPortal
     private int registeredStateHash = int.MinValue;
 
     public int SupplyUnitsPerTick => Mathf.Max(1, supplyUnitsPerTick);
-
-    public int MaximumLevelY =>
-        MinimumVoxel.y + Size.y - 1 + maximumLevelOffset;
+    public bool OverrideMaximumFillY => overrideMaximumFillY;
+    public int MaximumFillY => maximumFillY;
 
     protected override Color GizmoColor =>
         new(0.15f, 1f, 0.35f, 1f);
@@ -92,7 +98,8 @@ public sealed class WaterSourcePortal : WaterPortal
             int hash = MinimumVoxel.GetHashCode();
             hash = hash * 31 + Size.GetHashCode();
             hash = hash * 31 + Facing.GetHashCode();
-            hash = hash * 31 + maximumLevelOffset;
+            hash = hash * 31 + overrideMaximumFillY.GetHashCode();
+            hash = hash * 31 + maximumFillY;
             hash = hash * 31 + supplyUnitsPerTick;
             return hash;
         }
