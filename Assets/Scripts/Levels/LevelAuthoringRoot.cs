@@ -101,7 +101,15 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         }
 
         levelDefinition.RestoreStates(states);
-        voxelWorld.SetAuthoringVoxelStates(states);
+
+        if (voxelWorld.HasLoadedChunks)
+        {
+            voxelWorld.SetAuthoringVoxelStates(states);
+        }
+        else
+        {
+            voxelWorld.LoadLevelDefinition(levelDefinition);
+        }
     }
 
     public int ApplyVoxelEdit(IReadOnlyCollection<Vector3Int> positions)
@@ -127,11 +135,20 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
 
         if (changed > 0)
         {
-            voxelWorld.SetAuthoringVoxels(
-                positions,
-                targetType,
-                facing,
-                waterAmount);
+            if (voxelWorld.HasLoadedChunks)
+            {
+                voxelWorld.SetAuthoringVoxels(
+                    positions,
+                    targetType,
+                    facing,
+                    waterAmount);
+            }
+            else
+            {
+                // Script reloads reset VoxelWorld's non-serialized chunk maps
+                // even when old preview meshes are still visible.
+                voxelWorld.LoadLevelDefinition(levelDefinition);
+            }
         }
 
         return changed;
