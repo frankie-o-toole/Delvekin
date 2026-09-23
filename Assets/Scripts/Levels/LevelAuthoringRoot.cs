@@ -358,7 +358,8 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
 
     public Vector3Int GetRotatedPrefabSize()
     {
-        if (prefabPlacementSource == null)
+        if (levelDefinition == null ||
+            prefabPlacementSource == null)
         {
             return Vector3Int.one;
         }
@@ -473,7 +474,8 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
 
     public bool TryBuildPrefabEntities(
         Vector3Int origin,
-        out List<LevelEntityRecord> entities)
+        out List<LevelEntityRecord> entities,
+        bool createUniqueIds = false)
     {
         entities = new List<LevelEntityRecord>();
 
@@ -501,7 +503,8 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
                     template.CreatePlacedCopy(
                         origin,
                         prefabPlacementSource.Size,
-                        (int)prefabPlacementRotation));
+                        (int)prefabPlacementRotation,
+                        createUniqueIds));
             }
         }
 
@@ -520,7 +523,8 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
                 out _) ||
             !TryBuildPrefabEntities(
                 origin,
-                out List<LevelEntityRecord> placedEntities))
+                out List<LevelEntityRecord> placedEntities,
+                createUniqueIds: true))
         {
             return -1;
         }
