@@ -7,7 +7,7 @@ using UnityEngine;
     menuName = "Delvekin/Level Prefab Definition")]
 public sealed class LevelPrefabDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     [SerializeField]
     private int schemaVersion = CurrentSchemaVersion;
@@ -25,14 +25,21 @@ public sealed class LevelPrefabDefinition : ScriptableObject
     [SerializeField]
     private List<LevelVoxelRecord> voxels = new();
 
+    [Tooltip(
+        "Non-voxel authoring entities stored relative to the prefab origin.")]
+    [SerializeField]
+    private List<LevelEntityRecord> entities = new();
+
     public int SchemaVersion => schemaVersion;
     public string DisplayName => displayName;
     public Vector3Int Size => size;
     public IReadOnlyList<LevelVoxelRecord> Voxels => voxels;
+    public IReadOnlyList<LevelEntityRecord> Entities => entities;
 
     public void ReplaceContent(
         Vector3Int newSize,
-        IEnumerable<LevelVoxelRecord> newVoxels)
+        IEnumerable<LevelVoxelRecord> newVoxels,
+        IEnumerable<LevelEntityRecord> newEntities)
     {
         schemaVersion = CurrentSchemaVersion;
         size = ClampSize(newSize);
@@ -46,6 +53,8 @@ public sealed class LevelPrefabDefinition : ScriptableObject
                 !ContainsLocalPosition(record.Position));
 
         voxels.Sort(CompareRecords);
+
+        entities = CloneEntities(newEntities);
     }
 
     public bool ContainsLocalPosition(Vector3Int localPosition)
@@ -65,7 +74,8 @@ public sealed class LevelPrefabDefinition : ScriptableObject
             schemaVersion,
             displayName,
             size,
-            new List<LevelVoxelRecord>(voxels));
+            new List<LevelVoxelRecord>(voxels),
+            CloneEntities(entities));
     }
 
     private void OnValidate()
@@ -73,6 +83,7 @@ public sealed class LevelPrefabDefinition : ScriptableObject
         schemaVersion = CurrentSchemaVersion;
         size = ClampSize(size);
         voxels ??= new List<LevelVoxelRecord>();
+        entities ??= new List<LevelEntityRecord>();
 
         voxels.RemoveAll(
             record =>
@@ -80,6 +91,32 @@ public sealed class LevelPrefabDefinition : ScriptableObject
                 !ContainsLocalPosition(record.Position));
 
         voxels.Sort(CompareRecords);
+
+        foreach (LevelEntityRecord entity in entities)
+        {
+            entity?.EnsureValid();
+        }
+    }
+
+    private static List<LevelEntityRecord> CloneEntities(
+        IEnumerable<LevelEntityRecord> source)
+    {
+        List<LevelEntityRecord> result = new();
+
+        if (source == null)
+        {
+            return result;
+        }
+
+        foreach (LevelEntityRecord record in source)
+        {
+            if (record != null)
+            {
+                result.Add(record.Clone());
+            }
+        }
+
+        return result;
     }
 
     private static Vector3Int ClampSize(Vector3Int value)
@@ -117,17 +154,20 @@ public sealed class LevelPrefabDefinition : ScriptableObject
         public string DisplayName { get; }
         public Vector3Int Size { get; }
         public IReadOnlyList<LevelVoxelRecord> Voxels { get; }
+        public IReadOnlyList<LevelEntityRecord> Entities { get; }
 
         public RuntimeSnapshot(
             int schemaVersion,
             string displayName,
             Vector3Int size,
-            IReadOnlyList<LevelVoxelRecord> voxels)
+            IReadOnlyList<LevelVoxelRecord> voxels,
+            IReadOnlyList<LevelEntityRecord> entities)
         {
             SchemaVersion = schemaVersion;
             DisplayName = displayName;
             Size = size;
             Voxels = voxels;
+            Entities = entities;
         }
     }
 }
