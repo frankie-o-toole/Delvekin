@@ -46,6 +46,16 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     [SerializeField]
     private int maximumVoxelsPerOperation = 32768;
 
+    [Header("Voxel Prefab Capture")]
+    [SerializeField]
+    private LevelPrefabDefinition prefabCaptureTarget;
+
+    [SerializeField]
+    private Vector3Int prefabCaptureMinimum;
+
+    [SerializeField]
+    private Vector3Int prefabCaptureSize = Vector3Int.one;
+
     private bool rebuildingAuthoringEntities;
 
     public LevelDefinition Definition => levelDefinition;
@@ -58,6 +68,12 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     public PuzzleSide Facing => facing;
     public bool IsRebuildingAuthoringEntities =>
         rebuildingAuthoringEntities;
+    public LevelPrefabDefinition PrefabCaptureTarget =>
+        prefabCaptureTarget;
+    public Vector3Int PrefabCaptureMinimum =>
+        prefabCaptureMinimum;
+    public Vector3Int PrefabCaptureSize =>
+        ClampPositiveSize(prefabCaptureSize);
 
     public int MaximumVoxelsPerOperation =>
         Mathf.Max(1, maximumVoxelsPerOperation);
@@ -216,6 +232,73 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             !rebuildingAuthoringEntities &&
             levelDefinition != null &&
             levelDefinition.RemoveEntity(entityId);
+    }
+
+    public int CaptureVoxelPrefab()
+    {
+        if (Application.isPlaying ||
+            levelDefinition == null ||
+            prefabCaptureTarget == null)
+        {
+            return -1;
+        }
+
+        Vector3Int captureSize =
+            ClampPositiveSize(prefabCaptureSize);
+
+        Vector3Int maximumInclusive =
+            prefabCaptureMinimum +
+            captureSize -
+            Vector3Int.one;
+
+        if (!levelDefinition.ContainsWorldPosition(
+                prefabCaptureMinimum) ||
+            !levelDefinition.ContainsWorldPosition(
+                maximumInclusive))
+        {
+            return -1;
+        }
+
+        long capturedCellCount =
+            (long)captureSize.x *
+            captureSize.y *
+            captureSize.z;
+
+        if (capturedCellCount > MaximumVoxelsPerOperation)
+        {
+            return -1;
+        }
+
+        List<LevelVoxelRecord> localVoxels = new();
+
+        foreach (LevelVoxelRecord record in
+                 levelDefinition.Voxels)
+        {
+            Vector3Int position = record.Position;
+
+            if (position.x < prefabCaptureMinimum.x ||
+                position.y < prefabCaptureMinimum.y ||
+                position.z < prefabCaptureMinimum.z ||
+                position.x > maximumInclusive.x ||
+                position.y > maximumInclusive.y ||
+                position.z > maximumInclusive.z)
+            {
+                continue;
+            }
+
+            localVoxels.Add(
+                new LevelVoxelRecord(
+                    position - prefabCaptureMinimum,
+                    record.Type,
+                    record.Facing,
+                    record.Amount));
+        }
+
+        prefabCaptureTarget.ReplaceContent(
+            captureSize,
+            localVoxels);
+
+        return localVoxels.Count;
     }
 
     public List<LevelVoxelState> CaptureVoxelStates(
@@ -408,6 +491,9 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     {
         maximumVoxelsPerOperation =
             Mathf.Max(1, maximumVoxelsPerOperation);
+
+        prefabCaptureSize =
+            ClampPositiveSize(prefabCaptureSize);
     }
 
     private void OnDrawGizmosSelected()
@@ -425,5 +511,23 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
 
         Gizmos.color = new Color(0.2f, 0.85f, 1f, 0.8f);
         Gizmos.DrawWireCube(minimum + size * 0.5f, size);
+
+        Vector3 captureSize =
+            PrefabCaptureSize;
+
+        Gizmos.color = new Color(1f, 0.75f, 0.1f, 0.9f);
+        Gizmos.DrawWireCube(
+            (Vector3)prefabCaptureMinimum +
+            captureSize * 0.5f,
+            captureSize);
+    }
+
+    private static Vector3Int ClampPositiveSize(
+        Vector3Int value)
+    {
+        return new Vector3Int(
+            Mathf.Max(1, value.x),
+            Mathf.Max(1, value.y),
+            Mathf.Max(1, value.z));
     }
 }
