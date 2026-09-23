@@ -7,7 +7,7 @@ using UnityEngine;
     menuName = "Delvekin/Level Definition")]
 public sealed class LevelDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
 
     [SerializeField]
     private int schemaVersion = CurrentSchemaVersion;
@@ -185,6 +185,13 @@ public sealed class LevelDefinition : ScriptableObject
 
     private void OnValidate()
     {
+        if (schemaVersion < CurrentSchemaVersion)
+        {
+            // Version 2 adds authored Half/Full water. Legacy records safely
+            // normalize to Full through LevelVoxelRecord.Amount.
+            schemaVersion = CurrentSchemaVersion;
+        }
+
         sizeInChunks = ClampSize(sizeInChunks);
         voxels ??= new List<LevelVoxelRecord>();
     }
