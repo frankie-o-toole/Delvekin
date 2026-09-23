@@ -11,10 +11,18 @@ public sealed class WaterOutletPortal : WaterPortal
     private bool registered;
     private int registeredStateHash = int.MinValue;
 
+    public int CapacityOverride => Mathf.Max(0, capacityOverride);
+
     public int Capacity =>
         capacityOverride > 0
             ? capacityOverride
             : CoveredCellCount;
+
+    public void ConfigureOutlet(int configuredCapacityOverride)
+    {
+        capacityOverride =
+            Mathf.Max(0, configuredCapacityOverride);
+    }
 
     protected override Color GizmoColor =>
         new(1f, 0.2f, 0.85f, 1f);
