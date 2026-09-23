@@ -56,6 +56,89 @@ public sealed class LevelDefinition : ScriptableObject
             : new List<LevelVoxelRecord>();
     }
 
+    public bool TryGetVoxelRecord(
+        Vector3Int worldPosition,
+        out LevelVoxelRecord record)
+    {
+        foreach (LevelVoxelRecord candidate in voxels)
+        {
+            if (candidate.Position == worldPosition)
+            {
+                record = candidate;
+                return true;
+            }
+        }
+
+        record = default;
+        return false;
+    }
+
+    public int SetVoxels(
+        IReadOnlyCollection<Vector3Int> positions,
+        VoxelType type,
+        PuzzleSide facing,
+        WaterAmount waterAmount)
+    {
+        if (positions == null || positions.Count == 0)
+        {
+            return 0;
+        }
+
+        Dictionary<Vector3Int, LevelVoxelRecord> byPosition = new();
+
+        foreach (LevelVoxelRecord record in voxels)
+        {
+            if (ContainsWorldPosition(record.Position) &&
+                record.Type != VoxelType.Air)
+            {
+                byPosition[record.Position] = record;
+            }
+        }
+
+        int changed = 0;
+
+        foreach (Vector3Int position in positions)
+        {
+            if (!ContainsWorldPosition(position))
+            {
+                continue;
+            }
+
+            if (type == VoxelType.Air)
+            {
+                if (byPosition.Remove(position))
+                {
+                    changed++;
+                }
+
+                continue;
+            }
+
+            LevelVoxelRecord replacement =
+                new(position, type, facing, waterAmount);
+
+            if (byPosition.TryGetValue(
+                    position,
+                    out LevelVoxelRecord current) &&
+                RecordsMatch(current, replacement))
+            {
+                continue;
+            }
+
+            byPosition[position] = replacement;
+            changed++;
+        }
+
+        if (changed == 0)
+        {
+            return 0;
+        }
+
+        voxels = new List<LevelVoxelRecord>(byPosition.Values);
+        voxels.Sort(CompareRecords);
+        return changed;
+    }
+
     public bool ContainsWorldPosition(Vector3Int worldPosition)
     {
         Vector3Int minimum = originInChunks * Chunk.ChunkSize;
@@ -69,6 +152,35 @@ public sealed class LevelDefinition : ScriptableObject
             worldPosition.x < maximumExclusive.x &&
             worldPosition.y < maximumExclusive.y &&
             worldPosition.z < maximumExclusive.z;
+    }
+
+    private static bool RecordsMatch(
+        LevelVoxelRecord a,
+        LevelVoxelRecord b)
+    {
+        return
+            a.Position == b.Position &&
+            a.Type == b.Type &&
+            a.Facing == b.Facing &&
+            a.WaterAmount == b.WaterAmount;
+    }
+
+    private static int CompareRecords(
+        LevelVoxelRecord a,
+        LevelVoxelRecord b)
+    {
+        int x = a.Position.x.CompareTo(b.Position.x);
+
+        if (x != 0)
+        {
+            return x;
+        }
+
+        int y = a.Position.y.CompareTo(b.Position.y);
+
+        return y != 0
+            ? y
+            : a.Position.z.CompareTo(b.Position.z);
     }
 
     private void OnValidate()

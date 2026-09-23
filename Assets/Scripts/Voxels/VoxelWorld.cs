@@ -56,6 +56,11 @@ public class VoxelWorld : MonoBehaviour
 
     private readonly HashSet<Vector3Int> dirtyFluidChunks = new();
 
+    // WaterSystem only exists in Play Mode. This map keeps authored Half/Full
+    // water visible in generated Edit Mode previews.
+    private readonly Dictionary<Vector3Int, WaterAmount>
+        authoredWaterAmounts = new();
+
     private readonly List<Vector3Int> spawnPoints =
         new();
 
@@ -148,7 +153,16 @@ public class VoxelWorld : MonoBehaviour
 
         if (type == VoxelType.Water)
         {
-            return waterSystem?.GetFill01(worldPosition) ?? 1f;
+            if (waterSystem != null)
+            {
+                return waterSystem.GetFill01(worldPosition);
+            }
+
+            return authoredWaterAmounts.TryGetValue(
+                    worldPosition,
+                    out WaterAmount authoredAmount)
+                ? (float)authoredAmount / (float)WaterAmount.Full
+                : 1f;
         }
 
         if (type == VoxelType.Lava)
@@ -384,7 +398,17 @@ public class VoxelWorld : MonoBehaviour
                                     chunkCoordinate.y * Chunk.ChunkSize + y,
                                     chunkCoordinate.z * Chunk.ChunkSize + z),
                                 voxel.Type,
-                                voxel.Facing));
+                                voxel.Facing,
+                                voxel.Type == VoxelType.Water
+                                    ? GetFluidAmount(
+                                        new Vector3Int(
+                                            chunkCoordinate.x * Chunk.ChunkSize + x,
+                                            chunkCoordinate.y * Chunk.ChunkSize + y,
+                                            chunkCoordinate.z * Chunk.ChunkSize + z)) ==
+                                      (int)WaterAmount.Half
+                                        ? WaterAmount.Half
+                                        : WaterAmount.Full
+                                    : WaterAmount.Full));
                     }
                 }
             }
@@ -535,6 +559,7 @@ public class VoxelWorld : MonoBehaviour
         exitPoints.Clear();
 
         chunks.Clear();
+        authoredWaterAmounts.Clear();
 
         chunkRenderers.Clear();
         fluidChunkRenderers.Clear();
@@ -603,6 +628,12 @@ public class VoxelWorld : MonoBehaviour
                 localPosition.y,
                 localPosition.z,
                 new Voxel(record.Type, record.Facing));
+
+            if (record.Type == VoxelType.Water)
+            {
+                authoredWaterAmounts[record.Position] =
+                    record.WaterAmount;
+            }
         }
 
         foreach (Chunk chunk in chunks.Values)
@@ -616,6 +647,21 @@ public class VoxelWorld : MonoBehaviour
         VoxelVisibilitySystem.ResetVisibility();
 
         waterSystem?.ResetFromWorld();
+
+        if (waterSystem != null)
+        {
+            foreach (LevelVoxelRecord record in snapshot.Voxels)
+            {
+                if (record.Type == VoxelType.Water &&
+                    record.WaterAmount == WaterAmount.Half)
+                {
+                    waterSystem.SetAmount(
+                        record.Position,
+                        WaterAmount.Half);
+                }
+            }
+        }
+
         fluidSimulation?.ResetFromWorld();
 
         ChunkRefreshSystem.RequestFullRefresh();
@@ -926,6 +972,13 @@ public class VoxelWorld : MonoBehaviour
             new(
                 $"Chunk {chunk.ChunkCoordinate}");
 
+        if (!Application.isPlaying)
+        {
+            go.hideFlags =
+                HideFlags.NotEditable |
+                HideFlags.DontSaveInEditor;
+        }
+
         go.transform.SetParent(chunkRoot, false);
 
         go.transform.localPosition =
@@ -957,6 +1010,14 @@ public class VoxelWorld : MonoBehaviour
             renderer);
 
         GameObject fluidObject = new("Fluids");
+
+        if (!Application.isPlaying)
+        {
+            fluidObject.hideFlags =
+                HideFlags.NotEditable |
+                HideFlags.DontSaveInEditor;
+        }
+
         fluidObject.transform.SetParent(go.transform, false);
 
         FluidChunkRenderer fluidRenderer =
@@ -1222,6 +1283,62 @@ public class VoxelWorld : MonoBehaviour
                 out FluidChunkRenderer renderer))
         {
             renderer.RebuildMesh();
+        }
+    }
+
+    // =====================================================
+    // EDIT MODE AUTHORING
+    // =====================================================
+
+    public void SetAuthoringVoxels(
+        IReadOnlyCollection<Vector3Int> positions,
+        VoxelType type,
+        PuzzleSide facing,
+        WaterAmount waterAmount)
+    {
+        if (Application.isPlaying || positions == null)
+        {
+            return;
+        }
+
+        HashSet<Vector3Int> affectedChunks = new();
+
+        foreach (Vector3Int position in positions)
+        {
+            Vector3Int chunkCoordinate =
+                VoxelMath.WorldToChunkCoord(position);
+
+            if (!chunks.TryGetValue(
+                    chunkCoordinate,
+                    out Chunk chunk))
+            {
+                continue;
+            }
+
+            Vector3Int localPosition =
+                VoxelMath.WorldToLocalVoxel(position);
+
+            chunk.SetVoxel(
+                localPosition.x,
+                localPosition.y,
+                localPosition.z,
+                new Voxel(type, facing));
+
+            if (type == VoxelType.Water)
+            {
+                authoredWaterAmounts[position] = waterAmount;
+            }
+            else
+            {
+                authoredWaterAmounts.Remove(position);
+            }
+
+            affectedChunks.Add(chunkCoordinate);
+        }
+
+        foreach (Vector3Int chunkCoordinate in affectedChunks)
+        {
+            RebuildChunkAndNeighbors(chunkCoordinate);
         }
     }
 

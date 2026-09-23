@@ -1,14 +1,37 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
 [CustomEditor(typeof(LevelAuthoringRoot))]
 public sealed class LevelAuthoringRootEditor : Editor
 {
+    private const float MaximumRayDistance = 2000f;
+    private const float WaterSampleDistance = 0.2f;
+    private const int MaximumPreviewCubes = 2048;
+
+    private bool isDragging;
+    private Vector3Int dragStart;
+    private Vector3Int currentVoxel;
+    private bool hasCurrentVoxel;
+
+    private LevelAuthoringRoot Root =>
+        (LevelAuthoringRoot)target;
+
+    private void OnEnable()
+    {
+        Undo.undoRedoPerformed += HandleUndoRedo;
+    }
+
+    private void OnDisable()
+    {
+        Undo.undoRedoPerformed -= HandleUndoRedo;
+    }
+
     public override void OnInspectorGUI()
     {
         DrawDefaultInspector();
 
-        LevelAuthoringRoot root = (LevelAuthoringRoot)target;
+        LevelAuthoringRoot root = Root;
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField(
@@ -69,8 +92,332 @@ public sealed class LevelAuthoringRootEditor : Editor
             Application.isPlaying
                 ? "Runtime changes affect the world copy. Capture only " +
                   "when you deliberately want to replace the authored asset."
-                : "The preview is generated from the asset and is not " +
-                  "saved as scene content.",
+                : "Select this object and use LMB in the Scene View. Drag " +
+                  "for Line/Box. Hold Shift to axis-lock Line. Alt remains " +
+                  "available for Scene View navigation.",
             MessageType.None);
+    }
+
+    private void OnSceneGUI()
+    {
+        LevelAuthoringRoot root = Root;
+        Event current = Event.current;
+
+        if (Application.isPlaying ||
+            !root.VoxelToolEnabled ||
+            root.Definition == null ||
+            root.World == null)
+        {
+            return;
+        }
+
+        UpdateCurrentVoxel(root, current.mousePosition, false);
+
+        if (current.type == EventType.Layout && hasCurrentVoxel)
+        {
+            HandleUtility.AddDefaultControl(
+                GUIUtility.GetControlID(FocusType.Passive));
+        }
+
+        DrawToolPreview(root);
+
+        if (current.alt || current.button != 0)
+        {
+            return;
+        }
+
+        if (current.type == EventType.MouseDown &&
+            hasCurrentVoxel)
+        {
+            dragStart = currentVoxel;
+            isDragging = true;
+            current.Use();
+            return;
+        }
+
+        if (current.type == EventType.MouseDrag && isDragging)
+        {
+            current.Use();
+            SceneView.RepaintAll();
+            return;
+        }
+
+        if (current.type == EventType.MouseUp && isDragging)
+        {
+            isDragging = false;
+
+            if (hasCurrentVoxel &&
+                TryBuildShape(
+                    root,
+                    dragStart,
+                    currentVoxel,
+                    current.shift,
+                    out List<Vector3Int> positions))
+            {
+                Undo.RecordObject(
+                    root.Definition,
+                    $"{root.Action} {root.Shape} Voxels");
+
+                int changed = root.ApplyVoxelEdit(positions);
+
+                if (changed > 0)
+                {
+                    EditorUtility.SetDirty(root.Definition);
+                    SceneView.RepaintAll();
+                }
+            }
+
+            current.Use();
+        }
+    }
+
+    private void UpdateCurrentVoxel(
+        LevelAuthoringRoot root,
+        Vector2 guiPosition,
+        bool unused = false)
+    {
+        hasCurrentVoxel = false;
+
+        Ray ray = HandleUtility.GUIPointToWorldRay(guiPosition);
+
+        if (!Physics.Raycast(
+                ray,
+                out RaycastHit hit,
+                MaximumRayDistance,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore))
+        {
+            return;
+        }
+
+        if (!hit.transform.IsChildOf(root.World.transform))
+        {
+            return;
+        }
+
+        if (root.Action == LevelAuthoringAction.Erase &&
+            TryFindWaterAlongRay(
+                root,
+                ray,
+                hit.distance + 1f,
+                out Vector3Int waterPosition))
+        {
+            currentVoxel = waterPosition;
+            hasCurrentVoxel = true;
+            return;
+        }
+
+        Vector3 samplePoint =
+            root.Action == LevelAuthoringAction.Place
+                ? hit.point + hit.normal * 0.01f
+                : hit.point - hit.normal * 0.01f;
+
+        currentVoxel = Vector3Int.FloorToInt(samplePoint);
+        hasCurrentVoxel =
+            root.Definition.ContainsWorldPosition(currentVoxel);
+    }
+
+    private static bool TryFindWaterAlongRay(
+        LevelAuthoringRoot root,
+        Ray ray,
+        float maximumDistance,
+        out Vector3Int position)
+    {
+        position = default;
+        Vector3Int previous =
+            new(int.MinValue, int.MinValue, int.MinValue);
+
+        for (float distance = 0f;
+             distance <= maximumDistance;
+             distance += WaterSampleDistance)
+        {
+            Vector3Int candidate =
+                Vector3Int.FloorToInt(ray.GetPoint(distance));
+
+            if (candidate == previous)
+            {
+                continue;
+            }
+
+            previous = candidate;
+
+            if (!root.Definition.ContainsWorldPosition(candidate))
+            {
+                continue;
+            }
+
+            if (root.World.GetVoxel(candidate).Type == VoxelType.Water)
+            {
+                position = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void DrawToolPreview(LevelAuthoringRoot root)
+    {
+        if (!hasCurrentVoxel)
+        {
+            return;
+        }
+
+        Vector3Int start = isDragging
+            ? dragStart
+            : currentVoxel;
+
+        if (!TryBuildShape(
+                root,
+                start,
+                currentVoxel,
+                Event.current.shift,
+                out List<Vector3Int> positions))
+        {
+            return;
+        }
+
+        Handles.color =
+            root.Action == LevelAuthoringAction.Place
+                ? new Color(0.2f, 1f, 0.45f, 0.9f)
+                : new Color(1f, 0.25f, 0.2f, 0.9f);
+
+        int drawCount = Mathf.Min(
+            positions.Count,
+            MaximumPreviewCubes);
+
+        for (int i = 0; i < drawCount; i++)
+        {
+            Handles.DrawWireCube(
+                (Vector3)positions[i] + Vector3.one * 0.5f,
+                Vector3.one * 1.02f);
+        }
+    }
+
+    private static bool TryBuildShape(
+        LevelAuthoringRoot root,
+        Vector3Int start,
+        Vector3Int end,
+        bool axisLock,
+        out List<Vector3Int> positions)
+    {
+        positions = new List<Vector3Int>();
+
+        if (root.Shape == LevelAuthoringShape.Single)
+        {
+            if (root.Definition.ContainsWorldPosition(end))
+            {
+                positions.Add(end);
+            }
+
+            return positions.Count > 0;
+        }
+
+        Vector3Int difference = end - start;
+
+        if (root.Shape == LevelAuthoringShape.Line)
+        {
+            if (axisLock)
+            {
+                end = LockToDominantAxis(start, end);
+                difference = end - start;
+            }
+
+            int steps = Mathf.Max(
+                Mathf.Abs(difference.x),
+                Mathf.Abs(difference.y),
+                Mathf.Abs(difference.z));
+
+            if (steps + 1 > root.MaximumVoxelsPerOperation)
+            {
+                return false;
+            }
+
+            if (steps == 0)
+            {
+                positions.Add(start);
+                return true;
+            }
+
+            HashSet<Vector3Int> unique = new();
+
+            for (int step = 0; step <= steps; step++)
+            {
+                Vector3Int position = Vector3Int.RoundToInt(
+                    Vector3.Lerp(start, end, step / (float)steps));
+
+                if (root.Definition.ContainsWorldPosition(position) &&
+                    unique.Add(position))
+                {
+                    positions.Add(position);
+                }
+            }
+
+            return positions.Count > 0;
+        }
+
+        Vector3Int minimum = Vector3Int.Min(start, end);
+        Vector3Int maximum = Vector3Int.Max(start, end);
+
+        long count =
+            (long)(maximum.x - minimum.x + 1) *
+            (maximum.y - minimum.y + 1) *
+            (maximum.z - minimum.z + 1);
+
+        if (count > root.MaximumVoxelsPerOperation)
+        {
+            return false;
+        }
+
+        positions.Capacity = (int)count;
+
+        for (int x = minimum.x; x <= maximum.x; x++)
+        {
+            for (int y = minimum.y; y <= maximum.y; y++)
+            {
+                for (int z = minimum.z; z <= maximum.z; z++)
+                {
+                    Vector3Int position = new(x, y, z);
+
+                    if (root.Definition.ContainsWorldPosition(position))
+                    {
+                        positions.Add(position);
+                    }
+                }
+            }
+        }
+
+        return positions.Count > 0;
+    }
+
+    private static Vector3Int LockToDominantAxis(
+        Vector3Int start,
+        Vector3Int end)
+    {
+        Vector3Int difference = end - start;
+        int x = Mathf.Abs(difference.x);
+        int y = Mathf.Abs(difference.y);
+        int z = Mathf.Abs(difference.z);
+
+        if (x >= y && x >= z)
+        {
+            return new Vector3Int(end.x, start.y, start.z);
+        }
+
+        return y >= z
+            ? new Vector3Int(start.x, end.y, start.z)
+            : new Vector3Int(start.x, start.y, end.z);
+    }
+
+    private void HandleUndoRedo()
+    {
+        if (!Application.isPlaying &&
+            Root != null &&
+            Root.Definition != null &&
+            Root.World != null)
+        {
+            Root.RebuildPreview();
+            SceneView.RepaintAll();
+        }
     }
 }

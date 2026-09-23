@@ -1,4 +1,18 @@
+using System.Collections.Generic;
 using UnityEngine;
+
+public enum LevelAuthoringShape
+{
+    Single,
+    Line,
+    Box
+}
+
+public enum LevelAuthoringAction
+{
+    Place,
+    Erase
+}
 
 public sealed class LevelAuthoringRoot : MonoBehaviour
 {
@@ -9,8 +23,39 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     [SerializeField]
     private VoxelWorld voxelWorld;
 
+    [Header("Scene View Voxel Tool")]
+    [SerializeField]
+    private bool voxelToolEnabled = true;
+
+    [SerializeField]
+    private LevelAuthoringAction action = LevelAuthoringAction.Place;
+
+    [SerializeField]
+    private LevelAuthoringShape shape = LevelAuthoringShape.Single;
+
+    [SerializeField]
+    private VoxelType material = VoxelType.Dirt;
+
+    [SerializeField]
+    private WaterAmount waterAmount = WaterAmount.Full;
+
+    [SerializeField]
+    private PuzzleSide facing = PuzzleSide.North;
+
+    [Min(1)]
+    [SerializeField]
+    private int maximumVoxelsPerOperation = 32768;
+
     public LevelDefinition Definition => levelDefinition;
     public VoxelWorld World => voxelWorld;
+    public bool VoxelToolEnabled => voxelToolEnabled;
+    public LevelAuthoringAction Action => action;
+    public LevelAuthoringShape Shape => shape;
+    public VoxelType Material => material;
+    public WaterAmount SelectedWaterAmount => waterAmount;
+    public PuzzleSide Facing => facing;
+    public int MaximumVoxelsPerOperation =>
+        Mathf.Max(1, maximumVoxelsPerOperation);
 
     public bool RebuildPreview()
     {
@@ -36,6 +81,39 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         return true;
     }
 
+    public int ApplyVoxelEdit(IReadOnlyCollection<Vector3Int> positions)
+    {
+        if (Application.isPlaying ||
+            levelDefinition == null ||
+            voxelWorld == null ||
+            positions == null)
+        {
+            return 0;
+        }
+
+        VoxelType targetType =
+            action == LevelAuthoringAction.Place
+                ? material
+                : VoxelType.Air;
+
+        int changed = levelDefinition.SetVoxels(
+            positions,
+            targetType,
+            facing,
+            waterAmount);
+
+        if (changed > 0)
+        {
+            voxelWorld.SetAuthoringVoxels(
+                positions,
+                targetType,
+                facing,
+                waterAmount);
+        }
+
+        return changed;
+    }
+
     public bool CaptureRuntimeWorld()
     {
         if (!Application.isPlaying ||
@@ -46,6 +124,12 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         }
 
         return voxelWorld.CaptureCurrentWorld(levelDefinition);
+    }
+
+    private void OnValidate()
+    {
+        maximumVoxelsPerOperation =
+            Mathf.Max(1, maximumVoxelsPerOperation);
     }
 
     private void OnDrawGizmosSelected()
