@@ -133,6 +133,27 @@ public abstract class WaterPortal : MonoBehaviour
             Mathf.Max(1, value.z));
     }
 
+    private void OnDestroy()
+    {
+#if UNITY_EDITOR
+        if (Application.isPlaying ||
+            !gameObject.scene.isLoaded ||
+            string.IsNullOrWhiteSpace(entityId))
+        {
+            return;
+        }
+
+        LevelAuthoringRoot root =
+            GetComponentInParent<LevelAuthoringRoot>();
+
+        if (root != null &&
+            root.RemoveAuthoringEntity(entityId))
+        {
+            UnityEditor.EditorUtility.SetDirty(root.Definition);
+        }
+#endif
+    }
+
     protected abstract Color GizmoColor { get; }
 
     protected virtual void OnDrawGizmos()
