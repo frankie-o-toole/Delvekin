@@ -259,9 +259,9 @@ public sealed class LevelAuthoringRootEditor : Editor
                 root,
                 ray,
                 hit.distance + 1f,
-                out Vector3Int waterPosition))
+                out Vector3Int fluidPosition))
         {
-            currentVoxel = waterPosition;
+            currentVoxel = fluidPosition;
             hasCurrentVoxel = true;
             return;
         }
@@ -276,7 +276,7 @@ public sealed class LevelAuthoringRootEditor : Editor
             root.Definition.ContainsWorldPosition(currentVoxel);
     }
 
-    private static bool TryFindWaterAlongRay(
+    private static bool TryFindFluidAlongRay(
         LevelAuthoringRoot root,
         Ray ray,
         float maximumDistance,
