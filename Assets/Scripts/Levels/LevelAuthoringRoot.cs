@@ -479,7 +479,8 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     {
         entities = new List<LevelEntityRecord>();
 
-        if (prefabPlacementSource == null)
+        if (levelDefinition == null ||
+            prefabPlacementSource == null)
         {
             return false;
         }
