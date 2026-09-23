@@ -197,7 +197,8 @@ public sealed class LevelAuthoringRootEditor : Editor
                     root.PrefabCaptureTarget,
                     "Capture Voxel Prefab");
 
-                int captured = root.CaptureVoxelPrefab();
+                int captured = root.CaptureVoxelPrefab(
+                    out int capturedEntities);
 
                 if (captured >= 0)
                 {
@@ -207,7 +208,8 @@ public sealed class LevelAuthoringRootEditor : Editor
                     AssetDatabase.SaveAssets();
 
                     Debug.Log(
-                        $"Captured {captured} non-Air voxel(s) in a " +
+                        $"Captured {captured} non-Air voxel(s) and " +
+                        $"{capturedEntities} authoring entity/entities in a " +
                         $"{root.PrefabCaptureSize} volume to " +
                         $"'{root.PrefabCaptureTarget.name}'.",
                         root.PrefabCaptureTarget);
@@ -225,8 +227,8 @@ public sealed class LevelAuthoringRootEditor : Editor
 
         EditorGUILayout.HelpBox(
             "The yellow wireframe is the capture volume. Captured voxels " +
-            "are normalized to local coordinates; implicit Air and the full " +
-            "volume size are preserved by the prefab definition.",
+            "and fully enclosed authoring entities are normalized to local " +
+            "coordinates; implicit Air and the full volume size are preserved.",
             MessageType.None);
 
         EditorGUILayout.HelpBox(
