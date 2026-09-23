@@ -173,18 +173,21 @@ public class VoxelHover : MonoBehaviour
             return;
         }
 
-        // Fluid meshes deliberately have no physics collider. Source and
-        // Erase inspect the voxel ray up to the terrain hit and select the
-        // first visible Water cell instead of the solid voxel behind it.
-        if ((selectedAction == EditorAction.Source ||
+        // Fluid meshes deliberately have no physics collider. Source targets
+        // Water only; Erase targets either Water or Lava before the solid
+        // terrain behind it.
+        bool waterOnly = selectedAction == EditorAction.Source;
+
+        if ((waterOnly ||
              selectedAction == EditorAction.Erase) &&
-            TryFindWaterVoxelAlongRay(
+            TryFindFluidVoxelAlongRay(
                 ray,
                 hit.distance + 1f,
-                out Vector3Int waterVoxel))
+                waterOnly,
+                out Vector3Int fluidVoxel))
         {
-            hoveredVoxel = waterVoxel;
-            placementVoxel = waterVoxel;
+            hoveredVoxel = fluidVoxel;
+            placementVoxel = fluidVoxel;
             hasValidVoxelTarget = true;
 
             if (hoveredVoxel != lastVoxel)
@@ -234,12 +237,13 @@ public class VoxelHover : MonoBehaviour
         }
     }
 
-    private bool TryFindWaterVoxelAlongRay(
+    private bool TryFindFluidVoxelAlongRay(
         Ray ray,
         float maximumDistance,
-        out Vector3Int waterVoxel)
+        bool waterOnly,
+        out Vector3Int fluidVoxel)
     {
-        waterVoxel = default;
+        fluidVoxel = default;
 
         const float sampleDistance = 0.2f;
         Vector3Int previousPosition =
@@ -259,13 +263,18 @@ public class VoxelHover : MonoBehaviour
 
             previousPosition = position;
 
+            VoxelType type = voxelWorld.GetVoxel(position).Type;
+            bool matches =
+                type == VoxelType.Water ||
+                (!waterOnly && type == VoxelType.Lava);
+
             if (!VoxelVisibilitySystem.IsVoxelVisible(position) ||
-                voxelWorld.GetVoxel(position).Type != VoxelType.Water)
+                !matches)
             {
                 continue;
             }
 
-            waterVoxel = position;
+            fluidVoxel = position;
             return true;
         }
 

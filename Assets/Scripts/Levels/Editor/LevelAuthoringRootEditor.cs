@@ -9,6 +9,9 @@ public sealed class LevelAuthoringRootEditor : Editor
     private const float WaterSampleDistance = 0.2f;
     private const int MaximumPreviewCubes = 2048;
 
+    private readonly Stack<List<LevelVoxelState>> undoHistory = new();
+    private readonly Stack<List<LevelVoxelState>> redoHistory = new();
+
     private bool isDragging;
     private Vector3Int dragStart;
     private Vector3Int currentVoxel;
@@ -16,16 +19,6 @@ public sealed class LevelAuthoringRootEditor : Editor
 
     private LevelAuthoringRoot Root =>
         (LevelAuthoringRoot)target;
-
-    private void OnEnable()
-    {
-        Undo.undoRedoPerformed += HandleUndoRedo;
-    }
-
-    private void OnDisable()
-    {
-        Undo.undoRedoPerformed -= HandleUndoRedo;
-    }
 
     public override void OnInspectorGUI()
     {
@@ -88,6 +81,32 @@ public sealed class LevelAuthoringRootEditor : Editor
             }
         }
 
+        using (new EditorGUI.DisabledScope(
+                   Application.isPlaying ||
+                   root.Definition == null ||
+                   root.World == null))
+        {
+            EditorGUILayout.BeginHorizontal();
+
+            using (new EditorGUI.DisabledScope(undoHistory.Count == 0))
+            {
+                if (GUILayout.Button("Undo Voxel Edit"))
+                {
+                    UndoVoxelEdit();
+                }
+            }
+
+            using (new EditorGUI.DisabledScope(redoHistory.Count == 0))
+            {
+                if (GUILayout.Button("Redo Voxel Edit"))
+                {
+                    RedoVoxelEdit();
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
         EditorGUILayout.HelpBox(
             Application.isPlaying
                 ? "Runtime changes affect the world copy. Capture only " +
@@ -109,6 +128,32 @@ public sealed class LevelAuthoringRootEditor : Editor
             root.World == null)
         {
             return;
+        }
+
+        if (current.type == EventType.KeyDown &&
+            (current.control || current.command))
+        {
+            if (current.keyCode == KeyCode.Z)
+            {
+                if (current.shift)
+                {
+                    RedoVoxelEdit();
+                }
+                else
+                {
+                    UndoVoxelEdit();
+                }
+
+                current.Use();
+                return;
+            }
+
+            if (current.keyCode == KeyCode.Y)
+            {
+                RedoVoxelEdit();
+                current.Use();
+                return;
+            }
         }
 
         UpdateCurrentVoxel(root, current.mousePosition, false);
@@ -165,14 +210,15 @@ public sealed class LevelAuthoringRootEditor : Editor
                     current.shift,
                     out List<Vector3Int> positions))
             {
-                Undo.RecordObject(
-                    root.Definition,
-                    $"{root.Action} {root.Shape} Voxels");
+                List<LevelVoxelState> before =
+                    root.CaptureVoxelStates(positions);
 
                 int changed = root.ApplyVoxelEdit(positions);
 
                 if (changed > 0)
                 {
+                    undoHistory.Push(before);
+                    redoHistory.Clear();
                     EditorUtility.SetDirty(root.Definition);
 
                     Debug.Log(
@@ -213,7 +259,7 @@ public sealed class LevelAuthoringRootEditor : Editor
         }
 
         if (root.Action == LevelAuthoringAction.Erase &&
-            TryFindWaterAlongRay(
+            TryFindFluidAlongRay(
                 root,
                 ray,
                 hit.distance + 1f,
@@ -263,7 +309,10 @@ public sealed class LevelAuthoringRootEditor : Editor
                 continue;
             }
 
-            if (root.World.GetVoxel(candidate).Type == VoxelType.Water)
+            VoxelType type = root.World.GetVoxel(candidate).Type;
+
+            if (type == VoxelType.Water ||
+                type == VoxelType.Lava)
             {
                 position = candidate;
                 return true;
@@ -284,6 +333,22 @@ public sealed class LevelAuthoringRootEditor : Editor
             ? dragStart
             : currentVoxel;
 
+        Handles.color =
+            root.Action == LevelAuthoringAction.Place
+                ? new Color(0.2f, 1f, 0.45f, 0.9f)
+                : new Color(1f, 0.25f, 0.2f, 0.9f);
+
+        if (root.Shape == LevelAuthoringShape.Box && isDragging)
+        {
+            Vector3Int minimum = Vector3Int.Min(start, currentVoxel);
+            Vector3Int maximum = Vector3Int.Max(start, currentVoxel);
+            Vector3 size = (Vector3)(maximum - minimum + Vector3Int.one);
+            Vector3 center = (Vector3)minimum + size * 0.5f;
+
+            Handles.DrawWireCube(center, size);
+            return;
+        }
+
         if (!TryBuildShape(
                 root,
                 start,
@@ -293,11 +358,6 @@ public sealed class LevelAuthoringRootEditor : Editor
         {
             return;
         }
-
-        Handles.color =
-            root.Action == LevelAuthoringAction.Place
-                ? new Color(0.2f, 1f, 0.45f, 0.9f)
-                : new Color(1f, 0.25f, 0.2f, 0.9f);
 
         int drawCount = Mathf.Min(
             positions.Count,
@@ -426,15 +486,50 @@ public sealed class LevelAuthoringRootEditor : Editor
             : new Vector3Int(start.x, start.y, end.z);
     }
 
-    private void HandleUndoRedo()
+    private void UndoVoxelEdit()
     {
-        if (!Application.isPlaying &&
-            Root != null &&
-            Root.Definition != null &&
-            Root.World != null)
+        ApplyHistory(undoHistory, redoHistory, "Undo voxel edit");
+    }
+
+    private void RedoVoxelEdit()
+    {
+        ApplyHistory(redoHistory, undoHistory, "Redo voxel edit");
+    }
+
+    private void ApplyHistory(
+        Stack<List<LevelVoxelState>> source,
+        Stack<List<LevelVoxelState>> destination,
+        string label)
+    {
+        if (Application.isPlaying ||
+            source.Count == 0 ||
+            Root == null ||
+            Root.Definition == null ||
+            Root.World == null)
         {
-            Root.RebuildPreview();
-            SceneView.RepaintAll();
+            return;
         }
+
+        List<LevelVoxelState> states = source.Pop();
+        List<Vector3Int> positions = new(states.Count);
+
+        foreach (LevelVoxelState state in states)
+        {
+            positions.Add(state.Position);
+        }
+
+        List<LevelVoxelState> inverse =
+            Root.CaptureVoxelStates(positions);
+
+        Root.RestoreVoxelStates(states);
+        destination.Push(inverse);
+
+        EditorUtility.SetDirty(Root.Definition);
+        Debug.Log(
+            $"{label}: restored {states.Count} authored voxel(s).",
+            Root.Definition);
+
+        SceneView.RepaintAll();
+        Repaint();
     }
 }

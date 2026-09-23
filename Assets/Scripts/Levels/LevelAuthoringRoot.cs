@@ -81,6 +81,29 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         return true;
     }
 
+    public List<LevelVoxelState> CaptureVoxelStates(
+        IReadOnlyCollection<Vector3Int> positions)
+    {
+        return levelDefinition != null
+            ? levelDefinition.CaptureStates(positions)
+            : new List<LevelVoxelState>();
+    }
+
+    public void RestoreVoxelStates(
+        IReadOnlyCollection<LevelVoxelState> states)
+    {
+        if (Application.isPlaying ||
+            levelDefinition == null ||
+            voxelWorld == null ||
+            states == null)
+        {
+            return;
+        }
+
+        levelDefinition.RestoreStates(states);
+        voxelWorld.SetAuthoringVoxelStates(states);
+    }
+
     public int ApplyVoxelEdit(IReadOnlyCollection<Vector3Int> positions)
     {
         if (Application.isPlaying ||

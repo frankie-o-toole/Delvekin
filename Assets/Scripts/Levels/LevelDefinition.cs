@@ -73,6 +73,83 @@ public sealed class LevelDefinition : ScriptableObject
         return false;
     }
 
+    public List<LevelVoxelState> CaptureStates(
+        IReadOnlyCollection<Vector3Int> positions)
+    {
+        List<LevelVoxelState> result = new();
+
+        if (positions == null || positions.Count == 0)
+        {
+            return result;
+        }
+
+        HashSet<Vector3Int> requested = new(positions);
+        Dictionary<Vector3Int, LevelVoxelRecord> existing = new();
+
+        foreach (LevelVoxelRecord record in voxels)
+        {
+            if (requested.Contains(record.Position))
+            {
+                existing[record.Position] = record;
+            }
+        }
+
+        result.Capacity = requested.Count;
+
+        foreach (Vector3Int position in requested)
+        {
+            result.Add(
+                existing.TryGetValue(
+                    position,
+                    out LevelVoxelRecord record)
+                    ? LevelVoxelState.Occupied(record)
+                    : LevelVoxelState.Empty(position));
+        }
+
+        return result;
+    }
+
+    public void RestoreStates(
+        IReadOnlyCollection<LevelVoxelState> states)
+    {
+        if (states == null || states.Count == 0)
+        {
+            return;
+        }
+
+        Dictionary<Vector3Int, LevelVoxelRecord> byPosition = new();
+
+        foreach (LevelVoxelRecord record in voxels)
+        {
+            if (ContainsWorldPosition(record.Position) &&
+                record.Type != VoxelType.Air)
+            {
+                byPosition[record.Position] = record;
+            }
+        }
+
+        foreach (LevelVoxelState state in states)
+        {
+            if (!ContainsWorldPosition(state.Position))
+            {
+                continue;
+            }
+
+            if (state.HasVoxel &&
+                state.Record.Type != VoxelType.Air)
+            {
+                byPosition[state.Position] = state.Record;
+            }
+            else
+            {
+                byPosition.Remove(state.Position);
+            }
+        }
+
+        voxels = new List<LevelVoxelRecord>(byPosition.Values);
+        voxels.Sort(CompareRecords);
+    }
+
     public int SetVoxels(
         IReadOnlyCollection<Vector3Int> positions,
         VoxelType type,

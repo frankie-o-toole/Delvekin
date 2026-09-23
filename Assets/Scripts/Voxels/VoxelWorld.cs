@@ -1290,6 +1290,63 @@ public class VoxelWorld : MonoBehaviour
     // EDIT MODE AUTHORING
     // =====================================================
 
+    public void SetAuthoringVoxelStates(
+        IReadOnlyCollection<LevelVoxelState> states)
+    {
+        if (Application.isPlaying || states == null)
+        {
+            return;
+        }
+
+        HashSet<Vector3Int> affectedChunks = new();
+
+        foreach (LevelVoxelState state in states)
+        {
+            Vector3Int chunkCoordinate =
+                VoxelMath.WorldToChunkCoord(state.Position);
+
+            if (!chunks.TryGetValue(
+                    chunkCoordinate,
+                    out Chunk chunk))
+            {
+                continue;
+            }
+
+            Vector3Int localPosition =
+                VoxelMath.WorldToLocalVoxel(state.Position);
+
+            Voxel voxel = state.HasVoxel
+                ? new Voxel(
+                    state.Record.Type,
+                    state.Record.Facing)
+                : new Voxel(VoxelType.Air);
+
+            chunk.SetVoxel(
+                localPosition.x,
+                localPosition.y,
+                localPosition.z,
+                voxel);
+
+            if (state.HasVoxel &&
+                state.Record.Type == VoxelType.Water)
+            {
+                authoredWaterAmounts[state.Position] =
+                    state.Record.Amount;
+            }
+            else
+            {
+                authoredWaterAmounts.Remove(state.Position);
+            }
+
+            affectedChunks.Add(chunkCoordinate);
+        }
+
+        foreach (Vector3Int chunkCoordinate in affectedChunks)
+        {
+            RebuildChunkAndNeighbors(chunkCoordinate);
+        }
+    }
+
     public void SetAuthoringVoxels(
         IReadOnlyCollection<Vector3Int> positions,
         VoxelType type,
