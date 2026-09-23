@@ -1,8 +1,13 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 public abstract class WaterPortal : MonoBehaviour
 {
+    [SerializeField]
+    [HideInInspector]
+    private string entityId;
+
     [Header("Portal Volume")]
     [SerializeField]
     private Vector3Int size = Vector3Int.one;
@@ -14,10 +19,32 @@ public abstract class WaterPortal : MonoBehaviour
     [SerializeField]
     protected VoxelWorld voxelWorld;
 
+    public string EntityId => entityId;
     public Vector3Int Size => size;
     public PuzzleSide Facing => facing;
     public Vector3Int Direction => DirectionUtility.ToVector(facing);
     public VoxelWorld World => voxelWorld;
+
+    public void ConfigureIdentity(string newEntityId)
+    {
+        entityId = string.IsNullOrWhiteSpace(newEntityId)
+            ? Guid.NewGuid().ToString("N")
+            : newEntityId;
+    }
+
+    public void EnsureIdentity()
+    {
+        if (string.IsNullOrWhiteSpace(entityId))
+        {
+            entityId = Guid.NewGuid().ToString("N");
+        }
+    }
+
+    public LevelEntityRecord CreateEntityRecord()
+    {
+        EnsureIdentity();
+        return LevelEntityRecord.FromPortal(this);
+    }
 
     public void Configure(
         VoxelWorld world,
@@ -84,6 +111,7 @@ public abstract class WaterPortal : MonoBehaviour
 
     protected virtual void OnValidate()
     {
+        EnsureIdentity();
         size = ClampSize(size);
         SnapToVoxelGrid();
     }
