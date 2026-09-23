@@ -134,13 +134,18 @@ public sealed class LevelEntityRecord
     public LevelEntityRecord CreatePlacedCopy(
         Vector3Int placementOrigin,
         Vector3Int sourceSize,
-        int quarterTurns)
+        int quarterTurns,
+        bool createUniqueId)
     {
         int turns = ((quarterTurns % 4) + 4) % 4;
         LevelEntityRecord result = Clone();
         Vector3 localPosition = position;
 
-        result.entityId = Guid.NewGuid().ToString("N");
+        if (createUniqueId)
+        {
+            result.entityId = Guid.NewGuid().ToString("N");
+        }
+
         result.position =
             (Vector3)placementOrigin +
             RotateLocalPosition(
