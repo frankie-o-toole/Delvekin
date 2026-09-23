@@ -72,6 +72,8 @@ public class VoxelWorld : MonoBehaviour
     private FluidSimulation fluidSimulation;
     private bool fluidSimulationStarted;
 
+    public bool HasLoadedChunks => chunks.Count > 0;
+
     public event System.Action<Vector3Int, Voxel, Voxel>
         VoxelChanged;
 
