@@ -13,6 +13,7 @@ public sealed class WaterSystem : IDisposable
     public const int MaximumAmount = (int)WaterAmount.Full;
 
     private const int MaximumRedistributionCells = 65536;
+    private const int MaximumSourceSearchCellsPerTick = 2048;
     private const float RedistributionTickInterval = 0.15f;
     private const int FlowDepthPerTick = 3;
     private const int MaximumTransferredUnitsPerTick = 128;
@@ -51,6 +52,7 @@ public sealed class WaterSystem : IDisposable
     private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
     private readonly Dictionary<int, WaterLaneSnapshot> laneSnapshots = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
+    private readonly Queue<SourceExpansionPlan> activeSourceExpansions = new();
     private readonly Queue<WaterRedistributionPlan> activePlans = new();
 
     private bool topologyDirty;
@@ -62,6 +64,7 @@ public sealed class WaterSystem : IDisposable
     public bool HasPendingWork =>
         topologyDirty ||
         pendingOpenings.Count > 0 ||
+        activeSourceExpansions.Count > 0 ||
         activePlans.Count > 0;
 
     public int BodyCount => bodies.Count;
@@ -88,6 +91,7 @@ public sealed class WaterSystem : IDisposable
         bodyByPosition.Clear();
         laneSnapshots.Clear();
         pendingOpenings.Clear();
+        activeSourceExpansions.Clear();
         activePlans.Clear();
         redistributionTickTimer = 0f;
         nextBodyId = 1;
@@ -117,7 +121,8 @@ public sealed class WaterSystem : IDisposable
             return;
         }
 
-        if (activePlans.Count > 0)
+        if (activeSourceExpansions.Count > 0 ||
+            activePlans.Count > 0)
         {
             redistributionTickTimer += deltaTime;
             int ticks = 0;
@@ -125,7 +130,8 @@ public sealed class WaterSystem : IDisposable
             while (redistributionTickTimer >=
                        RedistributionTickInterval &&
                    ticks < MaximumCatchUpTicksPerFrame &&
-                   activePlans.Count > 0)
+                   (activeSourceExpansions.Count > 0 ||
+                    activePlans.Count > 0))
             {
                 redistributionTickTimer -=
                     RedistributionTickInterval;
@@ -1024,89 +1030,19 @@ public sealed class WaterSystem : IDisposable
             return false;
         }
 
-        HashSet<Vector3Int> visited = new();
-        Dictionary<Vector3Int, int> distance = new();
-        Queue<Vector3Int> frontier = new();
+        SourceExpansionPlan plan =
+            new(
+                relevantOpenings,
+                sourceCells,
+                sourceBody.MaximumSourceLevelY,
+                sourceBody.TotalSourceUnitsPerTick);
 
-        foreach (Vector3Int opening in relevantOpenings)
-        {
-            if (!CanSearchSourceSpace(
-                    opening,
-                    sourceBody.MaximumSourceLevelY,
-                    sourceCells) ||
-                !visited.Add(opening))
-            {
-                continue;
-            }
-
-            distance[opening] = 0;
-            frontier.Enqueue(opening);
-        }
-
-        List<PlanUnit> additions = new();
-        bool searchLimitReached = false;
-
-        while (frontier.Count > 0)
-        {
-            Vector3Int position = frontier.Dequeue();
-            int currentDistance = distance[position];
-            VoxelType type = world.GetVoxel(position).Type;
-
-            if (type == VoxelType.Air)
-            {
-                additions.Add(
-                    new PlanUnit(position, currentDistance));
-                additions.Add(
-                    new PlanUnit(position, currentDistance));
-            }
-
-            if (visited.Count >= MaximumRedistributionCells)
-            {
-                searchLimitReached = true;
-                break;
-            }
-
-            foreach (Vector3Int direction in CardinalDirections)
-            {
-                Vector3Int neighbour = position + direction;
-
-                if (!CanSearchSourceSpace(
-                        neighbour,
-                        sourceBody.MaximumSourceLevelY,
-                        sourceCells) ||
-                    !visited.Add(neighbour))
-                {
-                    continue;
-                }
-
-                distance[neighbour] = currentDistance + 1;
-                frontier.Enqueue(neighbour);
-            }
-        }
-
-        if (searchLimitReached)
-        {
-            Debug.LogWarning(
-                $"Source-fed water body {sourceBody.Id} fill aborted: " +
-                $"reachable space exceeded {MaximumRedistributionCells} cells.");
-
-            return false;
-        }
-
-        if (additions.Count == 0)
+        if (plan.IsComplete)
         {
             return false;
         }
 
-        additions.Sort(ComparePlanAdditions);
-
-        activePlans.Enqueue(
-            new WaterRedistributionPlan(
-                additions,
-                Array.Empty<PlanUnit>(),
-                generatesWater: true,
-                unitsPerTick: sourceBody.TotalSourceUnitsPerTick));
-
+        activeSourceExpansions.Enqueue(plan);
         return true;
     }
 
@@ -1337,6 +1273,11 @@ public sealed class WaterSystem : IDisposable
 
     private void ApplyNextRedistributionTick()
     {
+        if (activeSourceExpansions.Count > 0)
+        {
+            ApplyNextSourceExpansionTick();
+            return;
+        }
         if (activePlans.Count == 0)
         {
             return;
@@ -1377,6 +1318,46 @@ public sealed class WaterSystem : IDisposable
         }
 
         activePlans.Dequeue();
+        RebuildBodies();
+        topologyDirty = false;
+    }
+
+    private void ApplyNextSourceExpansionTick()
+    {
+        if (activeSourceExpansions.Count == 0)
+        {
+            return;
+        }
+
+        SourceExpansionPlan plan = activeSourceExpansions.Peek();
+        List<Vector3Int> destinations = new();
+
+        plan.Advance(
+            world,
+            Mathf.Min(
+                MaximumTransferredUnitsPerTick,
+                plan.UnitsPerTick),
+            MaximumSourceSearchCellsPerTick,
+            destinations);
+
+        if (destinations.Count > 0)
+        {
+            Dictionary<Vector3Int, int> amountDeltas = new();
+
+            foreach (Vector3Int destination in destinations)
+            {
+                AddDelta(amountDeltas, destination, +1);
+            }
+
+            ApplyAmountDeltas(amountDeltas);
+        }
+
+        if (!plan.IsComplete)
+        {
+            return;
+        }
+
+        activeSourceExpansions.Dequeue();
         RebuildBodies();
         topologyDirty = false;
     }
@@ -1685,10 +1666,15 @@ public sealed class WaterSystem : IDisposable
                     continue;
                 }
 
+                int maximumFillY =
+                    portal.OverrideMaximumFillY
+                        ? portal.MaximumFillY
+                        : body.HighestCellY;
+
                 body.AddSource(
                     new WaterSource(
                         portal.MinimumVoxel,
-                        portal.MaximumLevelY,
+                        maximumFillY,
                         portal.SupplyUnitsPerTick,
                         portal.Direction));
             }
@@ -1799,6 +1785,125 @@ public sealed class WaterSystem : IDisposable
         if (waterOccupancyChanged || openedTerrain)
         {
             topologyDirty = true;
+        }
+    }
+
+    private sealed class SourceExpansionPlan
+    {
+        private static readonly Vector3Int[] ExpansionDirections =
+        {
+            Vector3Int.down,
+            Vector3Int.forward,
+            Vector3Int.right,
+            Vector3Int.back,
+            Vector3Int.left,
+            Vector3Int.up
+        };
+
+        private readonly Queue<Vector3Int> frontier = new();
+        private readonly HashSet<Vector3Int> discovered = new();
+        private readonly HashSet<Vector3Int> originalSourceCells;
+        private readonly int maximumFillY;
+
+        private Vector3Int pendingDestination;
+        private int pendingDestinationUnits;
+
+        public int UnitsPerTick { get; }
+
+        public bool IsComplete =>
+            frontier.Count == 0 &&
+            pendingDestinationUnits == 0;
+
+        public SourceExpansionPlan(
+            IEnumerable<Vector3Int> openings,
+            HashSet<Vector3Int> sourceCells,
+            int maximumFillY,
+            int unitsPerTick)
+        {
+            originalSourceCells = sourceCells;
+            this.maximumFillY = maximumFillY;
+            UnitsPerTick = Mathf.Max(1, unitsPerTick);
+
+            foreach (Vector3Int opening in openings)
+            {
+                if (discovered.Add(opening))
+                {
+                    frontier.Enqueue(opening);
+                }
+            }
+        }
+
+        public void Advance(
+            VoxelWorld world,
+            int unitBudget,
+            int searchBudget,
+            ICollection<Vector3Int> destinations)
+        {
+            int generatedUnits = 0;
+            int searchedCells = 0;
+
+            while (generatedUnits < unitBudget)
+            {
+                if (pendingDestinationUnits > 0)
+                {
+                    destinations.Add(pendingDestination);
+                    pendingDestinationUnits--;
+                    generatedUnits++;
+                    continue;
+                }
+
+                if (frontier.Count == 0 ||
+                    searchedCells >= searchBudget)
+                {
+                    break;
+                }
+
+                Vector3Int position = frontier.Dequeue();
+                searchedCells++;
+
+                if (!CanOccupyOrCross(world, position))
+                {
+                    continue;
+                }
+
+                foreach (Vector3Int direction in ExpansionDirections)
+                {
+                    Vector3Int neighbour = position + direction;
+
+                    if (!discovered.Contains(neighbour) &&
+                        CanOccupyOrCross(world, neighbour))
+                    {
+                        discovered.Add(neighbour);
+                        frontier.Enqueue(neighbour);
+                    }
+                }
+
+                if (world.GetVoxel(position).Type != VoxelType.Air)
+                {
+                    continue;
+                }
+
+                pendingDestination = position;
+                pendingDestinationUnits = MaximumAmount;
+            }
+        }
+
+        private bool CanOccupyOrCross(
+            VoxelWorld world,
+            Vector3Int position)
+        {
+            if (position.y > maximumFillY ||
+                !world.ContainsExistingChunkAt(position))
+            {
+                return false;
+            }
+
+            VoxelType type = world.GetVoxel(position).Type;
+
+            return
+                type == VoxelType.Air ||
+                (type == VoxelType.Water &&
+                 !originalSourceCells.Contains(position));
         }
     }
 
