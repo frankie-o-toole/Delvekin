@@ -206,9 +206,14 @@ public class DwarfSpawner : MonoBehaviour
             DwarfAgent dwarf =
                 pool.Get();
 
+            PuzzleSide spawnFacing =
+                world.GetSpawnFacing(
+                    spawnVoxel,
+                    initialFacing);
+
             dwarf.Activate(
                 spawnVoxel,
-                initialFacing);
+                spawnFacing);
 
             nextSpawnPointIndex =
                 (index + 1)
@@ -216,7 +221,7 @@ public class DwarfSpawner : MonoBehaviour
 
             Debug.Log(
                 $"Spawned {dwarf.name} at anchor "
-                + $"{spawnVoxel}, facing {initialFacing}.");
+                + $"{spawnVoxel}, facing {spawnFacing}.");
 
             return true;
         }
