@@ -159,6 +159,11 @@ public sealed class LevelAuthoringRootEditor : Editor
 
             EditorGUILayout.EndHorizontal();
 
+            if (GUILayout.Button("Create Spawn House"))
+            {
+                CreateSpawnHouse(root);
+            }
+
             EditorGUILayout.BeginHorizontal();
 
             if (GUILayout.Button("Capture Entities"))
@@ -300,6 +305,60 @@ public sealed class LevelAuthoringRootEditor : Editor
 
         Selection.activeGameObject = portalObject;
         EditorGUIUtility.PingObject(portalObject);
+        SceneView.RepaintAll();
+    }
+
+    private static void CreateSpawnHouse(
+        LevelAuthoringRoot root)
+    {
+        Transform entityRoot = root.FindAuthoringEntitiesRoot();
+
+        if (entityRoot == null)
+        {
+            GameObject parent = new("Authoring Entities");
+
+            Undo.RegisterCreatedObjectUndo(
+                parent,
+                "Create Authoring Entities Root");
+
+            parent.transform.SetParent(root.transform, false);
+            entityRoot = parent.transform;
+        }
+
+        Vector3Int anchor = GetSuggestedPortalVoxel(root);
+        Vector3Int size = new(5, 4, 5);
+
+        GameObject houseObject = new("Spawn House");
+
+        Undo.RegisterCreatedObjectUndo(
+            houseObject,
+            "Create Spawn House");
+
+        houseObject.transform.SetParent(entityRoot, true);
+
+        SpawnHouseAuthoring house =
+            houseObject.AddComponent<SpawnHouseAuthoring>();
+
+        house.ConfigureIdentity(null, root.Definition);
+        house.Configure(
+            root.World,
+            (Vector3)anchor + new Vector3(0.5f, 2f, 0.5f),
+            Quaternion.identity,
+            size,
+            new Vector3(0f, -1.5f, 3f),
+            PuzzleSide.North,
+            configuredVisualPrefab: null,
+            isRuntimeCopy: false);
+
+        Undo.RecordObject(
+            root.Definition,
+            "Create Spawn House Record");
+
+        root.SynchronizeSpawnHouse(house);
+        EditorUtility.SetDirty(root.Definition);
+
+        Selection.activeGameObject = houseObject;
+        EditorGUIUtility.PingObject(houseObject);
         SceneView.RepaintAll();
     }
 
