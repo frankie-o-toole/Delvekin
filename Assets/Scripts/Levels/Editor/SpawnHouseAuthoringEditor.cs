@@ -12,12 +12,12 @@ public sealed class SpawnHouseAuthoringEditor : Editor
         EditorGUI.BeginChangeCheck();
         DrawDefaultInspector();
 
-        if (!house.IsSpawnMarkerInsideWorld)
+        if (!house.IsSpawnMarkerValid)
         {
             EditorGUILayout.HelpBox(
-                "The Dwarf Spawn marker is outside the level world bounds. " +
-                "Move the marker inside the cyan bounds or expand the " +
-                "world bounds before entering Play Mode.",
+                "The Dwarf Spawn marker must be inside both the cyan world " +
+                "bounds and the magenta gameplay bounds. Move the marker " +
+                "or resize the appropriate bounds before Play Mode.",
                 MessageType.Error);
         }
 
