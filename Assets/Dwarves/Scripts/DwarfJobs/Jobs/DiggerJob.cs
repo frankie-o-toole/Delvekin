@@ -354,24 +354,15 @@ public sealed class DiggerJob : IDwarfJob
     private static bool IsDiggableMaterial(
         VoxelType type)
     {
-        switch (type)
-        {
-            case VoxelType.Dirt:
-            case VoxelType.Vine:
-            case VoxelType.Snow:
-            case VoxelType.Stair:
-            case VoxelType.Ladder:
-                return true;
-
-            default:
-                return false;
-        }
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.Diggable);
     }
 
     private static bool IsPermittedInShaft(
         VoxelType type)
     {
-        return type == VoxelType.Air ||
+        return VoxelTraits.Has(type, VoxelTrait.Empty) ||
                IsDiggableMaterial(type);
     }
 

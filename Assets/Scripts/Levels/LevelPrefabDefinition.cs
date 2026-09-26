@@ -49,7 +49,7 @@ public sealed class LevelPrefabDefinition : ScriptableObject
 
         voxels.RemoveAll(
             record =>
-                record.Type == VoxelType.Air ||
+                VoxelTraits.Has(record.Type, VoxelTrait.Empty) ||
                 !ContainsLocalPosition(record.Position));
 
         voxels.Sort(CompareRecords);
@@ -87,7 +87,7 @@ public sealed class LevelPrefabDefinition : ScriptableObject
 
         voxels.RemoveAll(
             record =>
-                record.Type == VoxelType.Air ||
+                VoxelTraits.Has(record.Type, VoxelTrait.Empty) ||
                 !ContainsLocalPosition(record.Position));
 
         voxels.Sort(CompareRecords);

@@ -1018,8 +1018,9 @@ public sealed class LevelAuthoringRootEditor : Editor
 
             VoxelType type = root.World.GetVoxel(candidate).Type;
 
-            if (type == VoxelType.Water ||
-                type == VoxelType.Lava)
+            if (VoxelTraits.Has(
+                    type,
+                    VoxelTrait.Fluid))
             {
                 position = candidate;
                 return true;

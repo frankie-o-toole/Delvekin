@@ -197,7 +197,7 @@ public sealed class LevelDefinition : ScriptableObject
         foreach (LevelVoxelRecord record in voxels)
         {
             if (ContainsWorldPosition(record.Position) &&
-                record.Type != VoxelType.Air)
+                !VoxelTraits.Has(record.Type, VoxelTrait.Empty))
             {
                 byPosition[record.Position] = record;
             }
@@ -211,7 +211,7 @@ public sealed class LevelDefinition : ScriptableObject
             }
 
             if (state.HasVoxel &&
-                state.Record.Type != VoxelType.Air)
+                !VoxelTraits.Has(state.Record.Type, VoxelTrait.Empty))
             {
                 byPosition[state.Position] = state.Record;
             }
@@ -241,7 +241,7 @@ public sealed class LevelDefinition : ScriptableObject
         foreach (LevelVoxelRecord record in voxels)
         {
             if (ContainsWorldPosition(record.Position) &&
-                record.Type != VoxelType.Air)
+                !VoxelTraits.Has(record.Type, VoxelTrait.Empty))
             {
                 byPosition[record.Position] = record;
             }
@@ -256,7 +256,7 @@ public sealed class LevelDefinition : ScriptableObject
                 continue;
             }
 
-            if (type == VoxelType.Air)
+            if (VoxelTraits.Has(type, VoxelTrait.Empty))
             {
                 if (byPosition.Remove(position))
                 {
@@ -417,8 +417,9 @@ public sealed class LevelDefinition : ScriptableObject
 
         foreach (LevelVoxelRecord record in voxels)
         {
-            if ((record.Type == VoxelType.SpawnPoint ||
-                 record.Type == VoxelType.ExitPoint) &&
+            if (VoxelTraits.Has(
+                    record.Type,
+                    VoxelTrait.GameplayMarker) &&
                 !ContainsPosition(
                     record.Position,
                     minimum,

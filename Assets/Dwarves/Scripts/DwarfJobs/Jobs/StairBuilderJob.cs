@@ -308,8 +308,9 @@ public sealed class StairBuilderJob : IDwarfJob
 
         foreach (Vector3Int position in stairPiece)
         {
-            if (world.GetVoxel(position).Type !=
-                VoxelType.Air)
+            if (!VoxelTraits.Has(
+                    world.GetVoxel(position).Type,
+                    VoxelTrait.Empty))
             {
                 failureReason =
                     $"stair voxel {position} is occupied by "
@@ -328,8 +329,9 @@ public sealed class StairBuilderJob : IDwarfJob
                     position +
                     Vector3Int.down).Type;
 
-            if (supportType ==
-                VoxelType.Lava)
+            if (VoxelTraits.Has(
+                    supportType,
+                    VoxelTrait.Lethal))
             {
                 failureReason =
                     $"Lava beneath {position} would burn the stairs.";
@@ -363,17 +365,9 @@ public sealed class StairBuilderJob : IDwarfJob
     private static bool IsValidInitialFoundation(
         VoxelType type)
     {
-        switch (type)
-        {
-            case VoxelType.Dirt:
-            case VoxelType.Granite:
-            case VoxelType.Snow:
-            case VoxelType.Vine:
-                return true;
-
-            default:
-                return false;
-        }
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.StairFoundation);
     }
 
     private bool HasAnySolidSupport(

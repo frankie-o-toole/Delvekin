@@ -561,26 +561,16 @@ public sealed class TunnellerJob :
     private static bool IsDiggableMaterial(
         VoxelType type)
     {
-        switch (type)
-        {
-            case VoxelType.Dirt:
-            case VoxelType.Vine:
-            case VoxelType.Snow:
-            case VoxelType.Stair:
-            case VoxelType.Ladder:
-                return true;
-
-            default:
-                return false;
-        }
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.Diggable);
     }
 
     private static bool IsPermittedInTunnel(
         VoxelType type)
     {
-        return type == VoxelType.Air ||
-               type == VoxelType.SpawnPoint ||
-               type == VoxelType.ExitPoint ||
+        return VoxelTraits.Has(type, VoxelTrait.Empty) ||
+               VoxelTraits.Has(type, VoxelTrait.GameplayMarker) ||
                IsDiggableMaterial(type);
     }
 
@@ -598,8 +588,9 @@ public sealed class TunnellerJob :
             VoxelType type =
                 world.GetVoxel(position).Type;
 
-            if (type == VoxelType.SpawnPoint ||
-                type == VoxelType.ExitPoint)
+            if (VoxelTraits.Has(
+                    type,
+                    VoxelTrait.GameplayMarker))
             {
                 continue;
             }

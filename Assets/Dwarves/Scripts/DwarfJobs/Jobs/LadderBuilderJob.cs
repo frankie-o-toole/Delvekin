@@ -348,8 +348,9 @@ public sealed class LadderBuilderJob :
                 world.GetVoxel(
                     ladderPosition);
 
-            if (ladderVoxel.Type ==
-                VoxelType.Lava)
+            if (VoxelTraits.Has(
+                    ladderVoxel.Type,
+                    VoxelTrait.Lethal))
             {
                 failureReason =
                     $"Lava occupies ladder position {ladderPosition}.";
@@ -363,7 +364,9 @@ public sealed class LadderBuilderJob :
                 ladderVoxel.Facing ==
                     outwardSide;
 
-            if (ladderVoxel.Type != VoxelType.Air &&
+            if (!VoxelTraits.Has(
+                    ladderVoxel.Type,
+                    VoxelTrait.Empty) &&
                 !compatibleExistingLadder)
             {
                 failureReason =
@@ -377,8 +380,9 @@ public sealed class LadderBuilderJob :
                 world.GetVoxel(
                     backingPosition).Type;
 
-            if (backingType ==
-                VoxelType.Lava)
+            if (VoxelTraits.Has(
+                    backingType,
+                    VoxelTrait.Lethal))
             {
                 failureReason =
                     $"Lava behind {ladderPosition} prevents construction.";
@@ -473,13 +477,8 @@ public sealed class LadderBuilderJob :
     {
         // New solid terrain types should support ladders automatically.
         // Level markers are traversable metadata rather than physical backing.
-        if (type == VoxelType.SpawnPoint ||
-            type == VoxelType.ExitPoint)
-        {
-            return false;
-        }
-
-        return VoxelRules.IsSolid(
-            new Voxel(type));
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.ProvidesSupport);
     }
 }
