@@ -272,9 +272,88 @@ public sealed class LevelDefinition : ScriptableObject
 
     public bool ContainsWorldPosition(Vector3Int worldPosition)
     {
-        Vector3Int minimum = originInChunks * Chunk.ChunkSize;
+        return ContainsWorldPosition(
+            worldPosition,
+            originInChunks,
+            sizeInChunks);
+    }
+
+    public bool TrySetBounds(
+        Vector3Int newOriginInChunks,
+        Vector3Int newSizeInChunks,
+        out string failureReason)
+    {
+        newSizeInChunks = ClampSize(newSizeInChunks);
+
+        foreach (LevelVoxelRecord record in voxels)
+        {
+            if (!ContainsWorldPosition(
+                    record.Position,
+                    newOriginInChunks,
+                    newSizeInChunks))
+            {
+                failureReason =
+                    $"Voxel at {record.Position} would fall outside the " +
+                    "new world bounds.";
+                return false;
+            }
+        }
+
+        foreach (LevelEntityRecord entity in entities)
+        {
+            if (entity == null)
+            {
+                continue;
+            }
+
+            if (entity.Type == LevelEntityType.SpawnHouse)
+            {
+                if (!ContainsWorldPosition(
+                        entity.SpawnVoxel,
+                        newOriginInChunks,
+                        newSizeInChunks))
+                {
+                    failureReason =
+                        $"Spawn House marker at {entity.SpawnVoxel} would " +
+                        "fall outside the new world bounds.";
+                    return false;
+                }
+
+                continue;
+            }
+
+            Vector3Int maximumInclusive =
+                (newOriginInChunks + newSizeInChunks) *
+                Chunk.ChunkSize - Vector3Int.one;
+
+            if (!entity.IsFullyInside(
+                    newOriginInChunks * Chunk.ChunkSize,
+                    maximumInclusive))
+            {
+                failureReason =
+                    $"{entity.Type} '{entity.EntityId}' would fall outside " +
+                    "the new world bounds.";
+                return false;
+            }
+        }
+
+        originInChunks = newOriginInChunks;
+        sizeInChunks = newSizeInChunks;
+        schemaVersion = CurrentSchemaVersion;
+        failureReason = null;
+        return true;
+    }
+
+    private static bool ContainsWorldPosition(
+        Vector3Int worldPosition,
+        Vector3Int boundsOriginInChunks,
+        Vector3Int boundsSizeInChunks)
+    {
+        Vector3Int minimum =
+            boundsOriginInChunks * Chunk.ChunkSize;
+
         Vector3Int maximumExclusive =
-            minimum + sizeInChunks * Chunk.ChunkSize;
+            minimum + boundsSizeInChunks * Chunk.ChunkSize;
 
         return
             worldPosition.x >= minimum.x &&
