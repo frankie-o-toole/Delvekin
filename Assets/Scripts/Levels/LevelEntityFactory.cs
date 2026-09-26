@@ -2,13 +2,50 @@ using UnityEngine;
 
 public static class LevelEntityFactory
 {
-    public static WaterPortal CreateWaterPortal(
+    public static Component CreateEntity(
         LevelEntityRecord record,
         VoxelWorld world,
         Transform parent,
         bool runtimeCopy)
     {
         if (record == null)
+        {
+            return null;
+        }
+
+        return record.Type switch
+        {
+            LevelEntityType.WaterSource =>
+                CreateWaterPortal(
+                    record,
+                    world,
+                    parent,
+                    runtimeCopy),
+            LevelEntityType.WaterOutlet =>
+                CreateWaterPortal(
+                    record,
+                    world,
+                    parent,
+                    runtimeCopy),
+            LevelEntityType.SpawnHouse =>
+                CreateSpawnHouse(
+                    record,
+                    world,
+                    parent,
+                    runtimeCopy),
+            _ => null
+        };
+    }
+
+    public static WaterPortal CreateWaterPortal(
+        LevelEntityRecord record,
+        VoxelWorld world,
+        Transform parent,
+        bool runtimeCopy)
+    {
+        if (record == null ||
+            (record.Type != LevelEntityType.WaterSource &&
+             record.Type != LevelEntityType.WaterOutlet))
         {
             return null;
         }
@@ -75,5 +112,45 @@ public static class LevelEntityFactory
         instance.transform.rotation = record.Rotation;
         instance.SetActive(true);
         return portal;
+    }
+
+    public static SpawnHouseAuthoring CreateSpawnHouse(
+        LevelEntityRecord record,
+        VoxelWorld world,
+        Transform parent,
+        bool runtimeCopy)
+    {
+        if (record == null ||
+            record.Type != LevelEntityType.SpawnHouse)
+        {
+            return null;
+        }
+
+        record.EnsureValid();
+
+        string objectName = runtimeCopy
+            ? "Spawn House (Runtime)"
+            : "Spawn House";
+
+        GameObject instance = new(objectName);
+        instance.SetActive(false);
+        instance.transform.SetParent(parent, true);
+
+        SpawnHouseAuthoring house =
+            instance.AddComponent<SpawnHouseAuthoring>();
+
+        house.ConfigureIdentity(record.EntityId);
+        house.Configure(
+            world,
+            record.Position,
+            record.Rotation,
+            record.VolumeSize,
+            record.SpawnMarkerLocalPosition,
+            record.Facing,
+            record.VisualPrefab,
+            runtimeCopy);
+
+        instance.SetActive(true);
+        return house;
     }
 }
