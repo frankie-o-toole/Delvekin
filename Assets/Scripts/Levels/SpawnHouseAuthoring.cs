@@ -85,7 +85,9 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
 
         if (runtimeCopy && voxelWorld != null)
         {
-            voxelWorld.RegisterRuntimeSpawnPoint(SpawnVoxel);
+            voxelWorld.RegisterRuntimeSpawnPoint(
+                SpawnVoxel,
+                facing);
         }
 
         synchronizedStateHash = CalculateStateHash();
