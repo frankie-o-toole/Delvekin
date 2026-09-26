@@ -264,9 +264,9 @@ public class VoxelHover : MonoBehaviour
             previousPosition = position;
 
             VoxelType type = voxelWorld.GetVoxel(position).Type;
-            bool matches =
-                type == VoxelType.Water ||
-                (!waterOnly && type == VoxelType.Lava);
+            bool matches = waterOnly
+                ? type == VoxelType.Water
+                : VoxelTraits.Has(type, VoxelTrait.Fluid);
 
             if (!VoxelVisibilitySystem.IsVoxelVisible(position) ||
                 !matches)

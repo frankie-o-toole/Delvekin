@@ -69,7 +69,8 @@ public static class VoxelTraits
             case VoxelType.SpawnPoint:
             case VoxelType.ExitPoint:
                 return VoxelTrait.GameplayMarker |
-                       VoxelTrait.AllowsDwarfClearance;
+                       VoxelTrait.AllowsDwarfClearance |
+                       VoxelTrait.TerrainRenderable;
 
             case VoxelType.Stair:
                 return SolidTerrain() |

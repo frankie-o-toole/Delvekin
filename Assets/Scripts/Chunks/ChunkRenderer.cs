@@ -63,12 +63,6 @@ public class ChunkRenderer : MonoBehaviour
                     if (!voxel.IsSolid())
                         continue;
 
-                    if (voxel.Type == VoxelType.Water ||
-                        voxel.Type == VoxelType.Lava)
-                    {
-                        continue;
-                    }
-
                     Vector3Int worldPos =
                         chunk.ChunkCoordinate * Chunk.ChunkSize +
                         new Vector3Int(x, y, z);
@@ -122,9 +116,9 @@ public class ChunkRenderer : MonoBehaviour
                 worldPos);
 
         Vector3 p = new(x, y, z);
-        bool isFluid =
-            voxel.Type == VoxelType.Water ||
-            voxel.Type == VoxelType.Lava;
+        bool isFluid = VoxelTraits.Has(
+            voxel.Type,
+            VoxelTrait.FluidRenderable);
 
         float height = isFluid
             ? Mathf.Max(0.01f, voxelWorld.GetFluidFill01(worldPos))
@@ -257,7 +251,7 @@ public class ChunkRenderer : MonoBehaviour
 
         Voxel neighbor = voxelWorld.GetVoxel(neighborPosition);
 
-        if (neighbor.Type == VoxelType.Air)
+        if (VoxelTraits.Has(neighbor.Type, VoxelTrait.Empty))
         {
             return true;
         }
@@ -276,9 +270,8 @@ public class ChunkRenderer : MonoBehaviour
         VoxelType neighborType =
             voxelWorld.GetVoxel(neighborPosition).Type;
 
-        if (neighborType == VoxelType.Air ||
-            neighborType == VoxelType.Water ||
-            neighborType == VoxelType.Lava)
+        if (VoxelTraits.Has(neighborType, VoxelTrait.Empty) ||
+            VoxelTraits.Has(neighborType, VoxelTrait.FluidRenderable))
         {
             return true;
         }
@@ -301,9 +294,10 @@ public class ChunkRenderer : MonoBehaviour
         Voxel neighborVoxel =
             voxelWorld.GetVoxel(worldNeighborPos);
 
-        if (neighborVoxel.Type == VoxelType.Air ||
-            neighborVoxel.Type == VoxelType.Water ||
-            neighborVoxel.Type == VoxelType.Lava)
+        if (VoxelTraits.Has(neighborVoxel.Type, VoxelTrait.Empty) ||
+            VoxelTraits.Has(
+                neighborVoxel.Type,
+                VoxelTrait.FluidRenderable))
             return true;
 
         if (!VoxelVisibilitySystem.IsVoxelVisible(worldNeighborPos))

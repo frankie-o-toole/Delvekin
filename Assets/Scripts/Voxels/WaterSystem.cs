@@ -485,7 +485,9 @@ public sealed class WaterSystem : IDisposable
                 Vector3Int below = position + Vector3Int.down;
 
                 if (world.ContainsExistingChunkAt(below) &&
-                    world.GetVoxel(below).Type == VoxelType.Air)
+                    VoxelTraits.Has(
+                        world.GetVoxel(below).Type,
+                        VoxelTrait.Empty))
                 {
                     pendingOpenings.Add(below);
                 }
@@ -502,7 +504,9 @@ public sealed class WaterSystem : IDisposable
 
                     if (!world.ContainsExistingChunkAt(edge) ||
                         !world.ContainsExistingChunkAt(belowEdge) ||
-                        world.GetVoxel(edge).Type != VoxelType.Air)
+                        !VoxelTraits.Has(
+                            world.GetVoxel(edge).Type,
+                            VoxelTrait.Empty))
                     {
                         continue;
                     }
@@ -510,7 +514,7 @@ public sealed class WaterSystem : IDisposable
                     VoxelType supportType =
                         world.GetVoxel(belowEdge).Type;
 
-                    if (supportType == VoxelType.Air ||
+                    if (VoxelTraits.Has(supportType, VoxelTrait.Empty) ||
                         supportType == VoxelType.Water)
                     {
                         pendingOpenings.Add(edge);
@@ -1500,7 +1504,7 @@ public sealed class WaterSystem : IDisposable
 
         VoxelType type = world.GetVoxel(position).Type;
 
-        if (type == VoxelType.Air)
+        if (VoxelTraits.Has(type, VoxelTrait.Empty))
         {
             return true;
         }
@@ -1520,7 +1524,9 @@ public sealed class WaterSystem : IDisposable
         return
             position.y <= maximumY &&
             world.ContainsExistingChunkAt(position) &&
-            world.GetVoxel(position).Type == VoxelType.Air;
+            VoxelTraits.Has(
+                world.GetVoxel(position).Type,
+                VoxelTrait.Empty);
     }
 
     private static int DistanceToNearestOpening(
@@ -1764,9 +1770,9 @@ public sealed class WaterSystem : IDisposable
         }
 
         bool openedTerrain =
-            previous.Type != VoxelType.Air &&
+            !VoxelTraits.Has(previous.Type, VoxelTrait.Empty) &&
             previous.Type != VoxelType.Water &&
-            current.Type == VoxelType.Air &&
+            VoxelTraits.Has(current.Type, VoxelTrait.Empty) &&
             TouchesWater(position);
 
         // Removing a Water voxel is also an opening. This matters especially
@@ -1775,7 +1781,7 @@ public sealed class WaterSystem : IDisposable
         // the topology rebuilt, but no redistribution plan was ever queued.
         bool openedWaterCell =
             previous.Type == VoxelType.Water &&
-            current.Type == VoxelType.Air;
+            VoxelTraits.Has(current.Type, VoxelTrait.Empty);
 
         if (openedTerrain || openedWaterCell)
         {
@@ -1886,7 +1892,9 @@ public sealed class WaterSystem : IDisposable
                     }
                 }
 
-                if (world.GetVoxel(position).Type != VoxelType.Air)
+                if (!VoxelTraits.Has(
+                        world.GetVoxel(position).Type,
+                        VoxelTrait.Empty))
                 {
                     continue;
                 }
@@ -1917,7 +1925,7 @@ public sealed class WaterSystem : IDisposable
             VoxelType type = world.GetVoxel(position).Type;
 
             return
-                type == VoxelType.Air ||
+                VoxelTraits.Has(type, VoxelTrait.Empty) ||
                 (type == VoxelType.Water &&
                  !originalSourceCells.Contains(position));
         }

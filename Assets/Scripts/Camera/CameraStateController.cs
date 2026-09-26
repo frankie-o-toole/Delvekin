@@ -174,9 +174,9 @@ public class CameraStateController : MonoBehaviour
                             voxelWorld.GetVoxel(
                                 worldPos);
 
-                        if (
-                            voxel.Type ==
-                            VoxelType.Air)
+                        if (VoxelTraits.Has(
+                                voxel.Type,
+                                VoxelTrait.Empty))
                         {
                             continue;
                         }

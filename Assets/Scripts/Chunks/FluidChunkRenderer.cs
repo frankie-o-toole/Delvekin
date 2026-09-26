@@ -397,7 +397,9 @@ public sealed class FluidChunkRenderer : MonoBehaviour
 
         if (!IsFluid(neighbour.Type))
         {
-            return neighbour.Type == VoxelType.Air;
+            return VoxelTraits.Has(
+                neighbour.Type,
+                VoxelTrait.Empty);
         }
 
         if (neighbour.Type != type)
@@ -420,7 +422,7 @@ public sealed class FluidChunkRenderer : MonoBehaviour
 
         VoxelType neighbourType = world.GetVoxel(neighbourPosition).Type;
 
-        return neighbourType == VoxelType.Air ||
+        return VoxelTraits.Has(neighbourType, VoxelTrait.Empty) ||
                (IsFluid(neighbourType) && neighbourType != type);
     }
 
@@ -488,7 +490,8 @@ public sealed class FluidChunkRenderer : MonoBehaviour
 
     private static bool IsFluid(VoxelType type)
     {
-        return type == VoxelType.Water ||
-               type == VoxelType.Lava;
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.FluidRenderable);
     }
 }

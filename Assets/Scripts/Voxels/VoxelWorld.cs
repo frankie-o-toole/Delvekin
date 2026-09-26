@@ -405,7 +405,9 @@ public class VoxelWorld : MonoBehaviour
                     {
                         Voxel voxel = chunk.GetVoxel(x, y, z);
 
-                        if (voxel.Type == VoxelType.Air)
+                        if (VoxelTraits.Has(
+                                voxel.Type,
+                                VoxelTrait.Empty))
                         {
                             continue;
                         }
@@ -1806,7 +1808,7 @@ public class VoxelWorld : MonoBehaviour
                 VoxelMath.WorldToLocalVoxel(
                     worldPos);
 
-            if (type == VoxelType.Air &&
+            if (VoxelTraits.Has(type, VoxelTrait.Empty) &&
                 !chunks.ContainsKey(chunkCoord))
             {
                 continue;
@@ -1889,7 +1891,9 @@ public class VoxelWorld : MonoBehaviour
             Vector3Int chunkCoordinate =
                 VoxelMath.WorldToChunkCoord(worldPosition);
 
-            if (currentVoxel.Type == VoxelType.Air &&
+            if (VoxelTraits.Has(
+                    currentVoxel.Type,
+                    VoxelTrait.Empty) &&
                 !chunks.ContainsKey(chunkCoordinate))
             {
                 continue;

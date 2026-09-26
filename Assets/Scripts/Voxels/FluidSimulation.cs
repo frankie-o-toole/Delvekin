@@ -732,7 +732,9 @@ public sealed class FluidSimulation : IDisposable
             return cell.Type == type;
         }
 
-        return world.GetVoxel(position).Type == VoxelType.Air;
+        return VoxelTraits.Has(
+            world.GetVoxel(position).Type,
+            VoxelTrait.Empty);
     }
 
     private int Transfer(
@@ -810,7 +812,9 @@ public sealed class FluidSimulation : IDisposable
                    fluidCell.Amount < MaximumAmount;
         }
 
-        return world.GetVoxel(position).Type == VoxelType.Air;
+        return VoxelTraits.Has(
+            world.GetVoxel(position).Type,
+            VoxelTrait.Empty);
     }
 
     private static int GetWorkingAmount(
@@ -1021,8 +1025,9 @@ public sealed class FluidSimulation : IDisposable
 
     private static bool IsFluid(VoxelType type)
     {
-        return type == VoxelType.Water ||
-               type == VoxelType.Lava;
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.Fluid);
     }
 
     private static int ComparePositions(
