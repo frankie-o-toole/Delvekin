@@ -21,11 +21,4 @@ public struct Voxel
         Type = type;
         Facing = facing;
     }
-
-    public readonly bool IsSolid()
-    {
-        return VoxelTraits.Has(
-            Type,
-            VoxelTrait.TerrainRenderable);
-    }
 }

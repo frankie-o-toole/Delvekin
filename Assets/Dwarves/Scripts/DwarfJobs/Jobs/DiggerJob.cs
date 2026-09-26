@@ -388,8 +388,9 @@ public sealed class DiggerJob : IDwarfJob
     {
         foreach (Vector3Int position in positions)
         {
-            if (world.GetVoxel(position).Type !=
-                VoxelType.Air)
+            if (!VoxelTraits.Has(
+                    world.GetVoxel(position).Type,
+                    VoxelTrait.Empty))
             {
                 return false;
             }

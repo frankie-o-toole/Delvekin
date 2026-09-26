@@ -1726,9 +1726,9 @@ public class VoxelWorld : MonoBehaviour
         Debug.Log(
             $"World: {worldPos} -> Chunk: {chunkCoord}");
 
-        if (
-            type ==
-                VoxelType.Air &&
+        if (VoxelTraits.Has(
+                type,
+                VoxelTrait.Empty) &&
             !chunks.ContainsKey(
                 chunkCoord))
         {

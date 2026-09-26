@@ -60,7 +60,9 @@ public class ChunkRenderer : MonoBehaviour
                     Voxel voxel =
                         chunk.GetVoxel(x, y, z);
 
-                    if (!voxel.IsSolid())
+                    if (!VoxelTraits.Has(
+                            voxel.Type,
+                            VoxelTrait.TerrainRenderable))
                         continue;
 
                     Vector3Int worldPos =
