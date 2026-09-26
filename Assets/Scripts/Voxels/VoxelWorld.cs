@@ -65,6 +65,11 @@ public class VoxelWorld : MonoBehaviour
     private readonly List<Vector3Int> spawnPoints =
         new();
 
+    // Level entities register here so a later voxel scan can rebuild the
+    // combined spawn list without losing authored Spawn Houses.
+    private readonly HashSet<Vector3Int> runtimeEntitySpawnPoints =
+        new();
+
     private readonly List<Vector3Int> exitPoints =
         new();
 
@@ -566,6 +571,7 @@ public class VoxelWorld : MonoBehaviour
         }
 
         spawnPoints.Clear();
+        runtimeEntitySpawnPoints.Clear();
         exitPoints.Clear();
 
         chunks.Clear();
@@ -593,7 +599,7 @@ public class VoxelWorld : MonoBehaviour
 
         foreach (LevelEntityRecord record in records)
         {
-            LevelEntityFactory.CreateWaterPortal(
+            LevelEntityFactory.CreateEntity(
                 record,
                 this,
                 runtimeEntityRoot,
@@ -827,8 +833,37 @@ public class VoxelWorld : MonoBehaviour
             }
         }
 
+        foreach (Vector3Int spawnPoint in runtimeEntitySpawnPoints)
+        {
+            if (!spawnPoints.Contains(spawnPoint))
+            {
+                spawnPoints.Add(spawnPoint);
+            }
+        }
+
         Debug.Log(
             $"Found {spawnPoints.Count} spawn point(s).");
+    }
+
+    public bool RegisterRuntimeSpawnPoint(Vector3Int worldPosition)
+    {
+        if (!ContainsExistingChunkAt(worldPosition))
+        {
+            Debug.LogWarning(
+                $"Ignored runtime spawn point {worldPosition}: it lies " +
+                "outside the loaded level bounds.",
+                this);
+            return false;
+        }
+
+        runtimeEntitySpawnPoints.Add(worldPosition);
+
+        if (!spawnPoints.Contains(worldPosition))
+        {
+            spawnPoints.Add(worldPosition);
+        }
+
+        return true;
     }
 
     // =====================================================
