@@ -169,16 +169,25 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             foreach (LevelEntityRecord record in
                      levelDefinition.Entities)
             {
-                WaterPortal portal =
-                    LevelEntityFactory.CreateWaterPortal(
+                Component entity =
+                    LevelEntityFactory.CreateEntity(
                         record,
                         voxelWorld,
                         entityRoot,
                         runtimeCopy: false);
 
-                portal?.ConfigureIdentity(
-                    record.EntityId,
-                    levelDefinition);
+                if (entity is WaterPortal portal)
+                {
+                    portal.ConfigureIdentity(
+                        record.EntityId,
+                        levelDefinition);
+                }
+                else if (entity is SpawnHouseAuthoring house)
+                {
+                    house.ConfigureIdentity(
+                        record.EntityId,
+                        levelDefinition);
+                }
             }
         }
         finally
@@ -229,6 +238,35 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             }
         }
 
+        if (entityRoot != null)
+        {
+            SpawnHouseAuthoring[] houses =
+                entityRoot.GetComponentsInChildren<SpawnHouseAuthoring>(
+                    includeInactive: true);
+
+            foreach (SpawnHouseAuthoring house in houses)
+            {
+                if (house == null ||
+                    (house.AuthoringDefinition != null &&
+                     house.AuthoringDefinition != levelDefinition))
+                {
+                    continue;
+                }
+
+                house.ConfigureIdentity(
+                    house.EntityId,
+                    levelDefinition);
+
+                LevelEntityRecord record =
+                    house.CreateEntityRecord();
+
+                if (record != null)
+                {
+                    records.Add(record);
+                }
+            }
+        }
+
         levelDefinition.ReplaceEntities(records);
         return true;
     }
@@ -251,6 +289,35 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
 
         LevelEntityRecord record =
             portal.CreateEntityRecord();
+
+        if (record == null)
+        {
+            return false;
+        }
+
+        levelDefinition.UpsertEntity(record);
+        return true;
+    }
+
+    public bool SynchronizeSpawnHouse(
+        SpawnHouseAuthoring house)
+    {
+        if (Application.isPlaying ||
+            rebuildingAuthoringEntities ||
+            levelDefinition == null ||
+            house == null ||
+            (house.AuthoringDefinition != null &&
+             house.AuthoringDefinition != levelDefinition))
+        {
+            return false;
+        }
+
+        house.ConfigureIdentity(
+            house.EntityId,
+            levelDefinition);
+
+        LevelEntityRecord record =
+            house.CreateEntityRecord();
 
         if (record == null)
         {
