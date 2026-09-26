@@ -80,6 +80,9 @@ public class VoxelWorld : MonoBehaviour
     private WaterSystem waterSystem;
     private FluidSimulation fluidSimulation;
     private bool fluidSimulationStarted;
+    private bool hasGameplayBounds;
+    private Vector3Int gameplayBoundsMinimum;
+    private Vector3Int gameplayBoundsMaximumExclusive;
 
     public bool HasLoadedChunks => chunks.Count > 0;
 
@@ -588,6 +591,7 @@ public class VoxelWorld : MonoBehaviour
 
         chunks.Clear();
         authoredWaterAmounts.Clear();
+        hasGameplayBounds = false;
 
         chunkRenderers.Clear();
         fluidChunkRenderers.Clear();
@@ -656,6 +660,12 @@ public class VoxelWorld : MonoBehaviour
 
         fluidSimulationStarted = false;
         ClearWorld();
+
+        gameplayBoundsMinimum =
+            snapshot.GameplayBoundsMinimum;
+        gameplayBoundsMaximumExclusive =
+            gameplayBoundsMinimum + snapshot.GameplayBoundsSize;
+        hasGameplayBounds = true;
 
         VoxelVisibilitySystem.SetToInitialPuzzleState();
 
@@ -880,6 +890,15 @@ public class VoxelWorld : MonoBehaviour
             Debug.LogWarning(
                 $"Ignored runtime spawn point {worldPosition}: it lies " +
                 "outside the loaded level bounds.",
+                this);
+            return false;
+        }
+
+        if (!ContainsGameplayPosition(worldPosition))
+        {
+            Debug.LogWarning(
+                $"Ignored runtime spawn point {worldPosition}: it lies " +
+                "outside the gameplay bounds.",
                 this);
             return false;
         }
@@ -1580,6 +1599,35 @@ public class VoxelWorld : MonoBehaviour
 
         return chunks.ContainsKey(
             chunkCoord);
+    }
+
+    public bool IsVolumeCompletelyOutsideGameplayBounds(
+        Vector3Int minimumInclusive,
+        Vector3Int maximumExclusive)
+    {
+        if (!hasGameplayBounds)
+        {
+            return false;
+        }
+
+        return
+            maximumExclusive.x <= gameplayBoundsMinimum.x ||
+            maximumExclusive.y <= gameplayBoundsMinimum.y ||
+            maximumExclusive.z <= gameplayBoundsMinimum.z ||
+            minimumInclusive.x >= gameplayBoundsMaximumExclusive.x ||
+            minimumInclusive.y >= gameplayBoundsMaximumExclusive.y ||
+            minimumInclusive.z >= gameplayBoundsMaximumExclusive.z;
+    }
+
+    public bool ContainsGameplayPosition(Vector3Int worldPosition)
+    {
+        return !hasGameplayBounds ||
+            (worldPosition.x >= gameplayBoundsMinimum.x &&
+             worldPosition.y >= gameplayBoundsMinimum.y &&
+             worldPosition.z >= gameplayBoundsMinimum.z &&
+             worldPosition.x < gameplayBoundsMaximumExclusive.x &&
+             worldPosition.y < gameplayBoundsMaximumExclusive.y &&
+             worldPosition.z < gameplayBoundsMaximumExclusive.z);
     }
 
     public void SetVoxel(
