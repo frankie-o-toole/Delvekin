@@ -122,17 +122,7 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
 
     private void RebuildVisual()
     {
-        if (visualInstance != null)
-        {
-            if (Application.isPlaying)
-            {
-                Destroy(visualInstance);
-            }
-            else
-            {
-                DestroyImmediate(visualInstance);
-            }
-        }
+        ClearGeneratedVisuals();
 
         if (visualPrefab != null)
         {
@@ -161,6 +151,38 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
         {
             placeholderCollider.enabled = false;
         }
+    }
+
+    private void ClearGeneratedVisuals()
+    {
+        for (int index = transform.childCount - 1;
+             index >= 0;
+             index--)
+        {
+            Transform child = transform.GetChild(index);
+
+            if (child.name != "Visual" &&
+                child.name != "Placeholder Visual")
+            {
+                continue;
+            }
+
+            if (visualInstance == child.gameObject)
+            {
+                visualInstance = null;
+            }
+
+            if (Application.isPlaying)
+            {
+                Destroy(child.gameObject);
+            }
+            else
+            {
+                DestroyImmediate(child.gameObject);
+            }
+        }
+
+        visualInstance = null;
     }
 
     private void OnValidate()
