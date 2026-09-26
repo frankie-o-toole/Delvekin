@@ -14,6 +14,7 @@ public sealed class LevelAuthoringRootEditor : Editor
     private readonly Stack<List<LevelVoxelState>> redoHistory = new();
     private readonly BoxBoundsHandle prefabCaptureBoundsHandle = new();
     private readonly BoxBoundsHandle worldBoundsHandle = new();
+    private readonly BoxBoundsHandle gameplayBoundsHandle = new();
 
     private bool isDragging;
     private Vector3Int dragStart;
@@ -24,6 +25,11 @@ public sealed class LevelAuthoringRootEditor : Editor
     private Vector3Int proposedBoundsSize = Vector3Int.one;
     private LevelDefinition boundsDraftDefinition;
     private string boundsValidationMessage;
+    private bool editGameplayBounds;
+    private Vector3Int proposedGameplayBoundsMinimum;
+    private Vector3Int proposedGameplayBoundsSize = Vector3Int.one;
+    private LevelDefinition gameplayBoundsDraftDefinition;
+    private string gameplayBoundsValidationMessage;
 
     private LevelAuthoringRoot Root =>
         (LevelAuthoringRoot)target;
@@ -69,6 +75,7 @@ public sealed class LevelAuthoringRootEditor : Editor
         }
 
         DrawWorldBoundsInspector(root);
+        DrawGameplayBoundsInspector(root);
 
         using (new EditorGUI.DisabledScope(
                    Application.isPlaying ||
@@ -431,6 +438,14 @@ public sealed class LevelAuthoringRootEditor : Editor
         }
 
         if (!Application.isPlaying &&
+            editGameplayBounds &&
+            root.Definition != null)
+        {
+            DrawGameplayBounds(root);
+            return;
+        }
+
+        if (!Application.isPlaying &&
             root.Definition != null &&
             root.PrefabCaptureTarget != null)
         {
@@ -604,6 +619,12 @@ public sealed class LevelAuthoringRootEditor : Editor
             if (requestedEdit != editWorldBounds)
             {
                 editWorldBounds = requestedEdit;
+
+                if (editWorldBounds)
+                {
+                    editGameplayBounds = false;
+                }
+
                 SceneView.RepaintAll();
             }
         }
@@ -620,6 +641,169 @@ public sealed class LevelAuthoringRootEditor : Editor
                 boundsValidationMessage,
                 MessageType.Error);
         }
+    }
+
+    private void DrawGameplayBoundsInspector(
+        LevelAuthoringRoot root)
+    {
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField(
+            "Gameplay / Kill Bounds",
+            EditorStyles.boldLabel);
+
+        if (root.Definition == null)
+        {
+            return;
+        }
+
+        if (gameplayBoundsDraftDefinition != root.Definition)
+        {
+            gameplayBoundsDraftDefinition = root.Definition;
+            proposedGameplayBoundsMinimum =
+                root.Definition.GameplayBoundsMinimum;
+            proposedGameplayBoundsSize =
+                root.Definition.GameplayBoundsSize;
+            gameplayBoundsValidationMessage = null;
+        }
+
+        proposedGameplayBoundsMinimum =
+            EditorGUILayout.Vector3IntField(
+                "Minimum Voxel",
+                proposedGameplayBoundsMinimum);
+
+        proposedGameplayBoundsSize =
+            EditorGUILayout.Vector3IntField(
+                "Size In Voxels",
+                proposedGameplayBoundsSize);
+
+        proposedGameplayBoundsSize = new Vector3Int(
+            Mathf.Max(1, proposedGameplayBoundsSize.x),
+            Mathf.Max(1, proposedGameplayBoundsSize.y),
+            Mathf.Max(1, proposedGameplayBoundsSize.z));
+
+        using (new EditorGUI.DisabledScope(Application.isPlaying))
+        {
+            if (GUILayout.Button("Apply Gameplay Bounds"))
+            {
+                TryApplyGameplayBounds(
+                    root,
+                    proposedGameplayBoundsMinimum,
+                    proposedGameplayBoundsSize);
+            }
+
+            bool requestedEdit = GUILayout.Toggle(
+                editGameplayBounds,
+                "Edit Gameplay Bounds In Scene",
+                "Button");
+
+            if (requestedEdit != editGameplayBounds)
+            {
+                editGameplayBounds = requestedEdit;
+
+                if (editGameplayBounds)
+                {
+                    editWorldBounds = false;
+                }
+
+                SceneView.RepaintAll();
+            }
+        }
+
+        EditorGUILayout.HelpBox(
+            "The magenta bounds use exact voxel coordinates. A dwarf is " +
+            "lost after its complete 3×5×3 occupied volume leaves these " +
+            "bounds. Spawn and Exit voxels must remain inside.",
+            MessageType.None);
+
+        if (!string.IsNullOrWhiteSpace(
+                gameplayBoundsValidationMessage))
+        {
+            EditorGUILayout.HelpBox(
+                gameplayBoundsValidationMessage,
+                MessageType.Error);
+        }
+    }
+
+    private void DrawGameplayBounds(LevelAuthoringRoot root)
+    {
+        Vector3 size = root.Definition.GameplayBoundsSize;
+
+        gameplayBoundsHandle.center =
+            (Vector3)root.Definition.GameplayBoundsMinimum +
+            size * 0.5f;
+
+        gameplayBoundsHandle.size = size;
+        gameplayBoundsHandle.handleColor =
+            new Color(1f, 0.2f, 0.75f, 0.95f);
+
+        EditorGUI.BeginChangeCheck();
+        gameplayBoundsHandle.DrawHandle();
+
+        Vector3 movedCenter = Handles.PositionHandle(
+            gameplayBoundsHandle.center,
+            Quaternion.identity);
+
+        if (!EditorGUI.EndChangeCheck())
+        {
+            return;
+        }
+
+        Vector3Int snappedSize = new(
+            Mathf.Max(
+                1,
+                Mathf.RoundToInt(
+                    Mathf.Abs(gameplayBoundsHandle.size.x))),
+            Mathf.Max(
+                1,
+                Mathf.RoundToInt(
+                    Mathf.Abs(gameplayBoundsHandle.size.y))),
+            Mathf.Max(
+                1,
+                Mathf.RoundToInt(
+                    Mathf.Abs(gameplayBoundsHandle.size.z))));
+
+        Vector3Int snappedMinimum = Vector3Int.RoundToInt(
+            movedCenter - (Vector3)snappedSize * 0.5f);
+
+        TryApplyGameplayBounds(
+            root,
+            snappedMinimum,
+            snappedSize);
+    }
+
+    private void TryApplyGameplayBounds(
+        LevelAuthoringRoot root,
+        Vector3Int minimum,
+        Vector3Int size)
+    {
+        if (root.Definition.GameplayBoundsMinimum == minimum &&
+            root.Definition.GameplayBoundsSize == size)
+        {
+            return;
+        }
+
+        Undo.RecordObject(
+            root.Definition,
+            "Edit Gameplay Bounds");
+
+        if (!root.Definition.TrySetGameplayBounds(
+                minimum,
+                size,
+                out string failureReason))
+        {
+            gameplayBoundsValidationMessage = failureReason;
+            Repaint();
+            SceneView.RepaintAll();
+            return;
+        }
+
+        proposedGameplayBoundsMinimum = minimum;
+        proposedGameplayBoundsSize = size;
+        gameplayBoundsValidationMessage = null;
+
+        EditorUtility.SetDirty(root.Definition);
+        SceneView.RepaintAll();
+        Repaint();
     }
 
     private void DrawWorldBounds(LevelAuthoringRoot root)
