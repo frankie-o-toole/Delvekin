@@ -47,6 +47,12 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
         spawnMarkerLocalPosition;
     public PuzzleSide Facing => facing;
 
+    public bool IsSpawnMarkerInsideWorld =>
+        authoringDefinition != null
+            ? authoringDefinition.ContainsWorldPosition(SpawnVoxel)
+            : voxelWorld == null ||
+              voxelWorld.ContainsExistingChunkAt(SpawnVoxel);
+
     public Vector3Int SpawnVoxel =>
         Vector3Int.FloorToInt(
             transform.TransformPoint(
@@ -292,7 +298,9 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
         Vector3 spawnCentre =
             (Vector3)SpawnVoxel + Vector3.one * 0.5f;
 
-        Gizmos.color = new Color(0.2f, 1f, 0.25f, 1f);
+        Gizmos.color = IsSpawnMarkerInsideWorld
+            ? new Color(0.2f, 1f, 0.25f, 1f)
+            : new Color(1f, 0.15f, 0.1f, 1f);
         Gizmos.DrawWireCube(
             spawnCentre,
             Vector3.one * 0.9f);
