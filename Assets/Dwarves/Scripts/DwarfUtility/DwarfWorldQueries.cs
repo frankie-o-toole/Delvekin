@@ -153,22 +153,17 @@ public static class DwarfWorldQueries
     public static bool IsClearanceVoxel(
         VoxelType type)
     {
-        return
-            type == VoxelType.Air ||
-            type == VoxelType.Water ||
-            type == VoxelType.SpawnPoint ||
-            type == VoxelType.ExitPoint;
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.AllowsDwarfClearance);
     }
 
     public static bool IsSupportive(
         VoxelType type)
     {
-        return
-            type == VoxelType.Dirt ||
-            type == VoxelType.Granite ||
-            type == VoxelType.Snow ||
-            type == VoxelType.Vine ||
-            type == VoxelType.Stair;
+        return VoxelTraits.Has(
+            type,
+            VoxelTrait.ProvidesSupport);
     }
 
     /// <summary>
