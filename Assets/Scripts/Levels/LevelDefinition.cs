@@ -7,7 +7,7 @@ using UnityEngine;
     menuName = "Delvekin/Level Definition")]
 public sealed class LevelDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
 
     [SerializeField]
     private int schemaVersion = CurrentSchemaVersion;
@@ -318,8 +318,9 @@ public sealed class LevelDefinition : ScriptableObject
     {
         if (schemaVersion < CurrentSchemaVersion)
         {
-            // Version 2 adds authored Half/Full water. Legacy records safely
-            // normalize to Full through LevelVoxelRecord.Amount.
+            // Version 2 adds authored Half/Full water. Version 3 adds
+            // level-owned authoring entities. Version 4 adds Spawn Houses
+            // with a visual reference and local spawn marker.
             schemaVersion = CurrentSchemaVersion;
         }
 
