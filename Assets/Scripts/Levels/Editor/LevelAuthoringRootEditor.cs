@@ -13,11 +13,17 @@ public sealed class LevelAuthoringRootEditor : Editor
     private readonly Stack<List<LevelVoxelState>> undoHistory = new();
     private readonly Stack<List<LevelVoxelState>> redoHistory = new();
     private readonly BoxBoundsHandle prefabCaptureBoundsHandle = new();
+    private readonly BoxBoundsHandle worldBoundsHandle = new();
 
     private bool isDragging;
     private Vector3Int dragStart;
     private Vector3Int currentVoxel;
     private bool hasCurrentVoxel;
+    private bool editWorldBounds;
+    private Vector3Int proposedBoundsOrigin;
+    private Vector3Int proposedBoundsSize = Vector3Int.one;
+    private LevelDefinition boundsDraftDefinition;
+    private string boundsValidationMessage;
 
     private LevelAuthoringRoot Root =>
         (LevelAuthoringRoot)target;
@@ -61,6 +67,8 @@ public sealed class LevelAuthoringRootEditor : Editor
                 "capturing a level.",
                 MessageType.Info);
         }
+
+        DrawWorldBoundsInspector(root);
 
         using (new EditorGUI.DisabledScope(
                    Application.isPlaying ||
@@ -415,6 +423,14 @@ public sealed class LevelAuthoringRootEditor : Editor
         Event current = Event.current;
 
         if (!Application.isPlaying &&
+            editWorldBounds &&
+            root.Definition != null)
+        {
+            DrawWorldBounds(root);
+            return;
+        }
+
+        if (!Application.isPlaying &&
             root.Definition != null &&
             root.PrefabCaptureTarget != null)
         {
@@ -532,6 +548,164 @@ public sealed class LevelAuthoringRootEditor : Editor
 
             current.Use();
         }
+    }
+
+    private void DrawWorldBoundsInspector(
+        LevelAuthoringRoot root)
+    {
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField(
+            "World Bounds",
+            EditorStyles.boldLabel);
+
+        if (root.Definition == null)
+        {
+            return;
+        }
+
+        if (boundsDraftDefinition != root.Definition)
+        {
+            boundsDraftDefinition = root.Definition;
+            proposedBoundsOrigin =
+                root.Definition.OriginInChunks;
+            proposedBoundsSize =
+                root.Definition.SizeInChunks;
+            boundsValidationMessage = null;
+        }
+
+        proposedBoundsOrigin = EditorGUILayout.Vector3IntField(
+            "Origin In Chunks",
+            proposedBoundsOrigin);
+
+        proposedBoundsSize = EditorGUILayout.Vector3IntField(
+            "Size In Chunks",
+            proposedBoundsSize);
+
+        proposedBoundsSize = new Vector3Int(
+            Mathf.Max(1, proposedBoundsSize.x),
+            Mathf.Max(1, proposedBoundsSize.y),
+            Mathf.Max(1, proposedBoundsSize.z));
+
+        using (new EditorGUI.DisabledScope(Application.isPlaying))
+        {
+            if (GUILayout.Button("Apply World Bounds"))
+            {
+                TryApplyWorldBounds(
+                    root,
+                    proposedBoundsOrigin,
+                    proposedBoundsSize);
+            }
+
+            bool requestedEdit = GUILayout.Toggle(
+                editWorldBounds,
+                "Edit World Bounds In Scene",
+                "Button");
+
+            if (requestedEdit != editWorldBounds)
+            {
+                editWorldBounds = requestedEdit;
+                SceneView.RepaintAll();
+            }
+        }
+
+        EditorGUILayout.HelpBox(
+            "Bounds snap to complete 16×16×16 chunks. Expanding adds empty " +
+            "authoring space. Shrinking is blocked if it would exclude " +
+            "voxels, water portals, or a Spawn House marker.",
+            MessageType.None);
+
+        if (!string.IsNullOrWhiteSpace(boundsValidationMessage))
+        {
+            EditorGUILayout.HelpBox(
+                boundsValidationMessage,
+                MessageType.Error);
+        }
+    }
+
+    private void DrawWorldBounds(LevelAuthoringRoot root)
+    {
+        Vector3 size =
+            (Vector3)(root.Definition.SizeInChunks * Chunk.ChunkSize);
+
+        worldBoundsHandle.center =
+            (Vector3)(root.Definition.OriginInChunks * Chunk.ChunkSize) +
+            size * 0.5f;
+
+        worldBoundsHandle.size = size;
+        worldBoundsHandle.handleColor =
+            new Color(0.2f, 0.85f, 1f, 0.95f);
+
+        EditorGUI.BeginChangeCheck();
+        worldBoundsHandle.DrawHandle();
+
+        Vector3 movedCenter = Handles.PositionHandle(
+            worldBoundsHandle.center,
+            Quaternion.identity);
+
+        if (!EditorGUI.EndChangeCheck())
+        {
+            return;
+        }
+
+        Vector3 rawMinimum =
+            movedCenter - worldBoundsHandle.size * 0.5f;
+
+        Vector3 rawMaximum =
+            movedCenter + worldBoundsHandle.size * 0.5f;
+
+        Vector3Int minimumChunk = new(
+            Mathf.RoundToInt(rawMinimum.x / Chunk.ChunkSize),
+            Mathf.RoundToInt(rawMinimum.y / Chunk.ChunkSize),
+            Mathf.RoundToInt(rawMinimum.z / Chunk.ChunkSize));
+
+        Vector3Int maximumChunkExclusive = new(
+            Mathf.RoundToInt(rawMaximum.x / Chunk.ChunkSize),
+            Mathf.RoundToInt(rawMaximum.y / Chunk.ChunkSize),
+            Mathf.RoundToInt(rawMaximum.z / Chunk.ChunkSize));
+
+        Vector3Int chunkSize = maximumChunkExclusive - minimumChunk;
+        chunkSize = new Vector3Int(
+            Mathf.Max(1, chunkSize.x),
+            Mathf.Max(1, chunkSize.y),
+            Mathf.Max(1, chunkSize.z));
+
+        TryApplyWorldBounds(root, minimumChunk, chunkSize);
+    }
+
+    private void TryApplyWorldBounds(
+        LevelAuthoringRoot root,
+        Vector3Int originInChunks,
+        Vector3Int sizeInChunks)
+    {
+        if (root.Definition.OriginInChunks == originInChunks &&
+            root.Definition.SizeInChunks == sizeInChunks)
+        {
+            return;
+        }
+
+        Undo.RecordObject(
+            root.Definition,
+            "Edit Level World Bounds");
+
+        if (!root.Definition.TrySetBounds(
+                originInChunks,
+                sizeInChunks,
+                out string failureReason))
+        {
+            boundsValidationMessage = failureReason;
+            Repaint();
+            SceneView.RepaintAll();
+            return;
+        }
+
+        proposedBoundsOrigin = originInChunks;
+        proposedBoundsSize = sizeInChunks;
+        boundsValidationMessage = null;
+
+        EditorUtility.SetDirty(root.Definition);
+        root.RebuildPreview();
+        SceneView.RepaintAll();
+        Repaint();
     }
 
     private void DrawPrefabCaptureBounds(
