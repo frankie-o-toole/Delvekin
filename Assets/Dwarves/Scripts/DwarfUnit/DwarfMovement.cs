@@ -161,6 +161,12 @@ public class DwarfMovement : MonoBehaviour
             return;
         }
 
+        if (HasCompletelyLeftGameplayBounds())
+        {
+            Die("left the gameplay bounds");
+            return;
+        }
+
         switch (state)
         {
             case MovementState.Idle:
@@ -1465,10 +1471,33 @@ public class DwarfMovement : MonoBehaviour
             LadderTraversalPhase.None;
     }
 
-    private void Die()
+    private bool HasCompletelyLeftGameplayBounds()
+    {
+        Vector3Int anchor =
+            DwarfSpatialRules.RootPositionToAnchorVoxel(
+                transform.position);
+
+        Vector3Int occupiedMinimum = new(
+            anchor.x + DwarfSpatialRules.MinimumLocalX,
+            anchor.y + DwarfSpatialRules.MinimumLocalY,
+            anchor.z + DwarfSpatialRules.MinimumLocalZ);
+
+        Vector3Int occupiedMaximumExclusive = new(
+            anchor.x + DwarfSpatialRules.MaximumLocalX + 1,
+            anchor.y + DwarfSpatialRules.MaximumLocalY + 1,
+            anchor.z + DwarfSpatialRules.MaximumLocalZ + 1);
+
+        return world.IsVolumeCompletelyOutsideGameplayBounds(
+            occupiedMinimum,
+            occupiedMaximumExclusive);
+    }
+
+    private void Die(string reason = null)
     {
         Debug.Log(
-            $"{agent.name} died!");
+            string.IsNullOrWhiteSpace(reason)
+                ? $"{agent.name} died!"
+                : $"{agent.name} died: {reason}.");
 
         state = MovementState.Idle;
 
