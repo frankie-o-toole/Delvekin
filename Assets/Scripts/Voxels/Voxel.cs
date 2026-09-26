@@ -22,5 +22,10 @@ public struct Voxel
         Facing = facing;
     }
 
-    public readonly bool IsSolid() => Type != VoxelType.Air;
+    public readonly bool IsSolid()
+    {
+        return VoxelTraits.Has(
+            Type,
+            VoxelTrait.TerrainRenderable);
+    }
 }

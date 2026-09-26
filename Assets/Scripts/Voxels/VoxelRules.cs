@@ -8,50 +8,30 @@ public static class VoxelRules
 
     public static bool IsAir(Voxel voxel)
     {
-        return voxel.Type == VoxelType.Air;
+        return VoxelTraits.Has(
+            voxel.Type,
+            VoxelTrait.Empty);
     }
 
     public static bool IsSolid(Voxel voxel)
     {
-        // Default rule: anything that is not air or fluid is solid support
-        switch (voxel.Type)
-        {
-            case VoxelType.Air:
-            case VoxelType.Water:
-            case VoxelType.Lava:
-            case VoxelType.Ladder:
-            case VoxelType.SpawnPoint:
-            case VoxelType.ExitPoint:
-                return false;
-
-            default:
-                return true;
-        }
+        return VoxelTraits.Has(
+            voxel.Type,
+            VoxelTrait.ProvidesSupport);
     }
 
     public static bool IsLethal(Voxel voxel)
     {
-        switch (voxel.Type)
-        {
-            case VoxelType.Lava:
-                return true;
-
-            default:
-                return false;
-        }
+        return VoxelTraits.Has(
+            voxel.Type,
+            VoxelTrait.Lethal);
     }
 
     public static bool IsFluid(Voxel voxel)
     {
-        switch (voxel.Type)
-        {
-            case VoxelType.Water:
-            case VoxelType.Lava:
-                return true;
-
-            default:
-                return false;
-        }
+        return VoxelTraits.Has(
+            voxel.Type,
+            VoxelTrait.Fluid);
     }
 
     // =========================
@@ -64,10 +44,9 @@ public static class VoxelRules
     /// </summary>
     public static bool IsBlocked(Voxel voxel)
     {
-        // Ladder is physically solid but intentionally excluded from
-        // IsSolid because it must never count as walkable ground support.
-        return voxel.Type == VoxelType.Ladder ||
-               IsSolid(voxel);
+        return VoxelTraits.Has(
+            voxel.Type,
+            VoxelTrait.BlocksMovement);
     }
 
     /// <summary>
