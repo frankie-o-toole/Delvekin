@@ -1967,6 +1967,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::DwarfAgent
   visualRoot: {fileID: 1777590733198407056}
   selectionCollider: {fileID: 1345415858226632762}
+  hasFlotation: 0
 --- !u!114 &2500360877337539038
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -2008,7 +2009,15 @@ MonoBehaviour:
   initialFallSpeed: 1.5
   fallAcceleration: 12
   maximumFallSpeed: 20
-  fatalFallDistance: 15
+  fatalFallDistance: 25
+  wadingSpeedMultiplier: 0.6
+  deepWaterSpeedMultiplier: 0.4
+  drowningDistance: 12
+  riverCentreScanDistance: 12
+  maximumWaterSurfaceSearch: 64
+  driftSpeed: 2
+  driftLookAhead: 2
+  riverCentrePull: 1.5
 --- !u!114 &7551256768974609170
 MonoBehaviour:
   m_ObjectHideFlags: 0
