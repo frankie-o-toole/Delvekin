@@ -951,6 +951,15 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
         Gizmos.color = new Color(0.2f, 0.85f, 1f, 0.8f);
         Gizmos.DrawWireCube(minimum + size * 0.5f, size);
 
+        Vector3 gameplaySize =
+            levelDefinition.GameplayBoundsSize;
+
+        Gizmos.color = new Color(1f, 0.2f, 0.75f, 0.85f);
+        Gizmos.DrawWireCube(
+            (Vector3)levelDefinition.GameplayBoundsMinimum +
+            gameplaySize * 0.5f,
+            gameplaySize);
+
         Vector3 captureSize =
             PrefabCaptureSize;
 
