@@ -4,7 +4,8 @@ using UnityEngine;
 public enum LevelEntityType : byte
 {
     WaterSource,
-    WaterOutlet
+    WaterOutlet,
+    SpawnHouse
 }
 
 /// <summary>
@@ -45,6 +46,12 @@ public sealed class LevelEntityRecord
     [SerializeField]
     private int outletCapacityOverride;
 
+    [SerializeField]
+    private GameObject visualPrefab;
+
+    [SerializeField]
+    private Vector3 spawnMarkerLocalPosition;
+
     public string EntityId => entityId;
     public LevelEntityType Type => type;
     public Vector3 Position => position;
@@ -55,6 +62,14 @@ public sealed class LevelEntityRecord
     public int MaximumFillY => maximumFillY;
     public int SupplyUnitsPerTick => Mathf.Max(1, supplyUnitsPerTick);
     public int OutletCapacityOverride => Mathf.Max(0, outletCapacityOverride);
+    public GameObject VisualPrefab => visualPrefab;
+    public Vector3 SpawnMarkerLocalPosition =>
+        spawnMarkerLocalPosition;
+
+    public Vector3Int SpawnVoxel =>
+        Vector3Int.FloorToInt(
+            position +
+            rotation * spawnMarkerLocalPosition);
 
     public Vector3Int MinimumVoxel =>
         Vector3Int.FloorToInt(
@@ -98,6 +113,28 @@ public sealed class LevelEntityRecord
         }
 
         return record;
+    }
+
+    public static LevelEntityRecord FromSpawnHouse(
+        SpawnHouseAuthoring house)
+    {
+        if (house == null)
+        {
+            return null;
+        }
+
+        return new LevelEntityRecord
+        {
+            entityId = house.EntityId,
+            type = LevelEntityType.SpawnHouse,
+            position = house.transform.position,
+            rotation = house.transform.rotation,
+            volumeSize = house.AuthoringSize,
+            facing = house.Facing,
+            visualPrefab = house.VisualPrefab,
+            spawnMarkerLocalPosition =
+                house.SpawnMarkerLocalPosition
+        };
     }
 
     public bool IsFullyInside(
@@ -241,7 +278,10 @@ public sealed class LevelEntityRecord
             overrideMaximumFillY = overrideMaximumFillY,
             maximumFillY = maximumFillY,
             supplyUnitsPerTick = supplyUnitsPerTick,
-            outletCapacityOverride = outletCapacityOverride
+            outletCapacityOverride = outletCapacityOverride,
+            visualPrefab = visualPrefab,
+            spawnMarkerLocalPosition =
+                spawnMarkerLocalPosition
         };
     }
 
