@@ -70,6 +70,9 @@ public class VoxelWorld : MonoBehaviour
     private readonly HashSet<Vector3Int> runtimeEntitySpawnPoints =
         new();
 
+    private readonly Dictionary<Vector3Int, PuzzleSide>
+        runtimeEntitySpawnFacings = new();
+
     private readonly List<Vector3Int> exitPoints =
         new();
 
@@ -580,6 +583,7 @@ public class VoxelWorld : MonoBehaviour
 
         spawnPoints.Clear();
         runtimeEntitySpawnPoints.Clear();
+        runtimeEntitySpawnFacings.Clear();
         exitPoints.Clear();
 
         chunks.Clear();
@@ -736,6 +740,20 @@ public class VoxelWorld : MonoBehaviour
 
         if (Application.isPlaying)
         {
+            // Gameplay data comes directly from the level snapshot. Runtime
+            // GameObjects are representations of these records and are not
+            // responsible for making the spawn data exist.
+            foreach (LevelEntityRecord record in snapshot.Entities)
+            {
+                if (record != null &&
+                    record.Type == LevelEntityType.SpawnHouse)
+                {
+                    RegisterRuntimeSpawnPoint(
+                        record.SpawnVoxel,
+                        record.Facing);
+                }
+            }
+
             BuildRuntimeEntities(snapshot.Entities);
         }
 
@@ -853,7 +871,9 @@ public class VoxelWorld : MonoBehaviour
             $"Found {spawnPoints.Count} spawn point(s).");
     }
 
-    public bool RegisterRuntimeSpawnPoint(Vector3Int worldPosition)
+    public bool RegisterRuntimeSpawnPoint(
+        Vector3Int worldPosition,
+        PuzzleSide facing = PuzzleSide.North)
     {
         if (!ContainsExistingChunkAt(worldPosition))
         {
@@ -865,6 +885,7 @@ public class VoxelWorld : MonoBehaviour
         }
 
         runtimeEntitySpawnPoints.Add(worldPosition);
+        runtimeEntitySpawnFacings[worldPosition] = facing;
 
         if (!spawnPoints.Contains(worldPosition))
         {
@@ -872,6 +893,17 @@ public class VoxelWorld : MonoBehaviour
         }
 
         return true;
+    }
+
+    public PuzzleSide GetSpawnFacing(
+        Vector3Int worldPosition,
+        PuzzleSide fallback)
+    {
+        return runtimeEntitySpawnFacings.TryGetValue(
+            worldPosition,
+            out PuzzleSide facing)
+            ? facing
+            : fallback;
     }
 
     // =====================================================
