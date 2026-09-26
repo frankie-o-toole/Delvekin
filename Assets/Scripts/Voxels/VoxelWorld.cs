@@ -553,22 +553,30 @@ public class VoxelWorld : MonoBehaviour
     {
         ClearRuntimeEntities();
 
-        foreach (
-            ChunkRenderer renderer
-            in chunkRenderers.Values)
+        // Generated preview objects can survive an Editor domain reload,
+        // while the dictionaries that tracked them are recreated empty.
+        // Removing the complete root prevents stale, raycastable "ghost"
+        // voxels from being layered underneath the rebuilt preview.
+        Transform generatedChunkRoot =
+            chunkRoot != null
+                ? chunkRoot
+                : transform.Find("Runtime Chunks");
+
+        if (generatedChunkRoot != null)
         {
-            if (renderer != null)
+            generatedChunkRoot.gameObject.SetActive(false);
+
+            if (Application.isPlaying)
             {
-                if (Application.isPlaying)
-                {
-                    Destroy(renderer.gameObject);
-                }
-                else
-                {
-                    DestroyImmediate(renderer.gameObject);
-                }
+                Destroy(generatedChunkRoot.gameObject);
+            }
+            else
+            {
+                DestroyImmediate(generatedChunkRoot.gameObject);
             }
         }
+
+        chunkRoot = null;
 
         spawnPoints.Clear();
         runtimeEntitySpawnPoints.Clear();
