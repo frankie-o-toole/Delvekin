@@ -53,6 +53,16 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
             : voxelWorld == null ||
               voxelWorld.ContainsExistingChunkAt(SpawnVoxel);
 
+    public bool IsSpawnMarkerInsideGameplayBounds =>
+        authoringDefinition != null
+            ? authoringDefinition.ContainsGameplayPosition(SpawnVoxel)
+            : voxelWorld == null ||
+              voxelWorld.ContainsGameplayPosition(SpawnVoxel);
+
+    public bool IsSpawnMarkerValid =>
+        IsSpawnMarkerInsideWorld &&
+        IsSpawnMarkerInsideGameplayBounds;
+
     public Vector3Int SpawnVoxel =>
         Vector3Int.FloorToInt(
             transform.TransformPoint(
@@ -88,13 +98,6 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
 
         transform.SetPositionAndRotation(position, rotation);
         RebuildVisual();
-
-        if (runtimeCopy && voxelWorld != null)
-        {
-            voxelWorld.RegisterRuntimeSpawnPoint(
-                SpawnVoxel,
-                facing);
-        }
 
         synchronizedStateHash = CalculateStateHash();
     }
@@ -298,7 +301,7 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
         Vector3 spawnCentre =
             (Vector3)SpawnVoxel + Vector3.one * 0.5f;
 
-        Gizmos.color = IsSpawnMarkerInsideWorld
+        Gizmos.color = IsSpawnMarkerValid
             ? new Color(0.2f, 1f, 0.25f, 1f)
             : new Color(1f, 0.15f, 0.1f, 1f);
         Gizmos.DrawWireCube(
