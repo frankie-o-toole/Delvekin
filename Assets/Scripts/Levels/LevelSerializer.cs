@@ -51,6 +51,13 @@ public static class LevelSerializer
 
         try
         {
+            string directory = Path.GetDirectoryName(path);
+
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
             string json = JsonUtility.ToJson(level, true);
             File.WriteAllText(temporaryPath, json);
 
