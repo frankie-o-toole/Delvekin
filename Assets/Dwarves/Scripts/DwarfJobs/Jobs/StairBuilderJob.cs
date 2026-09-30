@@ -308,9 +308,13 @@ public sealed class StairBuilderJob : IDwarfJob
 
         foreach (Vector3Int position in stairPiece)
         {
+            VoxelType existingType =
+                world.GetVoxel(position).Type;
+
             if (!VoxelTraits.Has(
-                    world.GetVoxel(position).Type,
-                    VoxelTrait.Empty))
+                    existingType,
+                    VoxelTrait.Empty) &&
+                existingType != VoxelType.Water)
             {
                 failureReason =
                     $"stair voxel {position} is occupied by "

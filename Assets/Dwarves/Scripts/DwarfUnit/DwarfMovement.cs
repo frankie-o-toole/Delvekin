@@ -227,11 +227,6 @@ public class DwarfMovement : MonoBehaviour
             return;
         }
 
-        if (TryBeginWaterCurrentMove())
-        {
-            return;
-        }
-
         Vector3Int direction =
             DirectionUtility.ToVector(
                 agent.Facing);
@@ -259,6 +254,11 @@ public class DwarfMovement : MonoBehaviour
 
         if (jobController != null &&
             jobController.ControlsMovement)
+        {
+            return;
+        }
+
+        if (TryBeginWaterCurrentMove())
         {
             return;
         }
@@ -1197,6 +1197,32 @@ public class DwarfMovement : MonoBehaviour
         }
 
         return depth;
+    }
+
+    public float GetCurrentWaterDepth()
+    {
+        return world == null || agent == null
+            ? 0f
+            : GetWaterDepth(agent.CurrentVoxel);
+    }
+
+    public bool CanPerformJobInCurrentWater(
+        out string failureReason)
+    {
+        float waterDepth =
+            GetCurrentWaterDepth();
+
+        if (waterDepth < DwarfSpatialRules.Height)
+        {
+            failureReason = string.Empty;
+            return true;
+        }
+
+        failureReason =
+            $"The water is {waterDepth:0.#} voxel(s) deep; " +
+            "the dwarf must be able to stand and breathe to work.";
+
+        return false;
     }
 
     private bool UpdateWaterExposure(float travelledDistance)

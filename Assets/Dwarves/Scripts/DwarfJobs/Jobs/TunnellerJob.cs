@@ -570,6 +570,7 @@ public sealed class TunnellerJob :
         VoxelType type)
     {
         return VoxelTraits.Has(type, VoxelTrait.Empty) ||
+               type == VoxelType.Water ||
                VoxelTraits.Has(type, VoxelTrait.GameplayMarker) ||
                IsDiggableMaterial(type);
     }

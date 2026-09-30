@@ -367,6 +367,7 @@ public sealed class LadderBuilderJob :
             if (!VoxelTraits.Has(
                     ladderVoxel.Type,
                     VoxelTrait.Empty) &&
+                ladderVoxel.Type != VoxelType.Water &&
                 !compatibleExistingLadder)
             {
                 failureReason =

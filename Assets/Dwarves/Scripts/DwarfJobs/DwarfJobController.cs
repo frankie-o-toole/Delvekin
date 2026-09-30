@@ -91,6 +91,21 @@ public class DwarfJobController : MonoBehaviour
             return;
         }
 
+        if (movement != null &&
+            !movement.CanPerformJobInCurrentWater(
+                out string waterFailureReason))
+        {
+            Debug.Log(
+                $"[{activeJob.Type}] {agent.name} stopped: " +
+                waterFailureReason,
+                agent);
+
+            EndActiveJob(
+                DwarfJobEndReason.Completed);
+
+            return;
+        }
+
         activeJob.Tick(context);
 
         if (activeJob.IsComplete)
@@ -139,6 +154,13 @@ public class DwarfJobController : MonoBehaviour
                 $"{agent.name} is already performing "
                 + $"{activeJob.Type}.";
 
+            return false;
+        }
+
+        if (movement != null &&
+            !movement.CanPerformJobInCurrentWater(
+                out failureReason))
+        {
             return false;
         }
 
@@ -226,6 +248,16 @@ public class DwarfJobController : MonoBehaviour
         if (pendingJob == null ||
             activeJob != null)
         {
+            return false;
+        }
+
+        if (movement != null &&
+            !movement.CanPerformJobInCurrentWater(
+                out string waterFailureReason))
+        {
+            PendingActivationFailure =
+                waterFailureReason;
+
             return false;
         }
 

@@ -195,7 +195,7 @@ public sealed class DiggerJob : IDwarfJob
                 stage: 3);
 
         bool opensIntoAir =
-            ContainsOnlyAir(
+            ContainsOnlyOpenSpace(
                 context.World,
                 lookaheadMask);
 
@@ -363,6 +363,7 @@ public sealed class DiggerJob : IDwarfJob
         VoxelType type)
     {
         return VoxelTraits.Has(type, VoxelTrait.Empty) ||
+               type == VoxelType.Water ||
                IsDiggableMaterial(type);
     }
 
@@ -382,15 +383,17 @@ public sealed class DiggerJob : IDwarfJob
         return false;
     }
 
-    private static bool ContainsOnlyAir(
+    private static bool ContainsOnlyOpenSpace(
         VoxelWorld world,
         IEnumerable<Vector3Int> positions)
     {
         foreach (Vector3Int position in positions)
         {
-            if (!VoxelTraits.Has(
-                    world.GetVoxel(position).Type,
-                    VoxelTrait.Empty))
+            VoxelType type =
+                world.GetVoxel(position).Type;
+
+            if (!VoxelTraits.Has(type, VoxelTrait.Empty) &&
+                type != VoxelType.Water)
             {
                 return false;
             }
