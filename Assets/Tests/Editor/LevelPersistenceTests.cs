@@ -1,0 +1,223 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Text.RegularExpressions;
+using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
+
+public sealed class LevelPersistenceTests
+{
+    private readonly List<string> createdFiles = new();
+
+    [TearDown]
+    public void TearDown()
+    {
+        foreach (string path in createdFiles)
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+            }
+        }
+
+        createdFiles.Clear();
+    }
+
+    [Test]
+    public void VersionedRoundTripPreservesCompleteLevel()
+    {
+        LevelSaveData expected = CreateCompleteLevel();
+        string fileName = "level-roundtrip-test";
+        createdFiles.Add(LevelSerializer.GetPath(fileName));
+
+        Assert.That(LevelSerializer.Save(expected, fileName), Is.True);
+
+        LevelSaveData actual = LevelSerializer.Load(fileName);
+
+        Assert.That(actual, Is.Not.Null);
+        Assert.That(actual.schemaVersion,
+            Is.EqualTo(LevelDefinition.CurrentSchemaVersion));
+        Assert.That(actual.chunkSize, Is.EqualTo(Chunk.ChunkSize));
+        Assert.That(actual.displayName, Is.EqualTo(expected.displayName));
+        Assert.That(actual.originInChunks,
+            Is.EqualTo(expected.originInChunks));
+        Assert.That(actual.sizeInChunks,
+            Is.EqualTo(expected.sizeInChunks));
+        Assert.That(actual.gameplayBoundsMinimum,
+            Is.EqualTo(expected.gameplayBoundsMinimum));
+        Assert.That(actual.gameplayBoundsSize,
+            Is.EqualTo(expected.gameplayBoundsSize));
+        Assert.That(actual.voxels.Count, Is.EqualTo(3));
+        Assert.That(actual.voxels[1].Type, Is.EqualTo(VoxelType.Water));
+        Assert.That(actual.voxels[1].Amount,
+            Is.EqualTo(WaterAmount.Half));
+        Assert.That(actual.entities.Count, Is.EqualTo(3));
+        Assert.That(actual.entities[0].entityId, Is.EqualTo("source-a"));
+        Assert.That(actual.entities[0].supplyUnitsPerTick, Is.EqualTo(64));
+        Assert.That(actual.entities[1].outletCapacityOverride,
+            Is.EqualTo(12));
+        Assert.That(actual.entities[2].spawnMarkerLocalPosition,
+            Is.EqualTo(new Vector3(0.5f, 0f, 1.5f)));
+    }
+
+    [Test]
+    public void DefinitionRoundTripPreservesRuntimeSnapshot()
+    {
+        LevelDefinition original =
+            ScriptableObject.CreateInstance<LevelDefinition>();
+        LevelDefinition restored =
+            ScriptableObject.CreateInstance<LevelDefinition>();
+
+        try
+        {
+            original.ReplaceAllContent(CreateCompleteLevel());
+            restored.ReplaceAllContent(original.CreateSaveData());
+
+            LevelDefinition.RuntimeSnapshot snapshot =
+                restored.CreateRuntimeSnapshot();
+
+            Assert.That(snapshot.SchemaVersion,
+                Is.EqualTo(LevelDefinition.CurrentSchemaVersion));
+            Assert.That(snapshot.OriginInChunks,
+                Is.EqualTo(new Vector3Int(-1, 0, 2)));
+            Assert.That(snapshot.GameplayBoundsMinimum,
+                Is.EqualTo(new Vector3Int(-10, 1, 35)));
+            Assert.That(snapshot.Voxels.Count, Is.EqualTo(3));
+            Assert.That(snapshot.Entities.Count, Is.EqualTo(3));
+            Assert.That(snapshot.Entities[2].SpawnVoxel,
+                Is.EqualTo(new Vector3Int(-3, 2, 39)));
+        }
+        finally
+        {
+            Object.DestroyImmediate(original);
+            Object.DestroyImmediate(restored);
+        }
+    }
+
+    [Test]
+    public void LegacyVoxelFileImportsWithInferredBounds()
+    {
+        string fileName = "legacy-level-import-test";
+        string path = LevelSerializer.GetPath(fileName);
+        createdFiles.Add(path);
+        File.WriteAllText(
+            path,
+            "{\"voxels\":[" +
+            "{\"x\":-1,\"y\":2,\"z\":17," +
+            "\"type\":1,\"facing\":0}]}" );
+
+        LogAssert.Expect(
+            LogType.Warning,
+            new Regex("Imported legacy voxel-only level"));
+
+        LevelSaveData imported = LevelSerializer.Load(fileName);
+
+        Assert.That(imported, Is.Not.Null);
+        Assert.That(imported.schemaVersion,
+            Is.EqualTo(LevelDefinition.CurrentSchemaVersion));
+        Assert.That(imported.originInChunks,
+            Is.EqualTo(new Vector3Int(-1, 0, 1)));
+        Assert.That(imported.sizeInChunks, Is.EqualTo(Vector3Int.one));
+        Assert.That(imported.voxels.Count, Is.EqualTo(1));
+        Assert.That(imported.voxels[0].Amount,
+            Is.EqualTo(WaterAmount.Full));
+        Assert.That(imported.entities, Is.Empty);
+    }
+
+    [Test]
+    public void ValidatorRejectsDuplicateVoxelsAndEntities()
+    {
+        LevelSaveData data = CreateCompleteLevel();
+        data.voxels.Add(data.voxels[0]);
+        data.entities.Add(data.entities[0]);
+        List<string> errors = new();
+
+        bool valid = LevelSaveValidator.Validate(data, errors);
+
+        Assert.That(valid, Is.False);
+        Assert.That(errors,
+            Has.Some.Contains("Duplicate voxel record"));
+        Assert.That(errors,
+            Has.Some.Contains("unique, non-empty ID"));
+    }
+
+    [Test]
+    public void NewerSchemaIsRejectedWithoutMutatingWorldData()
+    {
+        string fileName = "future-level-schema-test";
+        string path = LevelSerializer.GetPath(fileName);
+        createdFiles.Add(path);
+        LevelSaveData data = CreateCompleteLevel();
+        data.schemaVersion = LevelDefinition.CurrentSchemaVersion + 1;
+        File.WriteAllText(path, JsonUtility.ToJson(data));
+
+        LogAssert.Expect(
+            LogType.Error,
+            new Regex("newer than supported schema"));
+
+        Assert.That(LevelSerializer.Load(fileName), Is.Null);
+    }
+
+    private static LevelSaveData CreateCompleteLevel()
+    {
+        return new LevelSaveData
+        {
+            schemaVersion = LevelDefinition.CurrentSchemaVersion,
+            chunkSize = Chunk.ChunkSize,
+            displayName = "Persistence Test",
+            originInChunks = new Vector3Int(-1, 0, 2),
+            sizeInChunks = new Vector3Int(2, 2, 2),
+            gameplayBoundsMinimum = new Vector3Int(-10, 1, 35),
+            gameplayBoundsSize = new Vector3Int(20, 20, 20),
+            voxels = new List<LevelVoxelRecord>
+            {
+                new(
+                    new Vector3Int(-4, 1, 36),
+                    VoxelType.Dirt,
+                    PuzzleSide.North),
+                new(
+                    new Vector3Int(-3, 1, 36),
+                    VoxelType.Water,
+                    PuzzleSide.East,
+                    WaterAmount.Half),
+                new(
+                    new Vector3Int(-2, 1, 36),
+                    VoxelType.Granite,
+                    PuzzleSide.South)
+            },
+            entities = new List<LevelEntitySaveRecord>
+            {
+                new()
+                {
+                    entityId = "source-a",
+                    type = LevelEntityType.WaterSource,
+                    position = new Vector3(-4.5f, 2.5f, 37.5f),
+                    volumeSize = new Vector3Int(1, 1, 1),
+                    facing = PuzzleSide.East,
+                    overrideMaximumFillY = true,
+                    maximumFillY = 4,
+                    supplyUnitsPerTick = 64
+                },
+                new()
+                {
+                    entityId = "outlet-a",
+                    type = LevelEntityType.WaterOutlet,
+                    position = new Vector3(-1.5f, 2.5f, 37.5f),
+                    volumeSize = new Vector3Int(1, 1, 1),
+                    facing = PuzzleSide.West,
+                    outletCapacityOverride = 12
+                },
+                new()
+                {
+                    entityId = "spawn-a",
+                    type = LevelEntityType.SpawnHouse,
+                    position = new Vector3(-3.5f, 2f, 37.5f),
+                    volumeSize = new Vector3Int(5, 4, 5),
+                    facing = PuzzleSide.North,
+                    spawnMarkerLocalPosition =
+                        new Vector3(0.5f, 0f, 1.5f)
+                }
+            }
+        };
+    }
+}
