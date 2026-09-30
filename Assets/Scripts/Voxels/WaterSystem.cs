@@ -56,8 +56,6 @@ public sealed class WaterSystem : IDisposable
         new();
     private readonly Queue<int> activeBodySchedule = new();
     private readonly HashSet<int> scheduledBodyIds = new();
-    private readonly Dictionary<Vector3Int, Vector3Int> tickFlowDirections =
-        new();
     private readonly Dictionary<int, WaterLaneSnapshot> laneSnapshots = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
     private readonly HashSet<Vector3Int> pendingTopologyChanges = new();
@@ -70,7 +68,6 @@ public sealed class WaterSystem : IDisposable
     private bool applyingRedistribution;
     private int nextBodyId = 1;
     private int nextLaneVersion = 1;
-    private int localFlowTickIndex;
     private float redistributionTickTimer;
 
     public bool HasPendingWork =>
@@ -115,7 +112,6 @@ public sealed class WaterSystem : IDisposable
         activePlans.Clear();
         redistributionTickTimer = 0f;
         nextBodyId = 1;
-        localFlowTickIndex = 0;
 
         world.ForEachVoxel(
             (position, voxel) =>
@@ -303,7 +299,6 @@ public sealed class WaterSystem : IDisposable
         Dictionary<Vector3Int, int> amountDeltas = new();
         Dictionary<Vector3Int, int> workingAmounts = new();
         HashSet<Vector3Int> movedPositions = new();
-        tickFlowDirections.Clear();
 
         for (int index = 0; index < scheduledCount; index++)
         {
@@ -366,19 +361,11 @@ public sealed class WaterSystem : IDisposable
 
         if (amountDeltas.Count == 0)
         {
-            if (activeBodySchedule.Count == 0)
-            {
-                RebuildFlowFields();
-                RebuildLaneSnapshots();
-            }
-
             return;
         }
 
         ApplyAmountDeltas(amountDeltas);
         RebuildBodies();
-        ApplyTickFlowDirections();
-        RebuildLaneSnapshots();
 
         runtimeStates.Clear();
         activeBodySchedule.Clear();
@@ -511,21 +498,12 @@ public sealed class WaterSystem : IDisposable
 
         int transfers = 0;
 
-        int startIndex = orderedCells.Count > 0
-            ? localFlowTickIndex % orderedCells.Count
-            : 0;
-
-        for (int offset = 0;
-             offset < orderedCells.Count;
-             offset++)
+        foreach (Vector3Int source in orderedCells)
         {
             if (transfers >= transferBudget)
             {
                 break;
             }
-
-            Vector3Int source =
-                orderedCells[(startIndex + offset) % orderedCells.Count];
 
             int sourceAmount = GetWorkingAmount(
                 source,
@@ -562,8 +540,6 @@ public sealed class WaterSystem : IDisposable
             movedPositions.Add(destination);
             transfers++;
         }
-
-        localFlowTickIndex++;
 
         return transfers > 0;
     }
@@ -687,7 +663,7 @@ public sealed class WaterSystem : IDisposable
         return amount;
     }
 
-    private void TransferWorkingUnit(
+    private static void TransferWorkingUnit(
         Vector3Int source,
         Vector3Int destination,
         IDictionary<Vector3Int, int> workingAmounts,
@@ -697,27 +673,6 @@ public sealed class WaterSystem : IDisposable
         workingAmounts[destination]++;
         AddDelta(amountDeltas, source, -1);
         AddDelta(amountDeltas, destination, 1);
-        Vector3Int direction = destination - source;
-        tickFlowDirections[source] = direction;
-        tickFlowDirections[destination] = direction;
-    }
-
-    private void ApplyTickFlowDirections()
-    {
-        foreach (var pair in tickFlowDirections)
-        {
-            if (!cells.ContainsKey(pair.Key))
-            {
-                continue;
-            }
-
-            SetFlow(
-                pair.Key,
-                pair.Value,
-                1,
-                Vector3Int.zero,
-                0);
-        }
     }
 
     private void WakeBodiesTouching(Vector3Int position)
@@ -762,7 +717,6 @@ public sealed class WaterSystem : IDisposable
     {
         if (portal != null && sourcePortals.Add(portal))
         {
-            InvalidateActiveBodyWork();
             topologyDirty = true;
         }
     }
@@ -771,7 +725,6 @@ public sealed class WaterSystem : IDisposable
     {
         if (portal != null && sourcePortals.Remove(portal))
         {
-            InvalidateActiveBodyWork();
             topologyDirty = true;
         }
     }
@@ -780,7 +733,6 @@ public sealed class WaterSystem : IDisposable
     {
         if (portal != null && sourcePortals.Contains(portal))
         {
-            InvalidateActiveBodyWork();
             topologyDirty = true;
         }
     }
@@ -789,7 +741,6 @@ public sealed class WaterSystem : IDisposable
     {
         if (portal != null && outletPortals.Add(portal))
         {
-            InvalidateActiveBodyWork();
             topologyDirty = true;
         }
     }
@@ -798,7 +749,6 @@ public sealed class WaterSystem : IDisposable
     {
         if (portal != null && outletPortals.Remove(portal))
         {
-            InvalidateActiveBodyWork();
             topologyDirty = true;
         }
     }
@@ -807,7 +757,6 @@ public sealed class WaterSystem : IDisposable
     {
         if (portal != null && outletPortals.Contains(portal))
         {
-            InvalidateActiveBodyWork();
             topologyDirty = true;
         }
     }
@@ -827,7 +776,6 @@ public sealed class WaterSystem : IDisposable
 
         if (sources.Remove(position))
         {
-            InvalidateActiveBodyWork();
             topologyDirty = true;
             Debug.Log($"Removed Water source at {position}.");
             return true;
@@ -846,7 +794,6 @@ public sealed class WaterSystem : IDisposable
             MaximumTransferredUnitsPerTick,
             Vector3Int.forward);
 
-        InvalidateActiveBodyWork();
         topologyDirty = true;
 
         Debug.Log(
@@ -1082,6 +1029,11 @@ public sealed class WaterSystem : IDisposable
 
         foreach (WaterBody body in bodies.Values)
         {
+            if (body.Kind != WaterBodyKind.SourceFed)
+            {
+                continue;
+            }
+
             WaterLaneSnapshot snapshot =
                 BuildLaneSnapshot(body);
 
