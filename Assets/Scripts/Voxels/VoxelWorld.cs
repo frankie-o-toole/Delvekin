@@ -1142,7 +1142,13 @@ public class VoxelWorld : MonoBehaviour
     {
         if (chunkRoot == null)
         {
-            Transform existing = transform.Find("Runtime Chunks");
+            // Destroy() is deferred until the end of the frame in Play Mode.
+            // Never reuse the inactive root that ClearWorld just scheduled for
+            // destruction, or newly loaded chunks disappear with that root.
+            Transform existing =
+                Application.isPlaying
+                    ? null
+                    : transform.Find("Runtime Chunks");
 
             if (existing != null)
             {
