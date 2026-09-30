@@ -55,7 +55,8 @@ public sealed class WaterSystem : IDisposable
     private readonly HashSet<int> pendingOriginalBodyIds = new();
     private readonly HashSet<Vector3Int> pendingAffectedWaterCells = new();
     private readonly Queue<SourceExpansionPlan> activeSourceExpansions = new();
-    private readonly Queue<WaterRedistributionPlan> activePlans = new();
+    private readonly Queue<FiniteRedistributionPlan> activeFinitePlans =
+        new();
 
     private bool topologyDirty;
     private bool applyingRedistribution;
@@ -67,7 +68,7 @@ public sealed class WaterSystem : IDisposable
         topologyDirty ||
         pendingOpenings.Count > 0 ||
         activeSourceExpansions.Count > 0 ||
-        activePlans.Count > 0;
+        activeFinitePlans.Count > 0;
 
     public int BodyCount => bodies.Count;
 
@@ -96,7 +97,7 @@ public sealed class WaterSystem : IDisposable
         pendingOriginalBodyIds.Clear();
         pendingAffectedWaterCells.Clear();
         activeSourceExpansions.Clear();
-        activePlans.Clear();
+        activeFinitePlans.Clear();
         redistributionTickTimer = 0f;
         nextBodyId = 1;
 
@@ -126,7 +127,7 @@ public sealed class WaterSystem : IDisposable
         }
 
         if (activeSourceExpansions.Count > 0 ||
-            activePlans.Count > 0)
+            activeFinitePlans.Count > 0)
         {
             redistributionTickTimer += deltaTime;
             int ticks = 0;
@@ -135,7 +136,7 @@ public sealed class WaterSystem : IDisposable
                        RedistributionTickInterval &&
                    ticks < MaximumCatchUpTicksPerFrame &&
                    (activeSourceExpansions.Count > 0 ||
-                    activePlans.Count > 0))
+                    activeFinitePlans.Count > 0))
             {
                 redistributionTickTimer -=
                     RedistributionTickInterval;
@@ -1189,8 +1190,8 @@ public sealed class WaterSystem : IDisposable
             return false;
         }
 
-        WaterRedistributionPlan plan =
-            CreateRedistributionPlan(
+        FiniteRedistributionPlan plan =
+            CreateFiniteRedistributionPlan(
                 bodyCells,
                 desiredAmounts,
                 relevantOpenings,
@@ -1201,11 +1202,11 @@ public sealed class WaterSystem : IDisposable
             return false;
         }
 
-        activePlans.Enqueue(plan);
+        activeFinitePlans.Enqueue(plan);
         return true;
     }
 
-    private WaterRedistributionPlan CreateRedistributionPlan(
+    private FiniteRedistributionPlan CreateFiniteRedistributionPlan(
         IReadOnlyCollection<Vector3Int> previousPositions,
         IReadOnlyDictionary<Vector3Int, int> desiredAmounts,
         IReadOnlyList<Vector3Int> openings,
@@ -1266,10 +1267,9 @@ public sealed class WaterSystem : IDisposable
         additions.Sort(ComparePlanAdditions);
         removals.Sort(ComparePlanRemovals);
 
-        return new WaterRedistributionPlan(
+        return new FiniteRedistributionPlan(
             additions,
             removals,
-            generatesWater: false,
             unitsPerTick: MaximumTransferredUnitsPerTick);
     }
 
@@ -1293,11 +1293,12 @@ public sealed class WaterSystem : IDisposable
             }
         }
 
-        int finitePlanCount = activePlans.Count;
+        int finitePlanCount = activeFinitePlans.Count;
 
         for (int index = 0; index < finitePlanCount; index++)
         {
-            WaterRedistributionPlan plan = activePlans.Dequeue();
+            FiniteRedistributionPlan plan =
+                activeFinitePlans.Dequeue();
             ApplyFiniteRedistributionTick(plan);
 
             if (plan.IsComplete)
@@ -1306,7 +1307,7 @@ public sealed class WaterSystem : IDisposable
             }
             else
             {
-                activePlans.Enqueue(plan);
+                activeFinitePlans.Enqueue(plan);
             }
         }
 
@@ -1318,7 +1319,7 @@ public sealed class WaterSystem : IDisposable
     }
 
     private void ApplyFiniteRedistributionTick(
-        WaterRedistributionPlan plan)
+        FiniteRedistributionPlan plan)
     {
         plan.AdvanceFlowFront(FlowDepthPerTick);
 
@@ -1331,14 +1332,9 @@ public sealed class WaterSystem : IDisposable
         while (transferredUnits < tickBudget &&
                plan.TryTakeTransfer(
                    out Vector3Int source,
-                   out Vector3Int destination,
-                   out bool generated))
+                   out Vector3Int destination))
         {
-            if (!generated)
-            {
-                AddDelta(amountDeltas, source, -1);
-            }
-
+            AddDelta(amountDeltas, source, -1);
             AddDelta(amountDeltas, destination, +1);
             transferredUnits++;
         }
@@ -1987,12 +1983,10 @@ public sealed class WaterSystem : IDisposable
         }
     }
 
-    private sealed class WaterRedistributionPlan
+    private sealed class FiniteRedistributionPlan
     {
         private readonly IReadOnlyList<PlanUnit> additions;
         private readonly IReadOnlyList<PlanUnit> removals;
-        private readonly bool generatesWater;
-
         private int additionIndex;
         private int removalIndex;
         private int allowedDistance;
@@ -2001,17 +1995,15 @@ public sealed class WaterSystem : IDisposable
 
         public bool IsComplete =>
             additionIndex >= additions.Count &&
-            (generatesWater || removalIndex >= removals.Count);
+            removalIndex >= removals.Count;
 
-        public WaterRedistributionPlan(
+        public FiniteRedistributionPlan(
             IReadOnlyList<PlanUnit> additions,
             IReadOnlyList<PlanUnit> removals,
-            bool generatesWater,
             int unitsPerTick)
         {
             this.additions = additions;
             this.removals = removals;
-            this.generatesWater = generatesWater;
             UnitsPerTick = Mathf.Max(1, unitsPerTick);
         }
 
@@ -2022,16 +2014,14 @@ public sealed class WaterSystem : IDisposable
 
         public bool TryTakeTransfer(
             out Vector3Int source,
-            out Vector3Int destination,
-            out bool generated)
+            out Vector3Int destination)
         {
             source = default;
             destination = default;
-            generated = generatesWater;
 
             if (additionIndex >= additions.Count ||
                 additions[additionIndex].Distance > allowedDistance ||
-                (!generatesWater && removalIndex >= removals.Count))
+                removalIndex >= removals.Count)
             {
                 return false;
             }
@@ -2039,11 +2029,8 @@ public sealed class WaterSystem : IDisposable
             destination = additions[additionIndex].Position;
             additionIndex++;
 
-            if (!generatesWater)
-            {
-                source = removals[removalIndex].Position;
-                removalIndex++;
-            }
+            source = removals[removalIndex].Position;
+            removalIndex++;
 
             return true;
         }
