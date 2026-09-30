@@ -82,6 +82,18 @@ public class DwarfJobInventory : MonoBehaviour
             newCount);
     }
 
+    public void ResetToStartingStock()
+    {
+        RebuildInventory();
+
+        foreach (var pair in counts)
+        {
+            CountChanged?.Invoke(
+                pair.Key,
+                pair.Value);
+        }
+    }
+
     private void RebuildInventory()
     {
         counts.Clear();
