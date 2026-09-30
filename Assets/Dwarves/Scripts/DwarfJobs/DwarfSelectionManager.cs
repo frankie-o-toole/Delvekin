@@ -21,6 +21,7 @@ public class DwarfSelectionManager : MonoBehaviour
 
     private DwarfAgent hoveredDwarf;
     private DwarfAgent visuallySelectedDwarf;
+    private DirectionAltererPreview directionAltererPreview;
 
     private void Awake()
     {
@@ -34,6 +35,15 @@ public class DwarfSelectionManager : MonoBehaviour
             assignmentManager =
                 FindFirstObjectByType<
                     DwarfJobAssignmentManager>();
+        }
+
+        directionAltererPreview =
+            GetComponent<DirectionAltererPreview>();
+
+        if (directionAltererPreview == null)
+        {
+            directionAltererPreview =
+                gameObject.AddComponent<DirectionAltererPreview>();
         }
     }
 
@@ -50,6 +60,9 @@ public class DwarfSelectionManager : MonoBehaviour
 
         assignmentManager.StopJobSelectionChanged +=
             HandleStopJobSelectionChanged;
+
+        assignmentManager.DirectionAltererPreviewChanged +=
+            HandleDirectionAltererPreviewChanged;
     }
 
     private void OnDisable()
@@ -64,7 +77,12 @@ public class DwarfSelectionManager : MonoBehaviour
 
             assignmentManager.StopJobSelectionChanged -=
                 HandleStopJobSelectionChanged;
+
+            assignmentManager.DirectionAltererPreviewChanged -=
+                HandleDirectionAltererPreviewChanged;
         }
+
+        directionAltererPreview?.Hide();
 
         SetHoveredDwarf(null);
         SetVisualSelection(null);
@@ -260,6 +278,25 @@ public class DwarfSelectionManager : MonoBehaviour
         bool selected)
     {
         RefreshHoveredTargetState();
+    }
+
+    private void HandleDirectionAltererPreviewChanged(
+        DirectionAltererTurn? turn)
+    {
+        DwarfAgent selected =
+            assignmentManager?.SelectedDwarf;
+
+        if (!turn.HasValue ||
+            selected == null ||
+            !selected.IsActive)
+        {
+            directionAltererPreview?.Hide();
+            return;
+        }
+
+        directionAltererPreview?.Show(
+            selected,
+            turn.Value);
     }
 
     private void SetVisualSelection(

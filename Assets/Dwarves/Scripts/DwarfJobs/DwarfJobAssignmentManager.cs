@@ -25,6 +25,9 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         DirectionAltererTurn?> DirectionAltererSelectionChanged;
 
     public event Action<
+        DirectionAltererTurn?> DirectionAltererPreviewChanged;
+
+    public event Action<
         DwarfAgent,
         DwarfJobType> AssignmentSucceeded;
 
@@ -191,6 +194,20 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         TryResolveSelection();
     }
 
+    public void PreviewDirectionAltererTurn(
+        DirectionAltererTurn? turn)
+    {
+        DirectionAltererTurn? validPreview =
+            directionAltererOptionsOpen &&
+            selectedDwarf != null &&
+            selectedDwarf.IsActive
+                ? turn
+                : null;
+
+        DirectionAltererPreviewChanged?.Invoke(
+            validPreview);
+    }
+
     public void ToggleStopJob()
     {
         if (stopJobSelected)
@@ -224,6 +241,8 @@ public class DwarfJobAssignmentManager : MonoBehaviour
             return;
         }
 
+        PreviewDirectionAltererTurn(null);
+
         selectedDwarf = dwarf;
 
         SelectedDwarfChanged?.Invoke(
@@ -238,6 +257,8 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         {
             return;
         }
+
+        PreviewDirectionAltererTurn(null);
 
         selectedDwarf = null;
 
@@ -264,6 +285,8 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         bool hadDirectionAltererState =
             directionAltererOptionsOpen ||
             selectedJob == DwarfJobType.DirectionAlter;
+
+        PreviewDirectionAltererTurn(null);
 
         directionAltererOptionsOpen = false;
 

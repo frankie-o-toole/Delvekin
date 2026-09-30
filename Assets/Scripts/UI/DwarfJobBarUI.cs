@@ -272,6 +272,18 @@ public class DwarfJobBarUI : MonoBehaviour
 
         directionAltererRightButton?.onClick.AddListener(
             directionAltererRightCallback);
+
+        BindDirectionPreview(
+            directionAltererLeftButton,
+            DirectionAltererTurn.Left);
+
+        BindDirectionPreview(
+            directionAltererReverseButton,
+            DirectionAltererTurn.Reverse);
+
+        BindDirectionPreview(
+            directionAltererRightButton,
+            DirectionAltererTurn.Right);
     }
 
     private void UnbindDirectionAltererOptionButtons()
@@ -300,6 +312,43 @@ public class DwarfJobBarUI : MonoBehaviour
         directionAltererLeftCallback = null;
         directionAltererReverseCallback = null;
         directionAltererRightCallback = null;
+
+        UnbindDirectionPreview(directionAltererLeftButton);
+        UnbindDirectionPreview(directionAltererReverseButton);
+        UnbindDirectionPreview(directionAltererRightButton);
+    }
+
+    private void BindDirectionPreview(
+        Button button,
+        DirectionAltererTurn turn)
+    {
+        if (button == null ||
+            assignmentManager == null)
+        {
+            return;
+        }
+
+        DirectionAltererOptionHover hover =
+            button.GetComponent<DirectionAltererOptionHover>();
+
+        if (hover == null)
+        {
+            hover =
+                button.gameObject.AddComponent<
+                    DirectionAltererOptionHover>();
+        }
+
+        hover.Initialize(
+            assignmentManager,
+            turn);
+    }
+
+    private static void UnbindDirectionPreview(
+        Button button)
+    {
+        button
+            ?.GetComponent<DirectionAltererOptionHover>()
+            ?.Clear();
     }
 
     private void RefreshAllButtons()
