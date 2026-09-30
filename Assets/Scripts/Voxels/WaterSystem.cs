@@ -18,6 +18,8 @@ public sealed class WaterSystem : IDisposable
     private const int FlowDepthPerTick = 3;
     private const int MaximumTransferredUnitsPerTick = 128;
     private const int MaximumCatchUpTicksPerFrame = 2;
+    private const int MaximumLocalDrainDistance = 24;
+    private const int StableTicksBeforeSleep = 2;
 
     private static readonly Vector3Int[] CardinalDirections =
     {
@@ -71,7 +73,8 @@ public sealed class WaterSystem : IDisposable
         topologyDirty ||
         pendingOpenings.Count > 0 ||
         activeSourceExpansions.Count > 0 ||
-        activePlans.Count > 0;
+        activePlans.Count > 0 ||
+        activeBodySchedule.Count > 0;
 
     public int BodyCount => bodies.Count;
 
@@ -133,7 +136,8 @@ public sealed class WaterSystem : IDisposable
         }
 
         if (activeSourceExpansions.Count > 0 ||
-            activePlans.Count > 0)
+            activePlans.Count > 0 ||
+            activeBodySchedule.Count > 0)
         {
             redistributionTickTimer += deltaTime;
             int ticks = 0;
@@ -142,12 +146,20 @@ public sealed class WaterSystem : IDisposable
                        RedistributionTickInterval &&
                    ticks < MaximumCatchUpTicksPerFrame &&
                    (activeSourceExpansions.Count > 0 ||
-                    activePlans.Count > 0))
+                    activePlans.Count > 0 ||
+                    activeBodySchedule.Count > 0))
             {
                 redistributionTickTimer -=
                     RedistributionTickInterval;
 
-                ApplyNextRedistributionTick();
+                if (activeBodySchedule.Count > 0)
+                {
+                    ApplyLocalFiniteWaterTick();
+                }
+                else
+                {
+                    ApplyNextRedistributionTick();
+                }
                 ticks++;
             }
 
@@ -235,12 +247,336 @@ public sealed class WaterSystem : IDisposable
                         out WaterBody body) &&
                     body.Kind == WaterBodyKind.Finite)
                 {
-                    BuildFiniteRedistributionPlan(body, openings);
+                    WakeBody(body, openings);
                 }
             }
         }
 
         topologyDirty = false;
+    }
+
+    private void WakeBody(
+        WaterBody body,
+        IEnumerable<Vector3Int> wakePositions)
+    {
+        if (body == null)
+        {
+            return;
+        }
+
+        if (!runtimeStates.TryGetValue(
+                body.Id,
+                out WaterBodyRuntimeState state))
+        {
+            state = new WaterBodyRuntimeState(body.Id);
+            runtimeStates.Add(body.Id, state);
+        }
+
+        state.Wake(wakePositions);
+
+        if (scheduledBodyIds.Add(body.Id))
+        {
+            activeBodySchedule.Enqueue(body.Id);
+        }
+    }
+
+    private void ApplyLocalFiniteWaterTick()
+    {
+        int scheduledCount = activeBodySchedule.Count;
+
+        if (scheduledCount == 0)
+        {
+            return;
+        }
+
+        int bodyBudget = Mathf.Max(
+            1,
+            MaximumTransferredUnitsPerTick / scheduledCount);
+
+        Dictionary<Vector3Int, int> amountDeltas = new();
+        Dictionary<Vector3Int, int> workingAmounts = new();
+        HashSet<Vector3Int> movedPositions = new();
+
+        for (int index = 0; index < scheduledCount; index++)
+        {
+            int bodyId = activeBodySchedule.Dequeue();
+            scheduledBodyIds.Remove(bodyId);
+
+            if (!bodies.TryGetValue(bodyId, out WaterBody body) ||
+                body.Kind != WaterBodyKind.Finite ||
+                !runtimeStates.TryGetValue(
+                    bodyId,
+                    out WaterBodyRuntimeState state))
+            {
+                continue;
+            }
+
+            bool moved = CalculateLocalTransfers(
+                body,
+                bodyBudget,
+                workingAmounts,
+                amountDeltas,
+                movedPositions);
+
+            state.RecordTick(moved);
+
+            if (!moved &&
+                state.StableTickCount < StableTicksBeforeSleep)
+            {
+                if (scheduledBodyIds.Add(body.Id))
+                {
+                    activeBodySchedule.Enqueue(body.Id);
+                }
+            }
+            else
+            {
+                state.Sleep();
+            }
+        }
+
+        if (amountDeltas.Count == 0)
+        {
+            return;
+        }
+
+        ApplyAmountDeltas(amountDeltas);
+        RebuildBodies();
+
+        runtimeStates.Clear();
+        activeBodySchedule.Clear();
+        scheduledBodyIds.Clear();
+
+        foreach (Vector3Int position in movedPositions)
+        {
+            WakeBodiesTouching(position);
+        }
+    }
+
+    private bool CalculateLocalTransfers(
+        WaterBody body,
+        int transferBudget,
+        IDictionary<Vector3Int, int> workingAmounts,
+        IDictionary<Vector3Int, int> amountDeltas,
+        ISet<Vector3Int> movedPositions)
+    {
+        List<Vector3Int> orderedCells = new(body.Cells);
+        orderedCells.Sort(CompareFlowCells);
+
+        int transfers = 0;
+
+        foreach (Vector3Int source in orderedCells)
+        {
+            if (transfers >= transferBudget)
+            {
+                break;
+            }
+
+            int sourceAmount = GetWorkingAmount(
+                source,
+                workingAmounts);
+
+            if (sourceAmount <= 0)
+            {
+                continue;
+            }
+
+            Vector3Int destination = source + Vector3Int.down;
+
+            if (!CanReceiveWater(destination) ||
+                GetWorkingAmount(destination, workingAmounts) >= MaximumAmount)
+            {
+                destination = FindHorizontalFlowDestination(
+                    source,
+                    sourceAmount,
+                    workingAmounts);
+            }
+
+            if (destination == source)
+            {
+                continue;
+            }
+
+            TransferWorkingUnit(
+                source,
+                destination,
+                workingAmounts,
+                amountDeltas);
+
+            movedPositions.Add(source);
+            movedPositions.Add(destination);
+            transfers++;
+        }
+
+        return transfers > 0;
+    }
+
+    private Vector3Int FindHorizontalFlowDestination(
+        Vector3Int source,
+        int sourceAmount,
+        IDictionary<Vector3Int, int> workingAmounts)
+    {
+        Vector3Int best = source;
+        int bestDrainDistance = int.MaxValue;
+        int bestAmount = int.MaxValue;
+
+        for (int index = 0; index < 4; index++)
+        {
+            Vector3Int candidate =
+                source + FlowTraversalDirections[index];
+
+            if (!CanReceiveWater(candidate))
+            {
+                continue;
+            }
+
+            int candidateAmount = GetWorkingAmount(
+                candidate,
+                workingAmounts);
+
+            if (candidateAmount >= MaximumAmount)
+            {
+                continue;
+            }
+
+            int drainDistance = FindNearestDropDistance(candidate);
+            bool drains = drainDistance < int.MaxValue;
+            bool equalizes = sourceAmount - candidateAmount > 1;
+
+            if (!drains && !equalizes)
+            {
+                continue;
+            }
+
+            if (drainDistance < bestDrainDistance ||
+                (drainDistance == bestDrainDistance &&
+                 candidateAmount < bestAmount))
+            {
+                best = candidate;
+                bestDrainDistance = drainDistance;
+                bestAmount = candidateAmount;
+            }
+        }
+
+        return best;
+    }
+
+    private int FindNearestDropDistance(Vector3Int start)
+    {
+        Queue<Vector3Int> frontier = new();
+        Dictionary<Vector3Int, int> distance = new();
+        frontier.Enqueue(start);
+        distance[start] = 0;
+
+        while (frontier.Count > 0)
+        {
+            Vector3Int position = frontier.Dequeue();
+            int currentDistance = distance[position];
+            Vector3Int below = position + Vector3Int.down;
+
+            if (CanReceiveWater(below) && GetAmount(below) < MaximumAmount)
+            {
+                return currentDistance;
+            }
+
+            if (currentDistance >= MaximumLocalDrainDistance)
+            {
+                continue;
+            }
+
+            for (int index = 0; index < 4; index++)
+            {
+                Vector3Int neighbour =
+                    position + FlowTraversalDirections[index];
+
+                if (!CanReceiveWater(neighbour) ||
+                    distance.ContainsKey(neighbour))
+                {
+                    continue;
+                }
+
+                distance[neighbour] = currentDistance + 1;
+                frontier.Enqueue(neighbour);
+            }
+        }
+
+        return int.MaxValue;
+    }
+
+    private bool CanReceiveWater(Vector3Int position)
+    {
+        if (!world.ContainsExistingChunkAt(position))
+        {
+            return false;
+        }
+
+        VoxelType type = world.GetVoxel(position).Type;
+
+        return type == VoxelType.Water ||
+               (VoxelTraits.Has(type, VoxelTrait.Empty) &&
+                !VoxelTraits.Has(type, VoxelTrait.GameplayMarker));
+    }
+
+    private int GetWorkingAmount(
+        Vector3Int position,
+        IDictionary<Vector3Int, int> workingAmounts)
+    {
+        if (!workingAmounts.TryGetValue(position, out int amount))
+        {
+            amount = GetAmount(position);
+            workingAmounts[position] = amount;
+        }
+
+        return amount;
+    }
+
+    private static void TransferWorkingUnit(
+        Vector3Int source,
+        Vector3Int destination,
+        IDictionary<Vector3Int, int> workingAmounts,
+        IDictionary<Vector3Int, int> amountDeltas)
+    {
+        workingAmounts[source]--;
+        workingAmounts[destination]++;
+        AddDelta(amountDeltas, source, -1);
+        AddDelta(amountDeltas, destination, 1);
+    }
+
+    private void WakeBodiesTouching(Vector3Int position)
+    {
+        if (bodyByPosition.TryGetValue(position, out int bodyId) &&
+            bodies.TryGetValue(bodyId, out WaterBody body))
+        {
+            WakeBody(body, new[] { position });
+        }
+
+        foreach (Vector3Int direction in CardinalDirections)
+        {
+            Vector3Int neighbour = position + direction;
+
+            if (bodyByPosition.TryGetValue(neighbour, out bodyId) &&
+                bodies.TryGetValue(bodyId, out body))
+            {
+                WakeBody(body, new[] { position });
+            }
+        }
+    }
+
+    private static int CompareFlowCells(
+        Vector3Int left,
+        Vector3Int right)
+    {
+        int comparison = left.y.CompareTo(right.y);
+
+        if (comparison != 0)
+        {
+            return comparison;
+        }
+
+        comparison = left.x.CompareTo(right.x);
+
+        return comparison != 0
+            ? comparison
+            : left.z.CompareTo(right.z);
     }
 
     public void RegisterSourcePortal(WaterSourcePortal portal)
