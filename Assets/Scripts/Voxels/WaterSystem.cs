@@ -154,7 +154,7 @@ public sealed class WaterSystem : IDisposable
 
                 if (activeBodySchedule.Count > 0)
                 {
-                    ApplyLocalFiniteWaterTick();
+                    ApplyLocalWaterTick();
                 }
                 else
                 {
@@ -173,6 +173,7 @@ public sealed class WaterSystem : IDisposable
             RebuildBodies();
             topologyDirty = false;
             QueueExistingSourceFalls();
+            WakeSourceAndOutletBodies();
         }
 
         if (pendingOpenings.Count == 0)
@@ -216,39 +217,13 @@ public sealed class WaterSystem : IDisposable
         pendingOriginalBodyIds.Clear();
         pendingAffectedWaterCells.Clear();
 
-        WaterBody sourceBody = null;
-
         foreach (int bodyId in affectedBodyIds)
         {
-            if (!bodies.TryGetValue(bodyId, out WaterBody body) ||
-                body.Kind != WaterBodyKind.SourceFed)
+            if (bodies.TryGetValue(
+                    bodyId,
+                    out WaterBody body))
             {
-                continue;
-            }
-
-            if (sourceBody == null ||
-                body.MaximumSourceLevelY >
-                sourceBody.MaximumSourceLevelY)
-            {
-                sourceBody = body;
-            }
-        }
-
-        if (sourceBody != null)
-        {
-            BuildSourceFedRedistributionPlan(sourceBody, openings);
-        }
-        else
-        {
-            foreach (int bodyId in affectedBodyIds)
-            {
-                if (bodies.TryGetValue(
-                        bodyId,
-                        out WaterBody body) &&
-                    body.Kind == WaterBodyKind.Finite)
-                {
-                    WakeBody(body, openings);
-                }
+                WakeBody(body, openings);
             }
         }
 
@@ -280,7 +255,7 @@ public sealed class WaterSystem : IDisposable
         }
     }
 
-    private void ApplyLocalFiniteWaterTick()
+    private void ApplyLocalWaterTick()
     {
         int scheduledCount = activeBodySchedule.Count;
 
@@ -303,7 +278,6 @@ public sealed class WaterSystem : IDisposable
             scheduledBodyIds.Remove(bodyId);
 
             if (!bodies.TryGetValue(bodyId, out WaterBody body) ||
-                body.Kind != WaterBodyKind.Finite ||
                 !runtimeStates.TryGetValue(
                     bodyId,
                     out WaterBodyRuntimeState state))
@@ -311,12 +285,35 @@ public sealed class WaterSystem : IDisposable
                 continue;
             }
 
+            int localBudget = Mathf.Max(1, bodyBudget / 2);
+            int portalBudget = Mathf.Max(0, bodyBudget - localBudget);
+            int outletBudget = body.OutletCount > 0
+                ? Mathf.Max(1, portalBudget / 2)
+                : 0;
+            int sourceBudget = Mathf.Max(0, portalBudget - outletBudget);
+
             bool moved = CalculateLocalTransfers(
                 body,
-                bodyBudget,
+                localBudget,
                 workingAmounts,
                 amountDeltas,
                 movedPositions);
+
+            bool drained = ApplyOutletTransfers(
+                body,
+                outletBudget,
+                workingAmounts,
+                amountDeltas,
+                movedPositions);
+
+            bool supplied = ApplySourceTransfers(
+                body,
+                sourceBudget,
+                workingAmounts,
+                amountDeltas,
+                movedPositions);
+
+            moved |= drained || supplied;
 
             state.RecordTick(moved);
 
@@ -349,6 +346,115 @@ public sealed class WaterSystem : IDisposable
         foreach (Vector3Int position in movedPositions)
         {
             WakeBodiesTouching(position);
+        }
+
+        WakeSourceAndOutletBodies();
+    }
+
+    private bool ApplyOutletTransfers(
+        WaterBody body,
+        int transferBudget,
+        IDictionary<Vector3Int, int> workingAmounts,
+        IDictionary<Vector3Int, int> amountDeltas,
+        ISet<Vector3Int> movedPositions)
+    {
+        if (transferBudget <= 0 || body.OutletCount == 0)
+        {
+            return false;
+        }
+
+        int removed = 0;
+
+        foreach (WaterOutletPortal outlet in body.Outlets)
+        {
+            if (outlet == null || removed >= transferBudget)
+            {
+                continue;
+            }
+
+            portalVoxelBuffer.Clear();
+            outlet.GetCoveredVoxels(portalVoxelBuffer);
+            int outletBudget = Mathf.Min(
+                outlet.Capacity,
+                transferBudget - removed);
+
+            foreach (Vector3Int position in portalVoxelBuffer)
+            {
+                while (outletBudget > 0 &&
+                       GetWorkingAmount(position, workingAmounts) > 0)
+                {
+                    workingAmounts[position]--;
+                    AddDelta(amountDeltas, position, -1);
+                    movedPositions.Add(position);
+                    outletBudget--;
+                    removed++;
+                }
+
+                if (outletBudget <= 0)
+                {
+                    break;
+                }
+            }
+        }
+
+        return removed > 0;
+    }
+
+    private bool ApplySourceTransfers(
+        WaterBody body,
+        int transferBudget,
+        IDictionary<Vector3Int, int> workingAmounts,
+        IDictionary<Vector3Int, int> amountDeltas,
+        ISet<Vector3Int> movedPositions)
+    {
+        if (transferBudget <= 0 || body.SourceCount == 0)
+        {
+            return false;
+        }
+
+        int supplied = 0;
+
+        foreach (WaterSource source in body.Sources)
+        {
+            if (source == null || supplied >= transferBudget)
+            {
+                continue;
+            }
+
+            Vector3Int position = source.Position;
+
+            if (position.y > source.MaximumLevelY ||
+                !CanReceiveWater(position))
+            {
+                continue;
+            }
+
+            int sourceBudget = Mathf.Min(
+                source.SupplyUnitsPerTick,
+                transferBudget - supplied);
+
+            while (sourceBudget > 0 &&
+                   GetWorkingAmount(position, workingAmounts) < MaximumAmount)
+            {
+                workingAmounts[position]++;
+                AddDelta(amountDeltas, position, 1);
+                movedPositions.Add(position);
+                sourceBudget--;
+                supplied++;
+            }
+        }
+
+        return supplied > 0;
+    }
+
+    private void WakeSourceAndOutletBodies()
+    {
+        foreach (WaterBody body in bodies.Values)
+        {
+            if (body.SourceCount > 0 || body.OutletCount > 0)
+            {
+                WakeBody(body, body.Cells);
+            }
         }
     }
 
