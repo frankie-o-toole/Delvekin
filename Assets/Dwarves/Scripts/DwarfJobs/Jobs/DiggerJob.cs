@@ -260,7 +260,9 @@ public sealed class DiggerJob : IDwarfJob
         }
 
         context.World.SetVoxels(
-            excavation,
+            BuildExcavationTargets(
+                context.World,
+                excavation),
             VoxelType.Air);
 
         completedDescents++;
@@ -321,7 +323,9 @@ public sealed class DiggerJob : IDwarfJob
         }
 
         context.World.SetVoxels(
-            excavation,
+            BuildExcavationTargets(
+                context.World,
+                excavation),
             VoxelType.Air);
 
         /*
@@ -418,6 +422,28 @@ public sealed class DiggerJob : IDwarfJob
         }
 
         return false;
+    }
+
+    private static HashSet<Vector3Int> BuildExcavationTargets(
+        VoxelWorld world,
+        IEnumerable<Vector3Int> positions)
+    {
+        HashSet<Vector3Int> targets = new();
+
+        foreach (Vector3Int position in positions)
+        {
+            // Water may occupy the shaft and does not block the job, but it
+            // remains owned by WaterSystem. Only terrain is excavated; once
+            // the batch opens lower space, the preserved water can flow.
+            if (world.GetVoxel(position).Type == VoxelType.Water)
+            {
+                continue;
+            }
+
+            targets.Add(position);
+        }
+
+        return targets;
     }
 
     private static HashSet<Vector3Int> BuildMask(
