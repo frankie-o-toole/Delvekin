@@ -584,12 +584,15 @@ public sealed class TunnellerJob :
 
         foreach (Vector3Int position in positions)
         {
-            // Level markers are non-physical metadata. They permit the
-            // tunnel but must survive excavation for later restarts/saves.
+            // Level markers are non-physical metadata and Water is runtime
+            // state. Both permit tunnelling, but neither is excavated. The
+            // newly opened terrain lets WaterSystem move the preserved water
+            // into the tunnel after this complete batch has been applied.
             VoxelType type =
                 world.GetVoxel(position).Type;
 
-            if (VoxelTraits.Has(
+            if (type == VoxelType.Water ||
+                VoxelTraits.Has(
                     type,
                     VoxelTrait.GameplayMarker))
             {
