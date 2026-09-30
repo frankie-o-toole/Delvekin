@@ -49,6 +49,10 @@ public sealed class LevelEntityRecord
     [SerializeField]
     private GameObject visualPrefab;
 
+    [Tooltip("Resources-relative prefab path used by portable level saves.")]
+    [SerializeField]
+    private string visualPrefabResourcePath;
+
     [SerializeField]
     private Vector3 spawnMarkerLocalPosition;
 
@@ -62,7 +66,14 @@ public sealed class LevelEntityRecord
     public int MaximumFillY => maximumFillY;
     public int SupplyUnitsPerTick => Mathf.Max(1, supplyUnitsPerTick);
     public int OutletCapacityOverride => Mathf.Max(0, outletCapacityOverride);
-    public GameObject VisualPrefab => visualPrefab;
+    public GameObject VisualPrefab =>
+        visualPrefab != null
+            ? visualPrefab
+            : string.IsNullOrWhiteSpace(visualPrefabResourcePath)
+                ? null
+                : Resources.Load<GameObject>(visualPrefabResourcePath);
+    public string VisualPrefabResourcePath =>
+        visualPrefabResourcePath;
     public Vector3 SpawnMarkerLocalPosition =>
         spawnMarkerLocalPosition;
 
@@ -132,9 +143,41 @@ public sealed class LevelEntityRecord
             volumeSize = house.AuthoringSize,
             facing = house.Facing,
             visualPrefab = house.VisualPrefab,
+            visualPrefabResourcePath =
+                GetResourcePath(house.VisualPrefab),
             spawnMarkerLocalPosition =
                 house.SpawnMarkerLocalPosition
         };
+    }
+
+    public static LevelEntityRecord FromSaveRecord(
+        LevelEntitySaveRecord saved)
+    {
+        if (saved == null)
+        {
+            return null;
+        }
+
+        LevelEntityRecord record = new()
+        {
+            entityId = saved.entityId,
+            type = saved.type,
+            position = saved.position,
+            rotation = saved.rotation,
+            volumeSize = saved.volumeSize,
+            facing = saved.facing,
+            overrideMaximumFillY = saved.overrideMaximumFillY,
+            maximumFillY = saved.maximumFillY,
+            supplyUnitsPerTick = saved.supplyUnitsPerTick,
+            outletCapacityOverride = saved.outletCapacityOverride,
+            visualPrefabResourcePath =
+                saved.visualPrefabResourcePath,
+            spawnMarkerLocalPosition =
+                saved.spawnMarkerLocalPosition
+        };
+
+        record.EnsureValid();
+        return record;
     }
 
     public bool IsFullyInside(
@@ -280,9 +323,42 @@ public sealed class LevelEntityRecord
             supplyUnitsPerTick = supplyUnitsPerTick,
             outletCapacityOverride = outletCapacityOverride,
             visualPrefab = visualPrefab,
+            visualPrefabResourcePath = visualPrefabResourcePath,
             spawnMarkerLocalPosition =
                 spawnMarkerLocalPosition
         };
+    }
+
+    private static string GetResourcePath(GameObject prefab)
+    {
+        if (prefab == null)
+        {
+            return null;
+        }
+
+#if UNITY_EDITOR
+        string assetPath =
+            UnityEditor.AssetDatabase.GetAssetPath(prefab);
+
+        const string marker = "/Resources/";
+        int markerIndex = assetPath.IndexOf(
+            marker,
+            StringComparison.OrdinalIgnoreCase);
+
+        if (markerIndex >= 0)
+        {
+            string relative = assetPath.Substring(
+                markerIndex + marker.Length);
+
+            int extensionIndex = relative.LastIndexOf('.');
+
+            return extensionIndex > 0
+                ? relative.Substring(0, extensionIndex)
+                : relative;
+        }
+#endif
+
+        return null;
     }
 
     public void EnsureValid()

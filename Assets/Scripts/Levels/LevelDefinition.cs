@@ -7,7 +7,7 @@ using UnityEngine;
     menuName = "Delvekin/Level Definition")]
 public sealed class LevelDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     [SerializeField]
     private int schemaVersion = CurrentSchemaVersion;
@@ -67,6 +67,87 @@ public sealed class LevelDefinition : ScriptableObject
             GameplayBoundsSize,
             new List<LevelVoxelRecord>(voxels),
             CloneEntities(entities));
+    }
+
+    public LevelSaveData CreateSaveData()
+    {
+        LevelSaveData data = new()
+        {
+            schemaVersion = CurrentSchemaVersion,
+            chunkSize = Chunk.ChunkSize,
+            displayName = displayName,
+            originInChunks = originInChunks,
+            sizeInChunks = sizeInChunks,
+            gameplayBoundsMinimum = GameplayBoundsMinimum,
+            gameplayBoundsSize = GameplayBoundsSize,
+            voxels = new List<LevelVoxelRecord>(voxels),
+            entities = new List<LevelEntitySaveRecord>()
+        };
+
+        foreach (LevelEntityRecord entity in entities)
+        {
+            LevelEntitySaveRecord saved =
+                LevelEntitySaveRecord.FromRuntime(entity);
+
+            if (saved != null)
+            {
+                data.entities.Add(saved);
+            }
+        }
+
+        return data;
+    }
+
+    public void ReplaceAllContent(LevelSaveData data)
+    {
+        if (data == null)
+        {
+            throw new ArgumentNullException(nameof(data));
+        }
+
+        if (data.chunkSize != 0 &&
+            data.chunkSize != Chunk.ChunkSize)
+        {
+            throw new InvalidOperationException(
+                $"Level chunk size {data.chunkSize} is incompatible with " +
+                $"runtime chunk size {Chunk.ChunkSize}.");
+        }
+
+        schemaVersion = CurrentSchemaVersion;
+        displayName = string.IsNullOrWhiteSpace(data.displayName)
+            ? "Imported Level"
+            : data.displayName;
+        originInChunks = data.originInChunks;
+        sizeInChunks = ClampSize(data.sizeInChunks);
+        gameplayBoundsMinimum = data.gameplayBoundsMinimum;
+        gameplayBoundsSize = data.gameplayBoundsSize;
+        EnsureGameplayBoundsInsideWorld();
+
+        voxels = data.voxels != null
+            ? new List<LevelVoxelRecord>(data.voxels)
+            : new List<LevelVoxelRecord>();
+        voxels.RemoveAll(
+            record =>
+                !ContainsWorldPosition(record.Position) ||
+                VoxelTraits.Has(record.Type, VoxelTrait.Empty));
+        voxels.Sort(CompareRecords);
+
+        List<LevelEntityRecord> importedEntities = new();
+
+        if (data.entities != null)
+        {
+            foreach (LevelEntitySaveRecord saved in data.entities)
+            {
+                LevelEntityRecord entity = saved?.ToRuntime();
+
+                if (entity != null)
+                {
+                    importedEntities.Add(entity);
+                }
+            }
+        }
+
+        entities = CloneEntities(importedEntities);
     }
 
     public void ReplaceContent(
@@ -570,6 +651,7 @@ public sealed class LevelDefinition : ScriptableObject
             // Version 2 adds authored Half/Full water. Version 3 adds
             // level-owned authoring entities. Version 4 adds Spawn Houses.
             // Version 5 adds exact voxel-space gameplay/kill bounds.
+            // Version 6 is the unified, portable level-save schema.
             schemaVersion = CurrentSchemaVersion;
         }
 
