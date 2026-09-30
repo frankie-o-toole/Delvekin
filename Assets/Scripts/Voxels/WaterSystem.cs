@@ -197,39 +197,20 @@ public sealed class WaterSystem : IDisposable
         pendingOriginalBodyIds.Clear();
         pendingAffectedWaterCells.Clear();
 
-        WaterBody sourceBody = null;
-
         foreach (int bodyId in affectedBodyIds)
         {
-            if (!bodies.TryGetValue(bodyId, out WaterBody body) ||
-                body.Kind != WaterBodyKind.SourceFed)
+            if (!bodies.TryGetValue(bodyId, out WaterBody body))
             {
                 continue;
             }
 
-            if (sourceBody == null ||
-                body.MaximumSourceLevelY >
-                sourceBody.MaximumSourceLevelY)
+            if (body.Kind == WaterBodyKind.SourceFed)
             {
-                sourceBody = body;
+                BuildSourceFedRedistributionPlan(body, openings);
             }
-        }
-
-        if (sourceBody != null)
-        {
-            BuildSourceFedRedistributionPlan(sourceBody, openings);
-        }
-        else
-        {
-            foreach (int bodyId in affectedBodyIds)
+            else if (body.Kind == WaterBodyKind.Finite)
             {
-                if (bodies.TryGetValue(
-                        bodyId,
-                        out WaterBody body) &&
-                    body.Kind == WaterBodyKind.Finite)
-                {
-                    BuildFiniteRedistributionPlan(body, openings);
-                }
+                BuildFiniteRedistributionPlan(body, openings);
             }
         }
 
@@ -1294,17 +1275,51 @@ public sealed class WaterSystem : IDisposable
 
     private void ApplyNextRedistributionTick()
     {
-        if (activeSourceExpansions.Count > 0)
+        bool rebuildTopology = false;
+        int sourcePlanCount = activeSourceExpansions.Count;
+
+        for (int index = 0; index < sourcePlanCount; index++)
         {
-            ApplyNextSourceExpansionTick();
-            return;
-        }
-        if (activePlans.Count == 0)
-        {
-            return;
+            SourceExpansionPlan plan = activeSourceExpansions.Dequeue();
+            ApplySourceExpansionTick(plan);
+
+            if (plan.IsComplete)
+            {
+                rebuildTopology = true;
+            }
+            else
+            {
+                activeSourceExpansions.Enqueue(plan);
+            }
         }
 
-        WaterRedistributionPlan plan = activePlans.Peek();
+        int finitePlanCount = activePlans.Count;
+
+        for (int index = 0; index < finitePlanCount; index++)
+        {
+            WaterRedistributionPlan plan = activePlans.Dequeue();
+            ApplyFiniteRedistributionTick(plan);
+
+            if (plan.IsComplete)
+            {
+                rebuildTopology = true;
+            }
+            else
+            {
+                activePlans.Enqueue(plan);
+            }
+        }
+
+        if (rebuildTopology)
+        {
+            RebuildBodies();
+            topologyDirty = false;
+        }
+    }
+
+    private void ApplyFiniteRedistributionTick(
+        WaterRedistributionPlan plan)
+    {
         plan.AdvanceFlowFront(FlowDepthPerTick);
 
         Dictionary<Vector3Int, int> amountDeltas = new();
@@ -1332,25 +1347,11 @@ public sealed class WaterSystem : IDisposable
         {
             ApplyAmountDeltas(amountDeltas);
         }
-
-        if (!plan.IsComplete)
-        {
-            return;
-        }
-
-        activePlans.Dequeue();
-        RebuildBodies();
-        topologyDirty = false;
     }
 
-    private void ApplyNextSourceExpansionTick()
+    private void ApplySourceExpansionTick(
+        SourceExpansionPlan plan)
     {
-        if (activeSourceExpansions.Count == 0)
-        {
-            return;
-        }
-
-        SourceExpansionPlan plan = activeSourceExpansions.Peek();
         List<Vector3Int> destinations = new();
 
         plan.Advance(
@@ -1372,15 +1373,6 @@ public sealed class WaterSystem : IDisposable
 
             ApplyAmountDeltas(amountDeltas);
         }
-
-        if (!plan.IsComplete)
-        {
-            return;
-        }
-
-        activeSourceExpansions.Dequeue();
-        RebuildBodies();
-        topologyDirty = false;
     }
 
     private void ApplyAmountDeltas(
