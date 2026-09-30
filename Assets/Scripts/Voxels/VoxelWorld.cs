@@ -371,7 +371,9 @@ public class VoxelWorld : MonoBehaviour
             return false;
         }
 
-        LevelSaveData data = CreateSaveData(target.CreateSaveData());
+        LevelSaveData template = activeLevelSaveData ??
+            target.CreateSaveData();
+        LevelSaveData data = CreateSaveData(template);
 
         if (data == null)
         {
