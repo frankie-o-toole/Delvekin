@@ -83,6 +83,7 @@ public class VoxelWorld : MonoBehaviour
     private bool hasGameplayBounds;
     private Vector3Int gameplayBoundsMinimum;
     private Vector3Int gameplayBoundsMaximumExclusive;
+    private LevelSaveData activeLevelSaveData;
 
     public bool HasLoadedChunks => chunks.Count > 0;
 
@@ -365,9 +366,27 @@ public class VoxelWorld : MonoBehaviour
 
     public bool CaptureCurrentWorld(LevelDefinition target)
     {
-        if (target == null || chunks.Count == 0)
+        if (target == null)
         {
             return false;
+        }
+
+        LevelSaveData data = CreateSaveData(target.CreateSaveData());
+
+        if (data == null)
+        {
+            return false;
+        }
+
+        target.ReplaceAllContent(data);
+        return true;
+    }
+
+    private LevelSaveData CreateSaveData(LevelSaveData template)
+    {
+        if (chunks.Count == 0)
+        {
+            return null;
         }
 
         bool foundBounds = false;
@@ -437,120 +456,122 @@ public class VoxelWorld : MonoBehaviour
 
         if (!foundBounds)
         {
-            return false;
+            return null;
         }
 
-        target.ReplaceContent(
-            minimumChunk,
-            maximumChunk - minimumChunk + Vector3Int.one,
-            records);
+        Vector3Int size =
+            maximumChunk - minimumChunk + Vector3Int.one;
+        Vector3Int worldMinimum = minimumChunk * Chunk.ChunkSize;
+        Vector3Int worldSize = size * Chunk.ChunkSize;
 
-        return true;
+        LevelSaveData data = template != null
+            ? template.Clone()
+            : new LevelSaveData
+            {
+                displayName = "Runtime Level",
+                entities = new List<LevelEntitySaveRecord>()
+            };
+
+        data.schemaVersion = LevelDefinition.CurrentSchemaVersion;
+        data.chunkSize = Chunk.ChunkSize;
+        data.originInChunks = minimumChunk;
+        data.sizeInChunks = size;
+        data.voxels = records;
+
+        if (hasGameplayBounds &&
+            BoundsContain(
+                worldMinimum,
+                worldMinimum + worldSize,
+                gameplayBoundsMinimum,
+                gameplayBoundsMaximumExclusive))
+        {
+            data.gameplayBoundsMinimum = gameplayBoundsMinimum;
+            data.gameplayBoundsSize =
+                gameplayBoundsMaximumExclusive - gameplayBoundsMinimum;
+        }
+        else
+        {
+            data.gameplayBoundsMinimum = worldMinimum;
+            data.gameplayBoundsSize = worldSize;
+        }
+
+        return data;
+    }
+
+    private static bool BoundsContain(
+        Vector3Int outerMinimum,
+        Vector3Int outerMaximumExclusive,
+        Vector3Int innerMinimum,
+        Vector3Int innerMaximumExclusive)
+    {
+        return
+            innerMinimum.x >= outerMinimum.x &&
+            innerMinimum.y >= outerMinimum.y &&
+            innerMinimum.z >= outerMinimum.z &&
+            innerMaximumExclusive.x <= outerMaximumExclusive.x &&
+            innerMaximumExclusive.y <= outerMaximumExclusive.y &&
+            innerMaximumExclusive.z <= outerMaximumExclusive.z;
     }
 
     // =====================================================
     // SAVE
     // =====================================================
 
-    public SavedLevel CreateSaveData()
+    public LevelSaveData CreateSaveData()
     {
-        SavedLevel save =
-            new();
+        LevelSaveData template = activeLevelSaveData ??
+            startingLevel?.CreateSaveData();
 
-        foreach (var pair in chunks)
-        {
-            Vector3Int chunkCoord =
-                pair.Key;
-
-            Chunk chunk =
-                pair.Value;
-
-            for (
-                int x = 0;
-                x < Chunk.ChunkSize;
-                x++)
-            {
-                for (
-                    int y = 0;
-                    y < Chunk.ChunkSize;
-                    y++)
-                {
-                    for (
-                        int z = 0;
-                        z < Chunk.ChunkSize;
-                        z++)
-                    {
-                        Voxel voxel =
-                            chunk.GetVoxel(
-                                x,
-                                y,
-                                z);
-
-                        if (
-                            voxel.Type ==
-                            VoxelType.Air)
-                        {
-                            continue;
-                        }
-
-                        save.voxels.Add(
-                            new SavedVoxel
-                            {
-                                x =
-                                    chunkCoord.x *
-                                    Chunk.ChunkSize +
-                                    x,
-
-                                y =
-                                    chunkCoord.y *
-                                    Chunk.ChunkSize +
-                                    y,
-
-                                z =
-                                    chunkCoord.z *
-                                    Chunk.ChunkSize +
-                                    z,
-
-                                type =
-                                    voxel.Type,
-
-                                facing =
-                                    voxel.Facing
-                            });
-                    }
-                }
-            }
-        }
-
-        return save;
+        return CreateSaveData(template);
     }
 
     public void SaveLevel(
         string name)
     {
-        SavedLevel save =
+        LevelSaveData save =
             CreateSaveData();
 
-        LevelSerializer.Save(
-            save,
-            name);
+        if (save == null)
+        {
+            Debug.LogWarning("Cannot save an empty world.", this);
+            return;
+        }
 
-        Debug.Log(
-            $"Saved: {name}");
+        LevelSerializer.Save(save, name);
     }
 
     public void LoadSavedLevel(
         string fileName)
     {
-        SavedLevel save =
+        LevelSaveData save =
             LevelSerializer.Load(
                 fileName);
 
         if (save == null)
+        {
             return;
+        }
 
-        BuildFromSavedLevel(
-            save);
+        LevelDefinition loaded =
+            ScriptableObject.CreateInstance<LevelDefinition>();
+
+        try
+        {
+            loaded.name = save.displayName;
+            loaded.ReplaceAllContent(save);
+            LoadLevelDefinition(loaded);
+        }
+        finally
+        {
+            if (Application.isPlaying)
+            {
+                Destroy(loaded);
+            }
+            else
+            {
+                DestroyImmediate(loaded);
+            }
+        }
     }
 
     // =====================================================
@@ -659,6 +680,8 @@ public class VoxelWorld : MonoBehaviour
 
         LevelDefinition.RuntimeSnapshot snapshot =
             definition.CreateRuntimeSnapshot();
+
+        activeLevelSaveData = definition.CreateSaveData();
 
         fluidSimulationStarted = false;
         ClearWorld();
@@ -787,6 +810,7 @@ public class VoxelWorld : MonoBehaviour
         int heightInChunks,
         int depthInChunks)
     {
+        activeLevelSaveData = null;
         ClearWorld();
 
         currentLevel =
@@ -925,92 +949,6 @@ public class VoxelWorld : MonoBehaviour
             out PuzzleSide facing)
             ? facing
             : fallback;
-    }
-
-    // =====================================================
-    // BUILD SAVED LEVEL
-    // =====================================================
-
-    private void BuildFromSavedLevel(
-        SavedLevel save)
-    {
-        fluidSimulationStarted = false;
-        ClearWorld();
-
-        VoxelVisibilitySystem
-            .SetToInitialPuzzleState();
-
-        // -------------------------
-        // DATA PASS
-        // -------------------------
-
-        foreach (
-            SavedVoxel voxel
-            in save.voxels)
-        {
-            Vector3Int worldPos =
-                new(
-                    voxel.x,
-                    voxel.y,
-                    voxel.z);
-
-            Vector3Int chunkCoord =
-                VoxelMath.WorldToChunkCoord(
-                    worldPos);
-
-            Vector3Int localPos =
-                VoxelMath.WorldToLocalVoxel(
-                    worldPos);
-
-            if (
-                !chunks.TryGetValue(
-                    chunkCoord,
-                    out Chunk chunk))
-            {
-                chunk =
-                    new Chunk(
-                        chunkCoord);
-
-                chunks.Add(
-                    chunkCoord,
-                    chunk);
-            }
-
-            chunk.SetVoxel(
-                localPos.x,
-                localPos.y,
-                localPos.z,
-                new Voxel(
-                    voxel.type,
-                    voxel.facing));
-        }
-
-        // -------------------------
-        // RENDERER PASS
-        // -------------------------
-
-        foreach (
-            var pair
-            in chunks)
-        {
-            CreateChunkRenderer(
-                pair.Value);
-        }
-
-        RefreshWorldSpatialState(recenterCamera: true);
-
-        VoxelVisibilitySystem.SetView(
-            SliceAxis.Z,
-            +1);
-
-        VoxelVisibilitySystem
-            .ResetVisibility();
-
-        waterSystem?.ResetFromWorld();
-        fluidSimulation?.ResetFromWorld();
-
-        ChunkRefreshSystem
-            .RequestFullRefresh();
     }
 
     // =====================================================
