@@ -52,6 +52,8 @@ public sealed class WaterSystem : IDisposable
     private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
     private readonly Dictionary<int, WaterLaneSnapshot> laneSnapshots = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
+    private readonly HashSet<int> pendingOriginalBodyIds = new();
+    private readonly HashSet<Vector3Int> pendingAffectedWaterCells = new();
     private readonly Queue<SourceExpansionPlan> activeSourceExpansions = new();
     private readonly Queue<WaterRedistributionPlan> activePlans = new();
 
@@ -91,6 +93,8 @@ public sealed class WaterSystem : IDisposable
         bodyByPosition.Clear();
         laneSnapshots.Clear();
         pendingOpenings.Clear();
+        pendingOriginalBodyIds.Clear();
+        pendingAffectedWaterCells.Clear();
         activeSourceExpansions.Clear();
         activePlans.Clear();
         redistributionTickTimer = 0f;
@@ -159,6 +163,18 @@ public sealed class WaterSystem : IDisposable
 
         HashSet<int> affectedBodyIds = new();
 
+        // Batch edits can remove several layers of water or terrain before
+        // this deferred pass runs. Remembered cells reconnect the rebuilt
+        // topology to every original body that the edit touched, even when
+        // no surviving water remains directly beside the first opening.
+        foreach (Vector3Int position in pendingAffectedWaterCells)
+        {
+            if (bodyByPosition.TryGetValue(position, out int bodyId))
+            {
+                affectedBodyIds.Add(bodyId);
+            }
+        }
+
         foreach (Vector3Int opening in pendingOpenings)
         {
             foreach (Vector3Int direction in CardinalDirections)
@@ -178,6 +194,8 @@ public sealed class WaterSystem : IDisposable
             new(pendingOpenings);
 
         pendingOpenings.Clear();
+        pendingOriginalBodyIds.Clear();
+        pendingAffectedWaterCells.Clear();
 
         WaterBody sourceBody = null;
 
@@ -1758,6 +1776,7 @@ public sealed class WaterSystem : IDisposable
 
         if (previous.Type == VoxelType.Water)
         {
+            RememberAffectedBodyAt(position);
             cells.Remove(position);
             sources.Remove(position);
         }
@@ -1785,11 +1804,31 @@ public sealed class WaterSystem : IDisposable
         if (openedTerrain || openedWaterCell)
         {
             pendingOpenings.Add(position);
+
+            foreach (Vector3Int direction in CardinalDirections)
+            {
+                RememberAffectedBodyAt(position + direction);
+            }
         }
 
         if (waterOccupancyChanged || openedTerrain)
         {
             topologyDirty = true;
+        }
+    }
+
+    private void RememberAffectedBodyAt(Vector3Int position)
+    {
+        if (!bodyByPosition.TryGetValue(position, out int bodyId) ||
+            !pendingOriginalBodyIds.Add(bodyId) ||
+            !bodies.TryGetValue(bodyId, out WaterBody body))
+        {
+            return;
+        }
+
+        foreach (Vector3Int bodyCell in body.Cells)
+        {
+            pendingAffectedWaterCells.Add(bodyCell);
         }
     }
 
