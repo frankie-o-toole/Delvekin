@@ -674,6 +674,14 @@ public class VoxelWorld : MonoBehaviour
 
     public void LoadLevelDefinition(LevelDefinition definition)
     {
+        if (Application.isPlaying)
+        {
+            DwarfSpawner spawner =
+                FindFirstObjectByType<DwarfSpawner>();
+
+            spawner?.ResetSimulation();
+        }
+
         if (definition == null)
         {
             Debug.LogError("Cannot load a null LevelDefinition.", this);
@@ -2097,9 +2105,23 @@ public class VoxelWorld : MonoBehaviour
         GUILayout.Label(
             "Level Save/Load");
 
+        GUILayout.Label(
+            "File name (without .json)");
+
+        GUILayout.BeginHorizontal();
+
         fileName =
             GUILayout.TextField(
                 fileName);
+
+        if (GUILayout.Button(
+                "Clear",
+                GUILayout.Width(50)))
+        {
+            fileName = string.Empty;
+        }
+
+        GUILayout.EndHorizontal();
 
         GUILayout.Space(
             10);
