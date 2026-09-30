@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 public class DwarfSpawner : MonoBehaviour
@@ -101,6 +102,45 @@ public class DwarfSpawner : MonoBehaviour
         world.StartFluidSimulation();
 
         StartCoroutine(SpawnLoop());
+    }
+
+    public void ResetSimulation()
+    {
+        StopAllCoroutines();
+
+        // Disable result accounting before recalling active dwarves.
+        simulationStarted = false;
+        simulationResolved = false;
+        spawnFinished = false;
+
+        if (pool != null)
+        {
+            List<DwarfAgent> activeDwarves =
+                new(pool.ActiveDwarves);
+
+            foreach (DwarfAgent dwarf in activeDwarves)
+            {
+                pool.Release(
+                    dwarf,
+                    DwarfReleaseReason.Recalled);
+            }
+        }
+
+        spawned = 0;
+        rescued = 0;
+        died = 0;
+        recalled = 0;
+        nextSpawnPointIndex = 0;
+
+        DwarfJobAssignmentManager assignmentManager =
+            FindFirstObjectByType<DwarfJobAssignmentManager>();
+
+        assignmentManager?.ClearAllSelections();
+
+        DwarfJobInventory inventory =
+            FindFirstObjectByType<DwarfJobInventory>();
+
+        inventory?.ResetToStartingStock();
     }
 
     private IEnumerator SpawnLoop()
