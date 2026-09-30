@@ -1,6 +1,7 @@
 using System;
 
 [Serializable]
+[Obsolete("Legacy JSON import only. Use LevelVoxelRecord.")]
 public class SavedVoxel
 {
     public int x;
