@@ -58,6 +58,7 @@ public sealed class WaterSystem : IDisposable
     private readonly HashSet<int> scheduledBodyIds = new();
     private readonly Dictionary<int, WaterLaneSnapshot> laneSnapshots = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
+    private readonly HashSet<Vector3Int> pendingTopologyChanges = new();
     private readonly HashSet<int> pendingOriginalBodyIds = new();
     private readonly HashSet<Vector3Int> pendingAffectedWaterCells = new();
     private readonly Queue<SourceExpansionPlan> activeSourceExpansions = new();
@@ -72,6 +73,7 @@ public sealed class WaterSystem : IDisposable
     public bool HasPendingWork =>
         topologyDirty ||
         pendingOpenings.Count > 0 ||
+        pendingTopologyChanges.Count > 0 ||
         activeSourceExpansions.Count > 0 ||
         activePlans.Count > 0 ||
         activeBodySchedule.Count > 0;
@@ -103,6 +105,7 @@ public sealed class WaterSystem : IDisposable
         scheduledBodyIds.Clear();
         laneSnapshots.Clear();
         pendingOpenings.Clear();
+        pendingTopologyChanges.Clear();
         pendingOriginalBodyIds.Clear();
         pendingAffectedWaterCells.Clear();
         activeSourceExpansions.Clear();
@@ -135,9 +138,10 @@ public sealed class WaterSystem : IDisposable
             return;
         }
 
-        if (activeSourceExpansions.Count > 0 ||
+        if (!topologyDirty &&
+            (activeSourceExpansions.Count > 0 ||
             activePlans.Count > 0 ||
-            activeBodySchedule.Count > 0)
+            activeBodySchedule.Count > 0))
         {
             redistributionTickTimer += deltaTime;
             int ticks = 0;
@@ -176,7 +180,8 @@ public sealed class WaterSystem : IDisposable
             WakeSourceAndOutletBodies();
         }
 
-        if (pendingOpenings.Count == 0)
+        if (pendingOpenings.Count == 0 &&
+            pendingTopologyChanges.Count == 0)
         {
             return;
         }
@@ -210,10 +215,33 @@ public sealed class WaterSystem : IDisposable
             }
         }
 
+        foreach (Vector3Int changedPosition in pendingTopologyChanges)
+        {
+            if (bodyByPosition.TryGetValue(
+                    changedPosition,
+                    out int bodyId))
+            {
+                affectedBodyIds.Add(bodyId);
+            }
+
+            foreach (Vector3Int direction in CardinalDirections)
+            {
+                Vector3Int neighbour = changedPosition + direction;
+
+                if (bodyByPosition.TryGetValue(neighbour, out bodyId))
+                {
+                    affectedBodyIds.Add(bodyId);
+                }
+            }
+        }
+
         List<Vector3Int> openings =
             new(pendingOpenings);
 
+        openings.AddRange(pendingTopologyChanges);
+
         pendingOpenings.Clear();
+        pendingTopologyChanges.Clear();
         pendingOriginalBodyIds.Clear();
         pendingAffectedWaterCells.Clear();
 
@@ -823,6 +851,8 @@ public sealed class WaterSystem : IDisposable
 
         cell.Amount = amount;
         cells[position] = cell;
+        pendingTopologyChanges.Add(position);
+        InvalidateActiveBodyWork();
         topologyDirty = true;
 
         if (refreshVisuals)
@@ -2250,6 +2280,12 @@ public sealed class WaterSystem : IDisposable
             previous.Type == VoxelType.Water &&
             VoxelTraits.Has(current.Type, VoxelTrait.Empty);
 
+        bool closedTerrain =
+            VoxelTraits.Has(previous.Type, VoxelTrait.Empty) &&
+            !VoxelTraits.Has(current.Type, VoxelTrait.Empty) &&
+            current.Type != VoxelType.Water &&
+            TouchesWater(position);
+
         if (openedTerrain || openedWaterCell)
         {
             pendingOpenings.Add(position);
@@ -2260,10 +2296,26 @@ public sealed class WaterSystem : IDisposable
             }
         }
 
-        if (waterOccupancyChanged || openedTerrain)
+        if (waterOccupancyChanged || openedTerrain || closedTerrain)
+        {
+            pendingTopologyChanges.Add(position);
+            InvalidateActiveBodyWork();
+        }
+
+        if (waterOccupancyChanged || openedTerrain || closedTerrain)
         {
             topologyDirty = true;
         }
+    }
+
+    private void InvalidateActiveBodyWork()
+    {
+        runtimeStates.Clear();
+        activeBodySchedule.Clear();
+        scheduledBodyIds.Clear();
+        activeSourceExpansions.Clear();
+        activePlans.Clear();
+        redistributionTickTimer = 0f;
     }
 
     private void RememberAffectedBodyAt(Vector3Int position)
