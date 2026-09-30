@@ -201,11 +201,6 @@ public sealed class SpawnHouseAuthoring : MonoBehaviour
         EnsureIdentity();
         authoringSize = ClampSize(authoringSize);
 
-        if (!runtimeCopy)
-        {
-            RebuildVisual();
-        }
-
         synchronizedStateHash = int.MinValue;
     }
 
