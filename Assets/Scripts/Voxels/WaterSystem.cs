@@ -50,6 +50,10 @@ public sealed class WaterSystem : IDisposable
     private readonly List<Vector3Int> portalVoxelBuffer = new();
     private readonly Dictionary<int, WaterBody> bodies = new();
     private readonly Dictionary<Vector3Int, int> bodyByPosition = new();
+    private readonly Dictionary<int, WaterBodyRuntimeState> runtimeStates =
+        new();
+    private readonly Queue<int> activeBodySchedule = new();
+    private readonly HashSet<int> scheduledBodyIds = new();
     private readonly Dictionary<int, WaterLaneSnapshot> laneSnapshots = new();
     private readonly HashSet<Vector3Int> pendingOpenings = new();
     private readonly HashSet<int> pendingOriginalBodyIds = new();
@@ -91,6 +95,9 @@ public sealed class WaterSystem : IDisposable
         sources.Clear();
         bodies.Clear();
         bodyByPosition.Clear();
+        runtimeStates.Clear();
+        activeBodySchedule.Clear();
+        scheduledBodyIds.Clear();
         laneSnapshots.Clear();
         pendingOpenings.Clear();
         pendingOriginalBodyIds.Clear();
