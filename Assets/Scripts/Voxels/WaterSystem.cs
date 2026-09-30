@@ -1129,10 +1129,9 @@ public sealed class WaterSystem : IDisposable
         if (searchLimitReached)
         {
             Debug.LogWarning(
-                $"Water body {body.Id} redistribution aborted: " +
-                $"reachable space exceeded {MaximumRedistributionCells} cells.");
-
-            return false;
+                $"Water body {body.Id} reached the finite-water search " +
+                $"limit of {MaximumRedistributionCells} cells. " +
+                "Redistributing inside the reachable region found so far.");
         }
 
         // Same-height openings do not cause a finite body to spread. There
