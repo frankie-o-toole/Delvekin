@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System;
 using UnityEngine;
 
 public class DwarfSpawner : MonoBehaviour
@@ -42,6 +43,7 @@ public class DwarfSpawner : MonoBehaviour
     private bool endLevelConfirmationOpen;
     private LevelSimulationState stateBeforeRetryConfirmation;
     private RescueGoalProgress rescueGoalProgress;
+    private readonly LevelSimulationClock simulationClock = new();
 
     public LevelSimulationState SimulationState { get; private set; } =
         LevelSimulationState.Preparation;
@@ -63,6 +65,10 @@ public class DwarfSpawner : MonoBehaviour
         rescueGoalProgress.IsImpossible;
     public bool IsRescueTargetReached =>
         rescueGoalProgress.TargetReached;
+    public double SimulationElapsedSeconds =>
+        simulationClock.ElapsedSeconds;
+    public TimeSpan SimulationElapsed =>
+        simulationClock.Elapsed;
 
     private void OnEnable()
     {
@@ -80,6 +86,13 @@ public class DwarfSpawner : MonoBehaviour
             pool.DwarfReleased -=
                 HandleDwarfReleased;
         }
+    }
+
+    private void Update()
+    {
+        simulationClock.Advance(
+            Time.deltaTime,
+            SimulationState);
     }
 
     public void StartSimulation()
@@ -130,6 +143,7 @@ public class DwarfSpawner : MonoBehaviour
         simulationResolved = false;
         simulationStarted = true;
         Outcome = LevelOutcome.Undecided;
+        simulationClock.Reset();
 
         RefreshRescueGoalProgress();
 
@@ -154,6 +168,7 @@ public class DwarfSpawner : MonoBehaviour
         simulationResolved = false;
         spawnFinished = false;
         Outcome = LevelOutcome.Undecided;
+        simulationClock.Reset();
 
         if (pool != null)
         {
@@ -590,6 +605,8 @@ public class DwarfSpawner : MonoBehaviour
                       + $"Active: {rescueGoalProgress.Active}  "
                       + $"Waiting: {rescueGoalProgress.Unspawned}";
 
+            status += $"  Time: {FormatSimulationTime()}";
+
             if (targetReached)
             {
                 status = "✓ TARGET REACHED  " + status;
@@ -769,6 +786,16 @@ public class DwarfSpawner : MonoBehaviour
             RescueGoalProgressChanged?.Invoke(
                 rescueGoalProgress);
         }
+    }
+
+    private string FormatSimulationTime()
+    {
+        TimeSpan elapsed = SimulationElapsed;
+        int totalHours = (int)elapsed.TotalHours;
+
+        return totalHours > 0
+            ? $"{totalHours}:{elapsed.Minutes:00}:{elapsed.Seconds:00}"
+            : $"{elapsed.Minutes}:{elapsed.Seconds:00}";
     }
 
     private void DrawEndLevelConfirmation(
