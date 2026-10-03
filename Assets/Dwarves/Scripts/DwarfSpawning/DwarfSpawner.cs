@@ -39,6 +39,7 @@ public class DwarfSpawner : MonoBehaviour
     private bool simulationResolved;
     private float timeScaleBeforePause = 1f;
     private bool retryConfirmationOpen;
+    private bool endLevelConfirmationOpen;
     private LevelSimulationState stateBeforeRetryConfirmation;
     private RescueGoalProgress rescueGoalProgress;
 
@@ -146,6 +147,7 @@ public class DwarfSpawner : MonoBehaviour
         Time.timeScale = 1f;
         timeScaleBeforePause = 1f;
         retryConfirmationOpen = false;
+        endLevelConfirmationOpen = false;
 
         // Disable result accounting before recalling active dwarves.
         simulationStarted = false;
@@ -261,6 +263,7 @@ public class DwarfSpawner : MonoBehaviour
     public void RequestRetry()
     {
         if (retryConfirmationOpen ||
+            endLevelConfirmationOpen ||
             (SimulationState != LevelSimulationState.Running &&
              SimulationState != LevelSimulationState.Completed))
         {
@@ -308,14 +311,40 @@ public class DwarfSpawner : MonoBehaviour
         }
     }
 
-    public void EndLevel()
+    public void RequestEndLevel()
     {
-        if (SimulationState != LevelSimulationState.Running ||
+        if (endLevelConfirmationOpen ||
+            retryConfirmationOpen ||
+            SimulationState != LevelSimulationState.Running ||
             !IsRescueTargetReached)
         {
             return;
         }
 
+        PauseSimulation();
+        endLevelConfirmationOpen = true;
+    }
+
+    public void CancelEndLevel()
+    {
+        if (!endLevelConfirmationOpen)
+        {
+            return;
+        }
+
+        endLevelConfirmationOpen = false;
+        ResumeSimulation();
+    }
+
+    public void ConfirmEndLevel()
+    {
+        if (!endLevelConfirmationOpen ||
+            !IsRescueTargetReached)
+        {
+            return;
+        }
+
+        endLevelConfirmationOpen = false;
         CompleteSimulation(LevelOutcome.Success);
     }
 
@@ -591,6 +620,7 @@ public class DwarfSpawner : MonoBehaviour
 
             if (targetReached &&
                 !retryConfirmationOpen &&
+                !endLevelConfirmationOpen &&
                 GUI.Button(
                     new Rect(
                         x,
@@ -599,7 +629,7 @@ public class DwarfSpawner : MonoBehaviour
                         height),
                     "End Level"))
             {
-                EndLevel();
+                RequestEndLevel();
             }
 
             if (targetReached)
@@ -610,6 +640,7 @@ public class DwarfSpawner : MonoBehaviour
             if ((SimulationState == LevelSimulationState.Running ||
                  SimulationState == LevelSimulationState.Completed) &&
                 !retryConfirmationOpen &&
+                !endLevelConfirmationOpen &&
                 GUI.Button(
                     new Rect(
                         x,
@@ -625,6 +656,12 @@ public class DwarfSpawner : MonoBehaviour
         if (retryConfirmationOpen)
         {
             DrawRetryConfirmation(
+                logicalScreenWidth,
+                Screen.height / uiScale);
+        }
+        else if (endLevelConfirmationOpen)
+        {
+            DrawEndLevelConfirmation(
                 logicalScreenWidth,
                 Screen.height / uiScale);
         }
@@ -731,6 +768,59 @@ public class DwarfSpawner : MonoBehaviour
         {
             RescueGoalProgressChanged?.Invoke(
                 rescueGoalProgress);
+        }
+    }
+
+    private void DrawEndLevelConfirmation(
+        float logicalScreenWidth,
+        float logicalScreenHeight)
+    {
+        const float width = 340f;
+        const float height = 190f;
+        const float padding = 14f;
+
+        Rect panel = new(
+            (logicalScreenWidth - width) * 0.5f,
+            (logicalScreenHeight - height) * 0.5f,
+            width,
+            height);
+
+        GUI.Box(panel, "End Level?");
+
+        GUI.Label(
+            new Rect(
+                panel.x + padding,
+                panel.y + 34f,
+                width - padding * 2f,
+                84f),
+            $"The rescue target has been reached.\n" +
+            $"Active dwarves: {rescueGoalProgress.Active}\n" +
+            $"Waiting to spawn: {rescueGoalProgress.Unspawned}\n" +
+            "Ending now leaves these dwarves behind.");
+
+        float buttonY = panel.yMax - 50f;
+        float buttonWidth = (width - padding * 3f) * 0.5f;
+
+        if (GUI.Button(
+                new Rect(
+                    panel.x + padding,
+                    buttonY,
+                    buttonWidth,
+                    34f),
+                "Continue Playing"))
+        {
+            CancelEndLevel();
+        }
+
+        if (GUI.Button(
+                new Rect(
+                    panel.x + padding * 2f + buttonWidth,
+                    buttonY,
+                    buttonWidth,
+                    34f),
+                "End Level"))
+        {
+            ConfirmEndLevel();
         }
     }
 
