@@ -31,11 +31,28 @@ public sealed class OreRockRuntimeTests
         Assert.That(oreRock.Reserved, Is.EqualTo(1));
         Assert.That(oreRock.TryReserve(second), Is.False);
 
+        OreRuntimeProgress reserved =
+            OreRockAuthoring.GetRuntimeProgress();
+
+        Assert.That(reserved.TotalCapacity, Is.EqualTo(1));
+        Assert.That(reserved.Extracted, Is.Zero);
+        Assert.That(reserved.Reserved, Is.EqualTo(1));
+        Assert.That(reserved.Remaining, Is.Zero);
+        Assert.That(reserved.IsConsistent, Is.True);
+
         Assert.That(oreRock.CompleteExtraction(first), Is.True);
         Assert.That(oreRock.Reserved, Is.Zero);
         Assert.That(oreRock.Extracted, Is.EqualTo(1));
         Assert.That(oreRock.Remaining, Is.Zero);
         Assert.That(oreRock.CompleteExtraction(first), Is.False);
+
+        OreRuntimeProgress extracted =
+            OreRockAuthoring.GetRuntimeProgress();
+
+        Assert.That(extracted.Extracted, Is.EqualTo(1));
+        Assert.That(extracted.Reserved, Is.Zero);
+        Assert.That(extracted.Remaining, Is.Zero);
+        Assert.That(extracted.IsConsistent, Is.True);
     }
 
     [Test]

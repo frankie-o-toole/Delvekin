@@ -34,8 +34,6 @@ public class DwarfSpawner : MonoBehaviour
 
     private bool simulationStarted;
     private int spawned;
-    private int minedResources;
-    private int totalOreCapacity;
     private int died;
     private int recalled;
     private int nextSpawnPointIndex;
@@ -89,6 +87,9 @@ public class DwarfSpawner : MonoBehaviour
             pool.DwarfReleased +=
                 HandleDwarfReleased;
         }
+
+        OreRockAuthoring.RuntimeOreChanged +=
+            HandleRuntimeOreChanged;
     }
 
     private void OnDisable()
@@ -98,6 +99,9 @@ public class DwarfSpawner : MonoBehaviour
             pool.DwarfReleased -=
                 HandleDwarfReleased;
         }
+
+        OreRockAuthoring.RuntimeOreChanged -=
+            HandleRuntimeOreChanged;
     }
 
     private void Update()
@@ -130,13 +134,25 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        if (totalOreCapacity < GetRequiredMinedResources())
+        OreRuntimeProgress ore =
+            OreRockAuthoring.GetRuntimeProgress();
+
+        if (ore.TotalCapacity < GetRequiredMinedResources())
         {
             Debug.LogError(
                 "Cannot start dwarf simulation: total Ore Rock capacity " +
-                $"({totalOreCapacity}) is below the required mined " +
+                $"({ore.TotalCapacity}) is below the required mined " +
                 $"resources ({GetRequiredMinedResources()}).");
 
+            return;
+        }
+
+        if (!ore.IsConsistent)
+        {
+            Debug.LogError(
+                "Cannot start dwarf simulation: Ore Rock runtime totals " +
+                "are inconsistent.",
+                this);
             return;
         }
 
@@ -148,7 +164,6 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         spawned = 0;
-        minedResources = 0;
         died = 0;
         recalled = 0;
         nextSpawnPointIndex = 0;
@@ -201,7 +216,6 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         spawned = 0;
-        minedResources = 0;
         died = 0;
         recalled = 0;
         nextSpawnPointIndex = 0;
@@ -230,7 +244,6 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         maxDwarves = Mathf.Max(1, snapshot.TotalDwarves);
-        totalOreCapacity = Mathf.Max(0, snapshot.TotalOreCapacity);
         requiredMinedResources = Mathf.Clamp(
             snapshot.RequiredMinedResources,
             1,
@@ -458,15 +471,11 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        if (reason == DwarfReleaseReason.Mined)
-        {
-            minedResources++;
-        }
-        else if (reason == DwarfReleaseReason.Died)
+        if (reason == DwarfReleaseReason.Died)
         {
             died++;
         }
-        else
+        else if (reason == DwarfReleaseReason.Recalled)
         {
             recalled++;
         }
@@ -475,10 +484,15 @@ public class DwarfSpawner : MonoBehaviour
         TryResolveSimulation();
     }
 
+    private void HandleRuntimeOreChanged()
+    {
+        RefreshResourceGoalProgress();
+    }
+
     private void TryResolveSimulation()
     {
         if (!spawnFinished ||
-            minedResources + died + recalled < spawned)
+            resourceGoalProgress.Mined + died + recalled < spawned)
         {
             return;
         }
@@ -660,7 +674,8 @@ public class DwarfSpawner : MonoBehaviour
                     ? (Outcome == LevelOutcome.Success
                         ? "LEVEL COMPLETE"
                         : "LEVEL FAILED")
-                    : $"Mined: {minedResources}/{GetRequiredMinedResources()}  "
+                    : $"Mined: {resourceGoalProgress.Mined}/" +
+                      $"{GetRequiredMinedResources()}  "
                       + $"Lost: {died + recalled}  "
                       + $"Active: {resourceGoalProgress.ActiveDwarves}  "
                       + $"Waiting: {resourceGoalProgress.UnspawnedDwarves}";
@@ -862,7 +877,8 @@ public class DwarfSpawner : MonoBehaviour
                 panel.y + 34f,
                 width - padding * 2f,
                 76f),
-            $"Mined: {minedResources}/{GetRequiredMinedResources()}\n" +
+            $"Mined: {resourceGoalProgress.Mined}/" +
+            $"{GetRequiredMinedResources()}\n" +
             $"Active: {pool.ActiveCount}   " +
             $"Lost: {died + recalled}\n" +
             (IsResourceGoalImpossible
@@ -902,18 +918,26 @@ public class DwarfSpawner : MonoBehaviour
             ? pool.ActiveCount
             : 0;
 
+        OreRuntimeProgress ore =
+            OreRockAuthoring.GetRuntimeProgress();
+
         ResourceGoalProgress next = new(
-            minedResources,
             active,
             Mathf.Max(0, maxDwarves - spawned),
-            GetRequiredMinedResources());
+            GetRequiredMinedResources(),
+            ore);
 
         bool changed =
             next.Mined != resourceGoalProgress.Mined ||
             next.ActiveDwarves != resourceGoalProgress.ActiveDwarves ||
             next.UnspawnedDwarves !=
                 resourceGoalProgress.UnspawnedDwarves ||
-            next.Required != resourceGoalProgress.Required;
+            next.Required != resourceGoalProgress.Required ||
+            next.Ore.Extracted != resourceGoalProgress.Ore.Extracted ||
+            next.Ore.Reserved != resourceGoalProgress.Ore.Reserved ||
+            next.Ore.Remaining != resourceGoalProgress.Ore.Remaining ||
+            next.Ore.TotalCapacity !=
+                resourceGoalProgress.Ore.TotalCapacity;
 
         resourceGoalProgress = next;
 
@@ -1097,10 +1121,10 @@ public class DwarfSpawner : MonoBehaviour
         result = new LevelAttemptResult(
             outcome,
             maxDwarves,
-            totalOreCapacity,
+            resourceGoalProgress.Ore.TotalCapacity,
             GetRequiredMinedResources(),
             spawned,
-            minedResources,
+            resourceGoalProgress.Mined,
             died,
             recalled,
             resourceGoalProgress.ActiveDwarves,

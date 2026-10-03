@@ -59,6 +59,35 @@ public sealed class OreRockAuthoring : MonoBehaviour
 
     public event Action<OreRockAuthoring, DwarfAgent> OreExtracted;
 
+    public static event Action RuntimeOreChanged;
+
+    public static OreRuntimeProgress GetRuntimeProgress()
+    {
+        int totalCapacity = 0;
+        int extractedTotal = 0;
+        int reservedTotal = 0;
+        int remainingTotal = 0;
+
+        foreach (OreRockAuthoring oreRock in RuntimeRocks)
+        {
+            if (oreRock == null || !oreRock.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            totalCapacity += oreRock.Capacity;
+            extractedTotal += oreRock.Extracted;
+            reservedTotal += oreRock.Reserved;
+            remainingTotal += oreRock.Remaining;
+        }
+
+        return new OreRuntimeProgress(
+            totalCapacity,
+            extractedTotal,
+            reservedTotal,
+            remainingTotal);
+    }
+
     public void ConfigureIdentity(
         string newEntityId,
         LevelDefinition ownerDefinition = null)
@@ -169,6 +198,7 @@ public sealed class OreRockAuthoring : MonoBehaviour
         }
 
         reservations.Add(dwarf);
+        RuntimeOreChanged?.Invoke();
         return true;
     }
 
@@ -181,6 +211,7 @@ public sealed class OreRockAuthoring : MonoBehaviour
 
         extracted++;
         OreExtracted?.Invoke(this, dwarf);
+        RuntimeOreChanged?.Invoke();
         return true;
     }
 
@@ -188,7 +219,10 @@ public sealed class OreRockAuthoring : MonoBehaviour
     {
         if (dwarf != null)
         {
-            reservations.Remove(dwarf);
+            if (reservations.Remove(dwarf))
+            {
+                RuntimeOreChanged?.Invoke();
+            }
         }
     }
 
@@ -280,13 +314,19 @@ public sealed class OreRockAuthoring : MonoBehaviour
         if (runtimeCopy)
         {
             RuntimeRocks.Add(this);
+            RuntimeOreChanged?.Invoke();
         }
     }
 
     private void OnDisable()
     {
-        RuntimeRocks.Remove(this);
+        bool removed = RuntimeRocks.Remove(this);
         reservations.Clear();
+
+        if (removed)
+        {
+            RuntimeOreChanged?.Invoke();
+        }
     }
 
     private void Update()
@@ -337,7 +377,12 @@ public sealed class OreRockAuthoring : MonoBehaviour
 
     private void OnDestroy()
     {
-        RuntimeRocks.Remove(this);
+        bool removedRuntimeRock = RuntimeRocks.Remove(this);
+
+        if (removedRuntimeRock)
+        {
+            RuntimeOreChanged?.Invoke();
+        }
 
 #if UNITY_EDITOR
         if (Application.isPlaying ||
