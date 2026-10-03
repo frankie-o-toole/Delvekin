@@ -45,12 +45,13 @@ public static class LevelSaveValidator
             valid = false;
         }
 
-        if (data.requiredRescues < 1 ||
-            data.requiredRescues > data.totalDwarves)
+        if (data.requiredMinedResources < 1 ||
+            data.requiredMinedResources > data.totalDwarves)
         {
             AddError(
                 errors,
-                "Required rescues must be between one and total dwarves.");
+                "Required mined resources must be between one and total " +
+                "dwarves.");
             valid = false;
         }
 
@@ -145,10 +146,15 @@ public static class LevelSaveValidator
         }
 
         HashSet<string> entityIds = new();
+        int totalOreCapacity = 0;
 
         if (data.entities == null)
         {
-            return valid;
+            AddError(
+                errors,
+                "The level requires an Ore Rock with enough capacity for " +
+                "its mined-resource target.");
+            return false;
         }
 
         foreach (LevelEntitySaveRecord entity in data.entities)
@@ -224,6 +230,8 @@ public static class LevelSaveValidator
                     valid = false;
                 }
 
+                totalOreCapacity += Mathf.Max(0, entity.oreCapacity);
+
                 if (entity.hasVisualPrefab &&
                     string.IsNullOrWhiteSpace(
                         entity.visualPrefabResourcePath))
@@ -252,6 +260,15 @@ public static class LevelSaveValidator
                     $"Entity '{entity.entityId}' is outside world bounds.");
                 valid = false;
             }
+        }
+
+        if (totalOreCapacity < data.requiredMinedResources)
+        {
+            AddError(
+                errors,
+                $"Required mined resources ({data.requiredMinedResources}) " +
+                $"exceed total Ore Rock capacity ({totalOreCapacity}).");
+            valid = false;
         }
 
         return valid;

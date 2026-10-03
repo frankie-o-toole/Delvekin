@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 /// <summary>
 /// Portable, versioned representation of one complete level. This is the
@@ -14,7 +15,8 @@ public sealed class LevelSaveData
     public string levelId;
     public string displayName;
     public int totalDwarves = 20;
-    public int requiredRescues = 1;
+    [FormerlySerializedAs("requiredRescues")]
+    public int requiredMinedResources = 1;
     public List<LevelJobRule> jobRules = new();
     public Vector3Int originInChunks;
     public Vector3Int sizeInChunks;
@@ -32,7 +34,7 @@ public sealed class LevelSaveData
             levelId = levelId,
             displayName = displayName,
             totalDwarves = totalDwarves,
-            requiredRescues = requiredRescues,
+            requiredMinedResources = requiredMinedResources,
             jobRules = CloneJobRules(jobRules),
             originInChunks = originInChunks,
             sizeInChunks = sizeInChunks,

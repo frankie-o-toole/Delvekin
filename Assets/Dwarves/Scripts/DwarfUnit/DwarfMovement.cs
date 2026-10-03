@@ -226,11 +226,6 @@ public class DwarfMovement : MonoBehaviour
 
     private void DecideNextMove()
     {
-        if (TryReachExit())
-        {
-            return;
-        }
-
         if (TryBeginMining())
         {
             return;
@@ -455,11 +450,6 @@ public class DwarfMovement : MonoBehaviour
         moveProgress = 0f;
         state = MovementState.Idle;
 
-        if (TryReachExit())
-        {
-            return;
-        }
-
         if (completedState ==
                 MovementState.ClimbingUp ||
             completedState ==
@@ -631,11 +621,6 @@ public class DwarfMovement : MonoBehaviour
         if (fallDistance >= fatalFallDistance)
         {
             Die();
-            return;
-        }
-
-        if (TryReachExit())
-        {
             return;
         }
 
@@ -813,10 +798,6 @@ public class DwarfMovement : MonoBehaviour
             return;
         }
 
-        if (TryReachExit())
-        {
-            return;
-        }
     }
 
     private bool TryApplyDriftPosition(Vector3 proposedPosition)
@@ -1623,30 +1604,6 @@ public class DwarfMovement : MonoBehaviour
         {
             agent.Deactivate();
         }
-    }
-
-    private bool TryReachExit()
-    {
-        if (world.GetVoxel(agent.CurrentVoxel).Type !=
-            VoxelType.ExitPoint)
-        {
-            return false;
-        }
-
-        state = MovementState.Idle;
-
-        if (pool != null)
-        {
-            pool.Release(
-                agent,
-                DwarfReleaseReason.Rescued);
-        }
-        else
-        {
-            agent.Deactivate();
-        }
-
-        return true;
     }
 
     private void CancelMiningReservation()

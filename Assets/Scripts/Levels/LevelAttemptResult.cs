@@ -4,9 +4,10 @@ public sealed class LevelAttemptResult
 {
     public LevelOutcome Outcome { get; }
     public int TotalDwarves { get; }
-    public int RequiredRescues { get; }
+    public int TotalOreCapacity { get; }
+    public int RequiredMinedResources { get; }
     public int Spawned { get; }
-    public int Rescued { get; }
+    public int MinedResources { get; }
     public int Died { get; }
     public int Recalled { get; }
     public int ActiveAtEnd { get; }
@@ -16,9 +17,9 @@ public sealed class LevelAttemptResult
     public int LeftBehind =>
         ActiveAtEnd + UnspawnedAtEnd;
 
-    public double RescuePercentage =>
-        TotalDwarves > 0
-            ? Rescued * 100d / TotalDwarves
+    public double MinedPercentage =>
+        TotalOreCapacity > 0
+            ? MinedResources * 100d / TotalOreCapacity
             : 0d;
 
     public TimeSpan SimulationTime =>
@@ -27,9 +28,10 @@ public sealed class LevelAttemptResult
     public LevelAttemptResult(
         LevelOutcome outcome,
         int totalDwarves,
-        int requiredRescues,
+        int totalOreCapacity,
+        int requiredMinedResources,
         int spawned,
-        int rescued,
+        int minedResources,
         int died,
         int recalled,
         int activeAtEnd,
@@ -38,9 +40,11 @@ public sealed class LevelAttemptResult
     {
         Outcome = outcome;
         TotalDwarves = Math.Max(1, totalDwarves);
-        RequiredRescues = Math.Max(1, requiredRescues);
+        TotalOreCapacity = Math.Max(0, totalOreCapacity);
+        RequiredMinedResources =
+            Math.Max(1, requiredMinedResources);
         Spawned = Math.Max(0, spawned);
-        Rescued = Math.Max(0, rescued);
+        MinedResources = Math.Max(0, minedResources);
         Died = Math.Max(0, died);
         Recalled = Math.Max(0, recalled);
         ActiveAtEnd = Math.Max(0, activeAtEnd);

@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 public class DwarfSpawner : MonoBehaviour
 {
@@ -24,7 +25,8 @@ public class DwarfSpawner : MonoBehaviour
 
     [SerializeField]
     [Min(1)]
-    private int requiredRescues = 1;
+    [FormerlySerializedAs("requiredRescues")]
+    private int requiredMinedResources = 1;
 
     [SerializeField]
     private PuzzleSide initialFacing =
@@ -32,7 +34,8 @@ public class DwarfSpawner : MonoBehaviour
 
     private bool simulationStarted;
     private int spawned;
-    private int rescued;
+    private int minedResources;
+    private int totalOreCapacity;
     private int died;
     private int recalled;
     private int nextSpawnPointIndex;
@@ -41,7 +44,7 @@ public class DwarfSpawner : MonoBehaviour
     private bool retryConfirmationOpen;
     private bool endLevelConfirmationOpen;
     private LevelSimulationState stateBeforeRetryConfirmation;
-    private RescueGoalProgress rescueGoalProgress;
+    private ResourceGoalProgress resourceGoalProgress;
     private readonly LevelSimulationClock simulationClock = new();
     private LevelAttemptResult result;
 
@@ -57,20 +60,20 @@ public class DwarfSpawner : MonoBehaviour
     public event System.Action<LevelSimulationState>
         SimulationStateChanged;
 
-    public event System.Action<RescueGoalProgress>
-        RescueGoalProgressChanged;
+    public event System.Action<ResourceGoalProgress>
+        ResourceGoalProgressChanged;
 
     public event System.Action<LevelSimulationSpeed>
         SimulationSpeedChanged;
 
     public int TotalDwarves => maxDwarves;
-    public int RequiredRescues => GetRequiredRescues();
-    public RescueGoalProgress RescueGoalProgress =>
-        rescueGoalProgress;
-    public bool IsRescueGoalImpossible =>
-        rescueGoalProgress.IsImpossible;
-    public bool IsRescueTargetReached =>
-        rescueGoalProgress.TargetReached;
+    public int RequiredMinedResources => GetRequiredMinedResources();
+    public ResourceGoalProgress ResourceGoalProgress =>
+        resourceGoalProgress;
+    public bool IsResourceGoalImpossible =>
+        resourceGoalProgress.IsImpossible;
+    public bool IsResourceTargetReached =>
+        resourceGoalProgress.TargetReached;
     public double SimulationElapsedSeconds =>
         simulationClock.ElapsedSeconds;
     public TimeSpan SimulationElapsed =>
@@ -127,11 +130,12 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        if (world.GetExitPoints().Count == 0)
+        if (totalOreCapacity < GetRequiredMinedResources())
         {
             Debug.LogError(
-                "Cannot start dwarf simulation: "
-                + "no ExitPoint was found in the level.");
+                "Cannot start dwarf simulation: total Ore Rock capacity " +
+                $"({totalOreCapacity}) is below the required mined " +
+                $"resources ({GetRequiredMinedResources()}).");
 
             return;
         }
@@ -144,7 +148,7 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         spawned = 0;
-        rescued = 0;
+        minedResources = 0;
         died = 0;
         recalled = 0;
         nextSpawnPointIndex = 0;
@@ -157,7 +161,7 @@ public class DwarfSpawner : MonoBehaviour
 
         ApplySimulationSpeed();
 
-        RefreshRescueGoalProgress();
+        RefreshResourceGoalProgress();
 
         SetSimulationState(LevelSimulationState.Running);
 
@@ -197,12 +201,12 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         spawned = 0;
-        rescued = 0;
+        minedResources = 0;
         died = 0;
         recalled = 0;
         nextSpawnPointIndex = 0;
 
-        RefreshRescueGoalProgress();
+        RefreshResourceGoalProgress();
 
         DwarfJobAssignmentManager assignmentManager =
             FindFirstObjectByType<DwarfJobAssignmentManager>();
@@ -226,12 +230,13 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         maxDwarves = Mathf.Max(1, snapshot.TotalDwarves);
-        requiredRescues = Mathf.Clamp(
-            snapshot.RequiredRescues,
+        totalOreCapacity = Mathf.Max(0, snapshot.TotalOreCapacity);
+        requiredMinedResources = Mathf.Clamp(
+            snapshot.RequiredMinedResources,
             1,
             maxDwarves);
 
-        RefreshRescueGoalProgress();
+        RefreshResourceGoalProgress();
 
         DwarfJobInventory inventory =
             FindFirstObjectByType<DwarfJobInventory>();
@@ -251,7 +256,7 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         data.totalDwarves = maxDwarves;
-        data.requiredRescues = GetRequiredRescues();
+        data.requiredMinedResources = GetRequiredMinedResources();
 
         if (!includeSceneJobRules)
         {
@@ -364,7 +369,7 @@ public class DwarfSpawner : MonoBehaviour
         if (endLevelConfirmationOpen ||
             retryConfirmationOpen ||
             SimulationState != LevelSimulationState.Running ||
-            !IsRescueTargetReached)
+            !IsResourceTargetReached)
         {
             return;
         }
@@ -387,7 +392,7 @@ public class DwarfSpawner : MonoBehaviour
     public void ConfirmEndLevel()
     {
         if (!endLevelConfirmationOpen ||
-            !IsRescueTargetReached)
+            !IsResourceTargetReached)
         {
             return;
         }
@@ -423,7 +428,7 @@ public class DwarfSpawner : MonoBehaviour
             if (TrySpawnDwarf())
             {
                 spawned++;
-                RefreshRescueGoalProgress();
+                RefreshResourceGoalProgress();
 
                 yield return new WaitForSeconds(
                     spawnInterval);
@@ -439,7 +444,7 @@ public class DwarfSpawner : MonoBehaviour
 
 
         spawnFinished = true;
-        RefreshRescueGoalProgress();
+        RefreshResourceGoalProgress();
         TryResolveSimulation();
     }
 
@@ -453,13 +458,9 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        if (reason == DwarfReleaseReason.Rescued ||
-            reason == DwarfReleaseReason.Mined)
+        if (reason == DwarfReleaseReason.Mined)
         {
-            // Step 7B keeps the existing rescue presentation operational.
-            // Step 7C replaces this compatibility count with mined-resource
-            // terminology and authored resource goals.
-            rescued++;
+            minedResources++;
         }
         else if (reason == DwarfReleaseReason.Died)
         {
@@ -470,20 +471,20 @@ public class DwarfSpawner : MonoBehaviour
             recalled++;
         }
 
-        RefreshRescueGoalProgress();
+        RefreshResourceGoalProgress();
         TryResolveSimulation();
     }
 
     private void TryResolveSimulation()
     {
         if (!spawnFinished ||
-            rescued + died + recalled < spawned)
+            minedResources + died + recalled < spawned)
         {
             return;
         }
 
         CompleteSimulation(
-            IsRescueTargetReached
+            IsResourceTargetReached
                 ? LevelOutcome.Success
                 : LevelOutcome.Failure);
     }
@@ -652,17 +653,17 @@ public class DwarfSpawner : MonoBehaviour
 
             bool targetReached =
                 !simulationResolved &&
-                IsRescueTargetReached;
+                IsResourceTargetReached;
 
             string status =
                 simulationResolved
                     ? (Outcome == LevelOutcome.Success
                         ? "LEVEL COMPLETE"
                         : "LEVEL FAILED")
-                    : $"Rescued: {rescued}/{GetRequiredRescues()}  "
+                    : $"Mined: {minedResources}/{GetRequiredMinedResources()}  "
                       + $"Lost: {died + recalled}  "
-                      + $"Active: {rescueGoalProgress.Active}  "
-                      + $"Waiting: {rescueGoalProgress.Unspawned}";
+                      + $"Active: {resourceGoalProgress.ActiveDwarves}  "
+                      + $"Waiting: {resourceGoalProgress.UnspawnedDwarves}";
 
             status += $"  Time: {FormatSimulationTime()}";
 
@@ -670,7 +671,7 @@ public class DwarfSpawner : MonoBehaviour
             {
                 status = "✓ TARGET REACHED  " + status;
             }
-            else if (!simulationResolved && IsRescueGoalImpossible)
+            else if (!simulationResolved && IsResourceGoalImpossible)
             {
                 status += "  (UNSOLVABLE)";
             }
@@ -750,10 +751,10 @@ public class DwarfSpawner : MonoBehaviour
         }
     }
 
-    private int GetRequiredRescues()
+    private int GetRequiredMinedResources()
     {
         return Mathf.Clamp(
-            requiredRescues,
+            requiredMinedResources,
             1,
             Mathf.Max(1, maxDwarves));
     }
@@ -861,11 +862,11 @@ public class DwarfSpawner : MonoBehaviour
                 panel.y + 34f,
                 width - padding * 2f,
                 76f),
-            $"Rescued: {rescued}/{GetRequiredRescues()}\n" +
+            $"Mined: {minedResources}/{GetRequiredMinedResources()}\n" +
             $"Active: {pool.ActiveCount}   " +
             $"Lost: {died + recalled}\n" +
-            (IsRescueGoalImpossible
-                ? "Status: rescue target is no longer reachable.\n"
+            (IsResourceGoalImpossible
+                ? "Status: resource target is no longer reachable.\n"
                 : string.Empty) +
             "All progress in this attempt will be reset.");
 
@@ -895,30 +896,31 @@ public class DwarfSpawner : MonoBehaviour
         }
     }
 
-    private void RefreshRescueGoalProgress()
+    private void RefreshResourceGoalProgress()
     {
         int active = pool != null
             ? pool.ActiveCount
             : 0;
 
-        RescueGoalProgress next = new(
-            rescued,
+        ResourceGoalProgress next = new(
+            minedResources,
             active,
             Mathf.Max(0, maxDwarves - spawned),
-            GetRequiredRescues());
+            GetRequiredMinedResources());
 
         bool changed =
-            next.Rescued != rescueGoalProgress.Rescued ||
-            next.Active != rescueGoalProgress.Active ||
-            next.Unspawned != rescueGoalProgress.Unspawned ||
-            next.Required != rescueGoalProgress.Required;
+            next.Mined != resourceGoalProgress.Mined ||
+            next.ActiveDwarves != resourceGoalProgress.ActiveDwarves ||
+            next.UnspawnedDwarves !=
+                resourceGoalProgress.UnspawnedDwarves ||
+            next.Required != resourceGoalProgress.Required;
 
-        rescueGoalProgress = next;
+        resourceGoalProgress = next;
 
         if (changed)
         {
-            RescueGoalProgressChanged?.Invoke(
-                rescueGoalProgress);
+            ResourceGoalProgressChanged?.Invoke(
+                resourceGoalProgress);
         }
     }
 
@@ -967,9 +969,9 @@ public class DwarfSpawner : MonoBehaviour
                 panel.y + 38f,
                 width - padding * 2f,
                 125f),
-            $"Rescued: {result.Rescued}/{result.TotalDwarves} " +
-            $"({result.RescuePercentage:0.#}%)\n" +
-            $"Required: {result.RequiredRescues}\n" +
+            $"Mined: {result.MinedResources}/{result.TotalOreCapacity} " +
+            $"({result.MinedPercentage:0.#}%)\n" +
+            $"Required: {result.RequiredMinedResources}\n" +
             $"Lost: {result.Died + result.Recalled}\n" +
             $"Left behind: {result.LeftBehind}\n" +
             $"Simulation time: " +
@@ -1045,9 +1047,10 @@ public class DwarfSpawner : MonoBehaviour
                 panel.y + 34f,
                 width - padding * 2f,
                 84f),
-            $"The rescue target has been reached.\n" +
-            $"Active dwarves: {rescueGoalProgress.Active}\n" +
-            $"Waiting to spawn: {rescueGoalProgress.Unspawned}\n" +
+            $"The resource target has been reached.\n" +
+            $"Active dwarves: {resourceGoalProgress.ActiveDwarves}\n" +
+            $"Waiting to spawn: " +
+            $"{resourceGoalProgress.UnspawnedDwarves}\n" +
             "Ending now leaves these dwarves behind.");
 
         float buttonY = panel.yMax - 50f;
@@ -1094,13 +1097,14 @@ public class DwarfSpawner : MonoBehaviour
         result = new LevelAttemptResult(
             outcome,
             maxDwarves,
-            GetRequiredRescues(),
+            totalOreCapacity,
+            GetRequiredMinedResources(),
             spawned,
-            rescued,
+            minedResources,
             died,
             recalled,
-            rescueGoalProgress.Active,
-            rescueGoalProgress.Unspawned,
+            resourceGoalProgress.ActiveDwarves,
+            resourceGoalProgress.UnspawnedDwarves,
             simulationClock.ElapsedSeconds);
 
         SetSimulationState(LevelSimulationState.Completed);
