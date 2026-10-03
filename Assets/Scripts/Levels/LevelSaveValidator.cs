@@ -213,6 +213,30 @@ public static class LevelSaveValidator
                 continue;
             }
 
+            if (entity.type == LevelEntityType.OreRock)
+            {
+                if (entity.oreCapacity <= 0)
+                {
+                    AddError(
+                        errors,
+                        $"Ore Rock '{entity.entityId}' must contain at " +
+                        "least one unit of ore.");
+                    valid = false;
+                }
+
+                if (entity.hasVisualPrefab &&
+                    string.IsNullOrWhiteSpace(
+                        entity.visualPrefabResourcePath))
+                {
+                    AddError(
+                        errors,
+                        $"Ore Rock '{entity.entityId}' uses a visual " +
+                        "prefab outside a Resources folder. Portable saves " +
+                        "require a Resources-relative prefab path.");
+                    valid = false;
+                }
+            }
+
             Vector3Int entityMinimum = Vector3Int.FloorToInt(
                 entity.position - (Vector3)size * 0.5f +
                 Vector3.one * 0.001f);

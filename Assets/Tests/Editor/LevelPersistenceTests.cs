@@ -59,13 +59,16 @@ public sealed class LevelPersistenceTests
         Assert.That(actual.voxels[1].Type, Is.EqualTo(VoxelType.Water));
         Assert.That(actual.voxels[1].Amount,
             Is.EqualTo(WaterAmount.Half));
-        Assert.That(actual.entities.Count, Is.EqualTo(3));
+        Assert.That(actual.entities.Count, Is.EqualTo(4));
         Assert.That(actual.entities[0].entityId, Is.EqualTo("source-a"));
         Assert.That(actual.entities[0].supplyUnitsPerTick, Is.EqualTo(64));
         Assert.That(actual.entities[1].outletCapacityOverride,
             Is.EqualTo(12));
         Assert.That(actual.entities[2].spawnMarkerLocalPosition,
             Is.EqualTo(new Vector3(0.5f, 0f, 1.5f)));
+        Assert.That(actual.entities[3].type,
+            Is.EqualTo(LevelEntityType.OreRock));
+        Assert.That(actual.entities[3].oreCapacity, Is.EqualTo(60));
     }
 
     [Test]
@@ -96,9 +99,11 @@ public sealed class LevelPersistenceTests
             Assert.That(snapshot.GameplayBoundsMinimum,
                 Is.EqualTo(new Vector3Int(-10, 1, 35)));
             Assert.That(snapshot.Voxels.Count, Is.EqualTo(3));
-            Assert.That(snapshot.Entities.Count, Is.EqualTo(3));
+            Assert.That(snapshot.Entities.Count, Is.EqualTo(4));
             Assert.That(snapshot.Entities[2].SpawnVoxel,
                 Is.EqualTo(new Vector3Int(-3, 2, 39)));
+            Assert.That(snapshot.TotalOreCapacity, Is.EqualTo(60));
+            Assert.That(restored.TotalOreCapacity, Is.EqualTo(60));
         }
         finally
         {
@@ -155,6 +160,20 @@ public sealed class LevelPersistenceTests
             Has.Some.Contains("Duplicate voxel record"));
         Assert.That(errors,
             Has.Some.Contains("unique, non-empty ID"));
+    }
+
+    [Test]
+    public void ValidatorRejectsEmptyOreRock()
+    {
+        LevelSaveData data = CreateCompleteLevel();
+        data.entities[3].oreCapacity = 0;
+        List<string> errors = new();
+
+        bool valid = LevelSaveValidator.Validate(data, errors);
+
+        Assert.That(valid, Is.False);
+        Assert.That(errors,
+            Has.Some.Contains("must contain at least one unit of ore"));
     }
 
     [Test]
@@ -250,6 +269,15 @@ public sealed class LevelPersistenceTests
                     facing = PuzzleSide.North,
                     spawnMarkerLocalPosition =
                         new Vector3(0.5f, 0f, 1.5f)
+                },
+                new()
+                {
+                    entityId = "ore-a",
+                    type = LevelEntityType.OreRock,
+                    position = new Vector3(3f, 4f, 48f),
+                    volumeSize = new Vector3Int(6, 8, 6),
+                    facing = PuzzleSide.South,
+                    oreCapacity = 60
                 }
             }
         };

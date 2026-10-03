@@ -5,7 +5,8 @@ public enum LevelEntityType : byte
 {
     WaterSource,
     WaterOutlet,
-    SpawnHouse
+    SpawnHouse,
+    OreRock
 }
 
 /// <summary>
@@ -56,6 +57,10 @@ public sealed class LevelEntityRecord
     [SerializeField]
     private Vector3 spawnMarkerLocalPosition;
 
+    [Min(1)]
+    [SerializeField]
+    private int oreCapacity = 60;
+
     public string EntityId => entityId;
     public LevelEntityType Type => type;
     public Vector3 Position => position;
@@ -76,6 +81,7 @@ public sealed class LevelEntityRecord
         visualPrefabResourcePath;
     public Vector3 SpawnMarkerLocalPosition =>
         spawnMarkerLocalPosition;
+    public int OreCapacity => Mathf.Max(1, oreCapacity);
 
     public Vector3Int SpawnVoxel =>
         Vector3Int.FloorToInt(
@@ -150,6 +156,29 @@ public sealed class LevelEntityRecord
         };
     }
 
+    public static LevelEntityRecord FromOreRock(
+        OreRockAuthoring oreRock)
+    {
+        if (oreRock == null)
+        {
+            return null;
+        }
+
+        return new LevelEntityRecord
+        {
+            entityId = oreRock.EntityId,
+            type = LevelEntityType.OreRock,
+            position = oreRock.transform.position,
+            rotation = oreRock.transform.rotation,
+            volumeSize = oreRock.AuthoringSize,
+            facing = oreRock.Facing,
+            visualPrefab = oreRock.VisualPrefab,
+            visualPrefabResourcePath =
+                GetResourcePath(oreRock.VisualPrefab),
+            oreCapacity = oreRock.Capacity
+        };
+    }
+
     public static LevelEntityRecord FromSaveRecord(
         LevelEntitySaveRecord saved)
     {
@@ -173,7 +202,8 @@ public sealed class LevelEntityRecord
             visualPrefabResourcePath =
                 saved.visualPrefabResourcePath,
             spawnMarkerLocalPosition =
-                saved.spawnMarkerLocalPosition
+                saved.spawnMarkerLocalPosition,
+            oreCapacity = saved.oreCapacity
         };
 
         record.EnsureValid();
@@ -325,7 +355,8 @@ public sealed class LevelEntityRecord
             visualPrefab = visualPrefab,
             visualPrefabResourcePath = visualPrefabResourcePath,
             spawnMarkerLocalPosition =
-                spawnMarkerLocalPosition
+                spawnMarkerLocalPosition,
+            oreCapacity = oreCapacity
         };
     }
 
@@ -375,6 +406,7 @@ public sealed class LevelEntityRecord
 
         supplyUnitsPerTick = Mathf.Max(1, supplyUnitsPerTick);
         outletCapacityOverride = Mathf.Max(0, outletCapacityOverride);
+        oreCapacity = Mathf.Max(1, oreCapacity);
 
         if (rotation == default)
         {

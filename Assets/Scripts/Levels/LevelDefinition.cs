@@ -7,7 +7,7 @@ using UnityEngine;
     menuName = "Delvekin/Level Definition")]
 public sealed class LevelDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 7;
+    public const int CurrentSchemaVersion = 8;
 
     [HideInInspector]
     [SerializeField]
@@ -77,6 +77,7 @@ public sealed class LevelDefinition : ScriptableObject
         GameplayBoundsMinimum + GameplayBoundsSize;
     public IReadOnlyList<LevelVoxelRecord> Voxels => voxels;
     public IReadOnlyList<LevelEntityRecord> Entities => entities;
+    public int TotalOreCapacity => CalculateTotalOreCapacity(entities);
 
     public RuntimeSnapshot CreateRuntimeSnapshot()
     {
@@ -692,6 +693,7 @@ public sealed class LevelDefinition : ScriptableObject
             // Version 5 adds exact voxel-space gameplay/kill bounds.
             // Version 6 is the unified, portable level-save schema.
             // Version 7 adds stable identity and authored gameplay rules.
+            // Version 8 adds finite Ore Rock authoring entities.
             schemaVersion = CurrentSchemaVersion;
         }
 
@@ -746,6 +748,28 @@ public sealed class LevelDefinition : ScriptableObject
         return result;
     }
 
+    private static int CalculateTotalOreCapacity(
+        IEnumerable<LevelEntityRecord> source)
+    {
+        int total = 0;
+
+        if (source == null)
+        {
+            return total;
+        }
+
+        foreach (LevelEntityRecord entity in source)
+        {
+            if (entity != null &&
+                entity.Type == LevelEntityType.OreRock)
+            {
+                total += entity.OreCapacity;
+            }
+        }
+
+        return total;
+    }
+
     private static List<LevelJobRule> CloneJobRules(
         IEnumerable<LevelJobRule> source)
     {
@@ -793,6 +817,8 @@ public sealed class LevelDefinition : ScriptableObject
         public Vector3Int GameplayBoundsSize { get; }
         public IReadOnlyList<LevelVoxelRecord> Voxels { get; }
         public IReadOnlyList<LevelEntityRecord> Entities { get; }
+        public int TotalOreCapacity =>
+            CalculateTotalOreCapacity(Entities);
 
         public RuntimeSnapshot(
             int schemaVersion,

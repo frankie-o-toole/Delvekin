@@ -179,6 +179,15 @@ public sealed class LevelAuthoringRootEditor : Editor
                 CreateSpawnHouse(root);
             }
 
+            if (GUILayout.Button("Create Ore Rock"))
+            {
+                CreateOreRock(root);
+            }
+
+            EditorGUILayout.LabelField(
+                "Total Ore Capacity",
+                root.Definition.TotalOreCapacity.ToString());
+
             EditorGUILayout.BeginHorizontal();
 
             if (GUILayout.Button("Capture Entities"))
@@ -374,6 +383,60 @@ public sealed class LevelAuthoringRootEditor : Editor
 
         Selection.activeGameObject = houseObject;
         EditorGUIUtility.PingObject(houseObject);
+        SceneView.RepaintAll();
+    }
+
+    private static void CreateOreRock(
+        LevelAuthoringRoot root)
+    {
+        Transform entityRoot = root.FindAuthoringEntitiesRoot();
+
+        if (entityRoot == null)
+        {
+            GameObject parent = new("Authoring Entities");
+
+            Undo.RegisterCreatedObjectUndo(
+                parent,
+                "Create Authoring Entities Root");
+
+            parent.transform.SetParent(root.transform, false);
+            entityRoot = parent.transform;
+        }
+
+        Vector3Int minimum = GetSuggestedPortalVoxel(root);
+        Vector3Int size = new(6, 8, 6);
+
+        GameObject oreRockObject = new("Ore Rock");
+
+        Undo.RegisterCreatedObjectUndo(
+            oreRockObject,
+            "Create Ore Rock");
+
+        oreRockObject.transform.SetParent(entityRoot, true);
+
+        OreRockAuthoring oreRock =
+            oreRockObject.AddComponent<OreRockAuthoring>();
+
+        oreRock.ConfigureIdentity(null, root.Definition);
+        oreRock.Configure(
+            root.World,
+            (Vector3)minimum + (Vector3)size * 0.5f,
+            Quaternion.identity,
+            size,
+            PuzzleSide.North,
+            oreCapacity: 60,
+            configuredVisualPrefab: null,
+            isRuntimeCopy: false);
+
+        Undo.RecordObject(
+            root.Definition,
+            "Create Ore Rock Record");
+
+        root.SynchronizeOreRock(oreRock);
+        EditorUtility.SetDirty(root.Definition);
+
+        Selection.activeGameObject = oreRockObject;
+        EditorGUIUtility.PingObject(oreRockObject);
         SceneView.RepaintAll();
     }
 

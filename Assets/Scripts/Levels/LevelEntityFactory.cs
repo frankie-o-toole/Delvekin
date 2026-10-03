@@ -33,6 +33,12 @@ public static class LevelEntityFactory
                     world,
                     parent,
                     runtimeCopy),
+            LevelEntityType.OreRock =>
+                CreateOreRock(
+                    record,
+                    world,
+                    parent,
+                    runtimeCopy),
             _ => null
         };
     }
@@ -152,5 +158,45 @@ public static class LevelEntityFactory
 
         instance.SetActive(true);
         return house;
+    }
+
+    public static OreRockAuthoring CreateOreRock(
+        LevelEntityRecord record,
+        VoxelWorld world,
+        Transform parent,
+        bool runtimeCopy)
+    {
+        if (record == null ||
+            record.Type != LevelEntityType.OreRock)
+        {
+            return null;
+        }
+
+        record.EnsureValid();
+
+        string objectName = runtimeCopy
+            ? "Ore Rock (Runtime)"
+            : "Ore Rock";
+
+        GameObject instance = new(objectName);
+        instance.SetActive(false);
+        instance.transform.SetParent(parent, true);
+
+        OreRockAuthoring oreRock =
+            instance.AddComponent<OreRockAuthoring>();
+
+        oreRock.ConfigureIdentity(record.EntityId);
+        oreRock.Configure(
+            world,
+            record.Position,
+            record.Rotation,
+            record.VolumeSize,
+            record.Facing,
+            record.OreCapacity,
+            record.VisualPrefab,
+            runtimeCopy);
+
+        instance.SetActive(true);
+        return oreRock;
     }
 }

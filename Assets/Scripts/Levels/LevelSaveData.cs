@@ -96,6 +96,7 @@ public sealed class LevelEntitySaveRecord
     public bool hasVisualPrefab;
     public string visualPrefabResourcePath;
     public Vector3 spawnMarkerLocalPosition;
+    public int oreCapacity = 60;
 
     public static LevelEntitySaveRecord FromRuntime(
         LevelEntityRecord record)
@@ -121,7 +122,8 @@ public sealed class LevelEntitySaveRecord
             visualPrefabResourcePath =
                 record.VisualPrefabResourcePath,
             spawnMarkerLocalPosition =
-                record.SpawnMarkerLocalPosition
+                record.SpawnMarkerLocalPosition,
+            oreCapacity = record.OreCapacity
         };
     }
 
@@ -146,7 +148,8 @@ public sealed class LevelEntitySaveRecord
             outletCapacityOverride = outletCapacityOverride,
             hasVisualPrefab = hasVisualPrefab,
             visualPrefabResourcePath = visualPrefabResourcePath,
-            spawnMarkerLocalPosition = spawnMarkerLocalPosition
+            spawnMarkerLocalPosition = spawnMarkerLocalPosition,
+            oreCapacity = oreCapacity
         };
     }
 }

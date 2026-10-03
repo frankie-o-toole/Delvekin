@@ -188,6 +188,12 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
                         record.EntityId,
                         levelDefinition);
                 }
+                else if (entity is OreRockAuthoring oreRock)
+                {
+                    oreRock.ConfigureIdentity(
+                        record.EntityId,
+                        levelDefinition);
+                }
             }
         }
         finally
@@ -267,6 +273,35 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
             }
         }
 
+        if (entityRoot != null)
+        {
+            OreRockAuthoring[] oreRocks =
+                entityRoot.GetComponentsInChildren<OreRockAuthoring>(
+                    includeInactive: true);
+
+            foreach (OreRockAuthoring oreRock in oreRocks)
+            {
+                if (oreRock == null ||
+                    (oreRock.AuthoringDefinition != null &&
+                     oreRock.AuthoringDefinition != levelDefinition))
+                {
+                    continue;
+                }
+
+                oreRock.ConfigureIdentity(
+                    oreRock.EntityId,
+                    levelDefinition);
+
+                LevelEntityRecord record =
+                    oreRock.CreateEntityRecord();
+
+                if (record != null)
+                {
+                    records.Add(record);
+                }
+            }
+        }
+
         levelDefinition.ReplaceEntities(records);
         return true;
     }
@@ -318,6 +353,34 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
 
         LevelEntityRecord record =
             house.CreateEntityRecord();
+
+        if (record == null)
+        {
+            return false;
+        }
+
+        levelDefinition.UpsertEntity(record);
+        return true;
+    }
+
+    public bool SynchronizeOreRock(OreRockAuthoring oreRock)
+    {
+        if (Application.isPlaying ||
+            rebuildingAuthoringEntities ||
+            levelDefinition == null ||
+            oreRock == null ||
+            (oreRock.AuthoringDefinition != null &&
+             oreRock.AuthoringDefinition != levelDefinition))
+        {
+            return false;
+        }
+
+        oreRock.ConfigureIdentity(
+            oreRock.EntityId,
+            levelDefinition);
+
+        LevelEntityRecord record =
+            oreRock.CreateEntityRecord();
 
         if (record == null)
         {
