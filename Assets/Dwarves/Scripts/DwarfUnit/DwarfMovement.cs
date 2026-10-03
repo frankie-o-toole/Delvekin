@@ -163,7 +163,7 @@ public class DwarfMovement : MonoBehaviour
 
         if (HasCompletelyLeftGameplayBounds())
         {
-            Die("left the gameplay bounds");
+            Die();
             return;
         }
 
@@ -594,10 +594,6 @@ public class DwarfMovement : MonoBehaviour
         int fallDistance =
             fallStartY -
             agent.CurrentVoxel.y;
-
-        Debug.Log(
-            $"{agent.name} landed after falling "
-            + $"{fallDistance} voxel(s).");
 
         if (fallDistance >= fatalFallDistance)
         {
@@ -1244,10 +1240,6 @@ public class DwarfMovement : MonoBehaviour
             return false;
         }
 
-        Debug.Log(
-            $"{agent.name} drowned after travelling " +
-            $"{deepWaterDistanceTravelled:0.0} voxel(s) in deep water.");
-
         Die();
         return true;
     }
@@ -1518,13 +1510,8 @@ public class DwarfMovement : MonoBehaviour
             occupiedMaximumExclusive);
     }
 
-    private void Die(string reason = null)
+    private void Die()
     {
-        Debug.Log(
-            string.IsNullOrWhiteSpace(reason)
-                ? $"{agent.name} died!"
-                : $"{agent.name} died: {reason}.");
-
         state = MovementState.Idle;
 
         if (pool != null)
@@ -1545,9 +1532,6 @@ public class DwarfMovement : MonoBehaviour
         {
             return false;
         }
-
-        Debug.Log(
-            $"{agent.name} reached the exit!");
 
         state = MovementState.Idle;
 

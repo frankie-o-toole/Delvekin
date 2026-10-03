@@ -236,8 +236,8 @@ public sealed class TunnellerJob :
             TryFindNonDiggableVoxel(
                 context.World,
                 immediateOpening,
-                out Vector3Int immediateBlockedPosition,
-                out VoxelType immediateBlockedType);
+                out _,
+                out _);
 
 
         /*
@@ -247,9 +247,6 @@ public sealed class TunnellerJob :
         if (!foundDiggableMaterial &&
             !foundNonDiggableMaterial)
         {
-            Debug.Log(
-                "[Tunneller] No wall found. Continue walking.");
-
             return false;
         }
 
@@ -260,13 +257,6 @@ public sealed class TunnellerJob :
          */
         if (foundNonDiggableMaterial)
         {
-
-            Debug.LogWarning(
-                $"[Tunneller] {context.Agent.name} stopped before "
-                + $"digging: {immediateBlockedType} at "
-                + $"{immediateBlockedPosition} blocks the immediate opening.",
-                context.Agent);
-
             IsComplete = true;
             return true;
         }
@@ -284,15 +274,9 @@ public sealed class TunnellerJob :
         if (TryFindNonDiggableVoxel(
                 context.World,
                 eventualFinishedArch,
-                out Vector3Int blockedPosition,
-                out VoxelType blockedType))
+                out _,
+                out _))
         {
-            Debug.LogWarning(
-                $"[Tunneller] {context.Agent.name} stopped before "
-                + $"digging: {blockedType} at {blockedPosition} blocks "
-                + "the completed tunnel arch.",
-                context.Agent);
-
             IsComplete = true;
             return true;
         }
@@ -301,11 +285,6 @@ public sealed class TunnellerJob :
                 context.World,
                 nextAnchor))
         {
-            Debug.LogWarning(
-                $"[Tunneller] {context.Agent.name} stopped before "
-                + $"digging: next anchor {nextAnchor} has no support.",
-                context.Agent);
-
             IsComplete = true;
             return true;
         }

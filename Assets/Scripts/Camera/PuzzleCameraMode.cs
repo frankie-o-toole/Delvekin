@@ -329,10 +329,6 @@ public class PuzzleCameraMode :
         currentSide =
             side;
 
-        Debug.Log(
-            "Current side is " +
-            side);
-
         currentDistance =
             Mathf.Clamp(
                 startDistance,

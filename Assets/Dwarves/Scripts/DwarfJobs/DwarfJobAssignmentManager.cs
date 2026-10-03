@@ -555,13 +555,6 @@ public class DwarfJobAssignmentManager : MonoBehaviour
             stoppedJobType,
             dwarfRecalled);
 
-        if (dwarfRecalled)
-        {
-            Debug.Log(
-                $"Recalled {target.name} after stopping "
-                + $"{stoppedJobType}.");
-        }
-
         ClearSelectedDwarf();
         ClearStopJobSelection();
     }
@@ -569,10 +562,6 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     private void ReportFailure(
         string failureReason)
     {
-        Debug.LogWarning(
-            $"Job assignment failed: "
-            + failureReason);
-
         AssignmentFailed?.Invoke(
             failureReason);
     }

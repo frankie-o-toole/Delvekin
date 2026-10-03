@@ -36,11 +36,6 @@ public static class LevelGenerator
         AddGameplayFormations(data);
         AddRooftopEntry(data);
 
-        Debug.Log(
-            $"Generated connected cave {GetWorldWidth(data)}x"
-            + $"{GetWorldHeight(data)}x{GetWorldDepth(data)} "
-            + $"from seed {seed}. No fluids were generated.");
-
         return data;
     }
 
@@ -370,7 +365,7 @@ public static class LevelGenerator
             }
         }
 
-        int generatedStepCount = AddGiantEntrySteps(
+        AddGiantEntrySteps(
             data,
             centreX,
             holeCentreZ,
@@ -383,13 +378,9 @@ public static class LevelGenerator
             spawnAnchor,
             VoxelType.SpawnPoint);
 
-        Debug.Log(
-            $"Generated elevated SpawnPoint at {spawnAnchor}, facing "
-            + $"{generatedStepCount} descending Dirt platforms "
-            + "with eight-voxel drops.");
     }
 
-    private static int AddGiantEntrySteps(
+    private static void AddGiantEntrySteps(
         LevelData data,
         int centreX,
         int holeCentreZ,
@@ -473,7 +464,6 @@ public static class LevelGenerator
             stepStartZ = stepEndZ + 1;
         }
 
-        return stepCount;
     }
 
     private static void AddInteriorSpawnPoint(LevelData data)
@@ -491,9 +481,6 @@ public static class LevelGenerator
 
         SetVoxel(data, spawnAnchor, VoxelType.SpawnPoint);
 
-        Debug.Log(
-            $"Generated interior SpawnPoint at {spawnAnchor}; "
-            + "the level is too small for the rooftop entry.");
     }
 
     private static bool IsBoundaryVoxel(

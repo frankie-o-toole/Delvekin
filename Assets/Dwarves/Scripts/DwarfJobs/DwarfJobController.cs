@@ -93,13 +93,8 @@ public class DwarfJobController : MonoBehaviour
 
         if (movement != null &&
             !movement.CanPerformJobInCurrentWater(
-                out string waterFailureReason))
+                out _))
         {
-            Debug.Log(
-                $"[{activeJob.Type}] {agent.name} stopped: " +
-                waterFailureReason,
-                agent);
-
             EndActiveJob(
                 DwarfJobEndReason.Completed);
 

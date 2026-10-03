@@ -502,10 +502,6 @@ public class DwarfSpawner : MonoBehaviour
                 (index + 1)
                 % spawnPoints.Count;
 
-            Debug.Log(
-                $"Spawned {dwarf.name} at anchor "
-                + $"{spawnVoxel}, facing {spawnFacing}.");
-
             return true;
         }
 
@@ -1002,10 +998,5 @@ public class DwarfSpawner : MonoBehaviour
 
         SetSimulationState(LevelSimulationState.Completed);
 
-        Debug.Log(
-            outcome == LevelOutcome.Success
-                ? $"Level complete! Rescued {rescued}/{spawned} dwarves."
-                : $"Level failed. Rescued {rescued}/{spawned} dwarves; "
-                  + $"required {GetRequiredRescues()}.");
     }
 }

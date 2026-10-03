@@ -282,7 +282,6 @@ public sealed class WaterSystem : IDisposable
         if (sources.Remove(position))
         {
             topologyDirty = true;
-            Debug.Log($"Removed Water source at {position}.");
             return true;
         }
 
@@ -300,10 +299,6 @@ public sealed class WaterSystem : IDisposable
             Vector3Int.forward);
 
         topologyDirty = true;
-
-        Debug.Log(
-            $"Added Water source at {position}, " +
-            $"maximum level Y={maximumLevelY}.");
 
         return true;
     }

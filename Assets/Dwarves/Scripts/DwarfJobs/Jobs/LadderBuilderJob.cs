@@ -298,12 +298,8 @@ public sealed class LadderBuilderJob :
 
     private void FinishBuilding(
         DwarfJobContext context,
-        string reason)
+        string _)
     {
-        Debug.Log(
-            $"[Ladder Builder] {context.Agent.name} stopped: {reason}",
-            context.Agent);
-
         context.Movement.FinishLadderBuilding(
             outwardSide);
 

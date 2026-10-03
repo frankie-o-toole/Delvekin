@@ -187,13 +187,8 @@ public sealed class StairBuilderJob : IDwarfJob
                 stairPiece,
                 requireTerrainFoundation:
                     !hasPlacedFirstPiece,
-                out string failureReason))
+                out _))
         {
-            Debug.Log(
-                $"[Stair Builder] {context.Agent.name} stopped: "
-                + failureReason,
-                context.Agent);
-
             IsComplete = true;
             return;
         }
@@ -235,11 +230,6 @@ public sealed class StairBuilderJob : IDwarfJob
                 context.World,
                 targetAnchor))
         {
-            Debug.Log(
-                $"[Stair Builder] {context.Agent.name} stopped: "
-                + "the dwarf cannot fit at the next stair position.",
-                context.Agent);
-
             IsComplete = true;
             return;
         }
@@ -248,11 +238,6 @@ public sealed class StairBuilderJob : IDwarfJob
                 context.World,
                 targetAnchor))
         {
-            Debug.Log(
-                $"[Stair Builder] {context.Agent.name} stopped: "
-                + "the next stair position has no support.",
-                context.Agent);
-
             IsComplete = true;
             return;
         }

@@ -155,9 +155,6 @@ public class DirectionAltererJob : IDwarfJob
 
         DirectionAltererRegistry.Register(this);
 
-        Debug.Log(
-            $"{context.Agent.name} became a Direction Alterer "
-            + $"pointing {OutputDirection}.");
     }
 
     public void Tick(

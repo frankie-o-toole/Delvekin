@@ -342,12 +342,8 @@ public sealed class DiggerJob : IDwarfJob
 
     private void FailAttempt(
         DwarfJobContext context,
-        string reason)
+        string _)
     {
-        Debug.Log(
-            $"[Digger] {context.Agent.name} failed: {reason}",
-            context.Agent);
-
         /*
          * This is an active job, so completion does not refund
          * its inventory token.
