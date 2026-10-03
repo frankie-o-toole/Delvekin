@@ -9,6 +9,7 @@ public sealed class LevelDefinition : ScriptableObject
 {
     public const int CurrentSchemaVersion = 7;
 
+    [HideInInspector]
     [SerializeField]
     private int schemaVersion = CurrentSchemaVersion;
 
@@ -704,7 +705,12 @@ public sealed class LevelDefinition : ScriptableObject
             requiredRescues,
             1,
             totalDwarves);
-        jobRules = NormalizeJobRules(jobRules);
+        jobRules ??= new List<LevelJobRule>();
+
+        foreach (LevelJobRule rule in jobRules)
+        {
+            rule?.EnsureValid();
+        }
         sizeInChunks = ClampSize(sizeInChunks);
         EnsureGameplayBoundsInsideWorld();
         voxels ??= new List<LevelVoxelRecord>();
@@ -763,29 +769,6 @@ public sealed class LevelDefinition : ScriptableObject
         }
 
         return result;
-    }
-
-    private static List<LevelJobRule> NormalizeJobRules(
-        IEnumerable<LevelJobRule> source)
-    {
-        Dictionary<DwarfJobType, LevelJobRule> byType = new();
-
-        if (source != null)
-        {
-            foreach (LevelJobRule rule in source)
-            {
-                if (rule == null || rule.jobType == DwarfJobType.None)
-                {
-                    continue;
-                }
-
-                LevelJobRule clone = rule.Clone();
-                clone.EnsureValid();
-                byType[clone.jobType] = clone;
-            }
-        }
-
-        return new List<LevelJobRule>(byType.Values);
     }
 
     private static Vector3Int ClampSize(Vector3Int size)
