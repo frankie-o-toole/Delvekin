@@ -44,6 +44,7 @@ public class DwarfSpawner : MonoBehaviour
     private LevelSimulationState stateBeforeRetryConfirmation;
     private RescueGoalProgress rescueGoalProgress;
     private readonly LevelSimulationClock simulationClock = new();
+    private LevelAttemptResult result;
 
     public LevelSimulationState SimulationState { get; private set; } =
         LevelSimulationState.Preparation;
@@ -69,6 +70,9 @@ public class DwarfSpawner : MonoBehaviour
         simulationClock.ElapsedSeconds;
     public TimeSpan SimulationElapsed =>
         simulationClock.Elapsed;
+    public LevelAttemptResult Result => result;
+
+    public event System.Action BackToCityRequested;
 
     private void OnEnable()
     {
@@ -144,6 +148,7 @@ public class DwarfSpawner : MonoBehaviour
         simulationStarted = true;
         Outcome = LevelOutcome.Undecided;
         simulationClock.Reset();
+        result = null;
 
         RefreshRescueGoalProgress();
 
@@ -169,6 +174,7 @@ public class DwarfSpawner : MonoBehaviour
         spawnFinished = false;
         Outcome = LevelOutcome.Undecided;
         simulationClock.Reset();
+        result = null;
 
         if (pool != null)
         {
@@ -361,6 +367,26 @@ public class DwarfSpawner : MonoBehaviour
 
         endLevelConfirmationOpen = false;
         CompleteSimulation(LevelOutcome.Success);
+    }
+
+    public void RequestBackToCity()
+    {
+        if (SimulationState != LevelSimulationState.Completed ||
+            result == null)
+        {
+            return;
+        }
+
+        if (BackToCityRequested == null)
+        {
+            Debug.LogWarning(
+                "Back to Dwarf City is not connected yet. "
+                + "The result remains pending on this screen.",
+                this);
+            return;
+        }
+
+        BackToCityRequested.Invoke();
     }
 
     private IEnumerator SpawnLoop()
@@ -581,6 +607,12 @@ public class DwarfSpawner : MonoBehaviour
                 StartSimulation();
             }
         }
+        else if (SimulationState == LevelSimulationState.Completed)
+        {
+            DrawResultScreen(
+                logicalScreenWidth,
+                Screen.height / uiScale);
+        }
         else
         {
             float statusWidth =
@@ -654,8 +686,7 @@ public class DwarfSpawner : MonoBehaviour
                 nextButtonY += height + 4f;
             }
 
-            if ((SimulationState == LevelSimulationState.Running ||
-                 SimulationState == LevelSimulationState.Completed) &&
+            if (SimulationState == LevelSimulationState.Running &&
                 !retryConfirmationOpen &&
                 !endLevelConfirmationOpen &&
                 GUI.Button(
@@ -790,12 +821,103 @@ public class DwarfSpawner : MonoBehaviour
 
     private string FormatSimulationTime()
     {
-        TimeSpan elapsed = SimulationElapsed;
+        return FormatSimulationTime(SimulationElapsed);
+    }
+
+    private static string FormatSimulationTime(TimeSpan elapsed)
+    {
         int totalHours = (int)elapsed.TotalHours;
 
         return totalHours > 0
             ? $"{totalHours}:{elapsed.Minutes:00}:{elapsed.Seconds:00}"
             : $"{elapsed.Minutes}:{elapsed.Seconds:00}";
+    }
+
+    private void DrawResultScreen(
+        float logicalScreenWidth,
+        float logicalScreenHeight)
+    {
+        if (result == null)
+        {
+            return;
+        }
+
+        const float width = 360f;
+        const float height = 300f;
+        const float padding = 18f;
+
+        Rect panel = new(
+            (logicalScreenWidth - width) * 0.5f,
+            (logicalScreenHeight - height) * 0.5f,
+            width,
+            height);
+
+        string title = result.Outcome == LevelOutcome.Success
+            ? "LEVEL COMPLETE"
+            : "LEVEL FAILED";
+
+        GUI.Box(panel, title);
+
+        GUI.Label(
+            new Rect(
+                panel.x + padding,
+                panel.y + 38f,
+                width - padding * 2f,
+                125f),
+            $"Rescued: {result.Rescued}/{result.TotalDwarves} " +
+            $"({result.RescuePercentage:0.#}%)\n" +
+            $"Required: {result.RequiredRescues}\n" +
+            $"Lost: {result.Died + result.Recalled}\n" +
+            $"Left behind: {result.LeftBehind}\n" +
+            $"Simulation time: " +
+            $"{FormatSimulationTime(result.SimulationTime)}");
+
+        float buttonY = panel.y + 178f;
+
+        if (!retryConfirmationOpen &&
+            GUI.Button(
+                new Rect(
+                    panel.x + padding,
+                    buttonY,
+                    width - padding * 2f,
+                    38f),
+                "Retry Level"))
+        {
+            RequestRetry();
+        }
+
+        bool cityConnected =
+            BackToCityRequested != null;
+
+        bool previousEnabled = GUI.enabled;
+        GUI.enabled =
+            previousEnabled &&
+            cityConnected &&
+            !retryConfirmationOpen;
+
+        if (GUI.Button(
+                new Rect(
+                    panel.x + padding,
+                    buttonY + 46f,
+                    width - padding * 2f,
+                    38f),
+                "Back to Dwarf City"))
+        {
+            RequestBackToCity();
+        }
+
+        GUI.enabled = previousEnabled;
+
+        if (!cityConnected)
+        {
+            GUI.Label(
+                new Rect(
+                    panel.x + padding,
+                    panel.yMax - 27f,
+                    width - padding * 2f,
+                    20f),
+                "Dwarf City flow will be connected later.");
+        }
     }
 
     private void DrawEndLevelConfirmation(
@@ -865,6 +987,18 @@ public class DwarfSpawner : MonoBehaviour
         simulationResolved = true;
         Outcome = outcome;
         Time.timeScale = 0f;
+
+        result = new LevelAttemptResult(
+            outcome,
+            maxDwarves,
+            GetRequiredRescues(),
+            spawned,
+            rescued,
+            died,
+            recalled,
+            rescueGoalProgress.Active,
+            rescueGoalProgress.Unspawned,
+            simulationClock.ElapsedSeconds);
 
         SetSimulationState(LevelSimulationState.Completed);
 
