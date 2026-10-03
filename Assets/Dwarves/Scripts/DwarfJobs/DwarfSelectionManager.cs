@@ -22,6 +22,7 @@ public class DwarfSelectionManager : MonoBehaviour
     private DwarfAgent hoveredDwarf;
     private DwarfAgent visuallySelectedDwarf;
     private DirectionAltererPreview directionAltererPreview;
+    private DirectionAltererTurn? hoveredOptionPreviewTurn;
 
     private void Awake()
     {
@@ -82,10 +83,11 @@ public class DwarfSelectionManager : MonoBehaviour
                 HandleDirectionAltererPreviewChanged;
         }
 
-        directionAltererPreview?.Hide();
-
+        hoveredOptionPreviewTurn = null;
         SetHoveredDwarf(null);
         SetVisualSelection(null);
+
+        directionAltererPreview?.Hide();
 
         InteractionState.ClearHoveredDwarf();
     }
@@ -225,6 +227,8 @@ public class DwarfSelectionManager : MonoBehaviour
 
         InteractionState.SetHoveredDwarf(
             hoveredDwarf);
+
+        RefreshDirectionAltererPreview();
     }
 
     private void RefreshHoveredTargetState()
@@ -266,12 +270,14 @@ public class DwarfSelectionManager : MonoBehaviour
     {
         SetVisualSelection(dwarf);
         RefreshHoveredTargetState();
+        RefreshDirectionAltererPreview();
     }
 
     private void HandleSelectedJobChanged(
         DwarfJobType jobType)
     {
         RefreshHoveredTargetState();
+        RefreshDirectionAltererPreview();
     }
 
     private void HandleStopJobSelectionChanged(
@@ -283,20 +289,40 @@ public class DwarfSelectionManager : MonoBehaviour
     private void HandleDirectionAltererPreviewChanged(
         DirectionAltererTurn? turn)
     {
-        DwarfAgent selected =
-            assignmentManager?.SelectedDwarf;
+        hoveredOptionPreviewTurn = turn;
+        RefreshDirectionAltererPreview();
+    }
 
-        if (!turn.HasValue ||
-            selected == null ||
-            !selected.IsActive)
+    private void RefreshDirectionAltererPreview()
+    {
+        DwarfAgent selected = assignmentManager?.SelectedDwarf;
+
+        if (hoveredOptionPreviewTurn.HasValue &&
+            selected != null &&
+            selected.IsActive)
         {
-            directionAltererPreview?.Hide();
+            directionAltererPreview?.Show(
+                selected,
+                hoveredOptionPreviewTurn.Value);
             return;
         }
 
-        directionAltererPreview?.Show(
-            selected,
-            turn.Value);
+        DirectionAltererTurn? selectedTurn =
+            assignmentManager?.SelectedDirectionAltererTurn;
+
+        if (assignmentManager?.SelectedJob ==
+                DwarfJobType.DirectionAlter &&
+            selectedTurn.HasValue &&
+            hoveredDwarf != null &&
+            hoveredDwarf.IsActive)
+        {
+            directionAltererPreview?.Show(
+                hoveredDwarf,
+                selectedTurn.Value);
+            return;
+        }
+
+        directionAltererPreview?.Hide();
     }
 
     private void SetVisualSelection(
