@@ -38,7 +38,15 @@ public sealed class LevelPersistenceTests
         Assert.That(actual.schemaVersion,
             Is.EqualTo(LevelDefinition.CurrentSchemaVersion));
         Assert.That(actual.chunkSize, Is.EqualTo(Chunk.ChunkSize));
+        Assert.That(actual.levelId, Is.EqualTo(expected.levelId));
         Assert.That(actual.displayName, Is.EqualTo(expected.displayName));
+        Assert.That(actual.totalDwarves, Is.EqualTo(24));
+        Assert.That(actual.requiredRescues, Is.EqualTo(18));
+        Assert.That(actual.jobRules.Count, Is.EqualTo(2));
+        Assert.That(actual.jobRules[0].jobType,
+            Is.EqualTo(DwarfJobType.Tunneller));
+        Assert.That(actual.jobRules[0].defaultCount, Is.EqualTo(3));
+        Assert.That(actual.jobRules[0].maximumCount, Is.EqualTo(5));
         Assert.That(actual.originInChunks,
             Is.EqualTo(expected.originInChunks));
         Assert.That(actual.sizeInChunks,
@@ -78,6 +86,11 @@ public sealed class LevelPersistenceTests
 
             Assert.That(snapshot.SchemaVersion,
                 Is.EqualTo(LevelDefinition.CurrentSchemaVersion));
+            Assert.That(snapshot.LevelId,
+                Is.EqualTo("persistence-test-level"));
+            Assert.That(snapshot.TotalDwarves, Is.EqualTo(24));
+            Assert.That(snapshot.RequiredRescues, Is.EqualTo(18));
+            Assert.That(snapshot.JobRules.Count, Is.EqualTo(2));
             Assert.That(snapshot.OriginInChunks,
                 Is.EqualTo(new Vector3Int(-1, 0, 2)));
             Assert.That(snapshot.GameplayBoundsMinimum,
@@ -122,6 +135,9 @@ public sealed class LevelPersistenceTests
         Assert.That(imported.voxels[0].Amount,
             Is.EqualTo(WaterAmount.Full));
         Assert.That(imported.entities, Is.Empty);
+        Assert.That(imported.levelId, Is.Not.Empty);
+        Assert.That(imported.totalDwarves, Is.EqualTo(20));
+        Assert.That(imported.requiredRescues, Is.EqualTo(1));
     }
 
     [Test]
@@ -164,7 +180,25 @@ public sealed class LevelPersistenceTests
         {
             schemaVersion = LevelDefinition.CurrentSchemaVersion,
             chunkSize = Chunk.ChunkSize,
+            levelId = "persistence-test-level",
             displayName = "Persistence Test",
+            totalDwarves = 24,
+            requiredRescues = 18,
+            jobRules = new List<LevelJobRule>
+            {
+                new()
+                {
+                    jobType = DwarfJobType.Tunneller,
+                    defaultCount = 3,
+                    maximumCount = 5
+                },
+                new()
+                {
+                    jobType = DwarfJobType.DirectionAlter,
+                    defaultCount = 2,
+                    maximumCount = 2
+                }
+            },
             originInChunks = new Vector3Int(-1, 0, 2),
             sizeInChunks = new Vector3Int(2, 2, 2),
             gameplayBoundsMinimum = new Vector3Int(-10, 1, 35),

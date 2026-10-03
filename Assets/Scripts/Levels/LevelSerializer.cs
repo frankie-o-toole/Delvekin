@@ -237,6 +237,8 @@ public static class LevelSerializer
             entities = new List<LevelEntitySaveRecord>()
         };
 
+        Normalize(imported);
+
         Debug.LogWarning(
             $"Imported legacy voxel-only level '{path}'. Bounds were inferred; " +
             "legacy files contain no entities or half-water amounts. Saving " +
@@ -248,9 +250,33 @@ public static class LevelSerializer
     private static void Normalize(LevelSaveData data)
     {
         data.chunkSize = Chunk.ChunkSize;
+        data.levelId = string.IsNullOrWhiteSpace(data.levelId)
+            ? Guid.NewGuid().ToString("N")
+            : data.levelId.Trim();
         data.displayName = string.IsNullOrWhiteSpace(data.displayName)
             ? "Loaded Level"
             : data.displayName;
+        data.totalDwarves = Mathf.Max(1, data.totalDwarves);
+        data.requiredRescues = Mathf.Clamp(
+            data.requiredRescues,
+            1,
+            data.totalDwarves);
+        data.jobRules ??= new List<LevelJobRule>();
+
+        Dictionary<DwarfJobType, LevelJobRule> normalizedRules = new();
+
+        foreach (LevelJobRule rule in data.jobRules)
+        {
+            if (rule == null || rule.jobType == DwarfJobType.None)
+            {
+                continue;
+            }
+
+            rule.EnsureValid();
+            normalizedRules[rule.jobType] = rule;
+        }
+
+        data.jobRules = new List<LevelJobRule>(normalizedRules.Values);
         data.sizeInChunks = new Vector3Int(
             Mathf.Max(1, data.sizeInChunks.x),
             Mathf.Max(1, data.sizeInChunks.y),

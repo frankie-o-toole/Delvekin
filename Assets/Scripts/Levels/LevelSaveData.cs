@@ -11,7 +11,11 @@ public sealed class LevelSaveData
 {
     public int schemaVersion;
     public int chunkSize;
+    public string levelId;
     public string displayName;
+    public int totalDwarves = 20;
+    public int requiredRescues = 1;
+    public List<LevelJobRule> jobRules = new();
     public Vector3Int originInChunks;
     public Vector3Int sizeInChunks;
     public Vector3Int gameplayBoundsMinimum;
@@ -25,7 +29,11 @@ public sealed class LevelSaveData
         {
             schemaVersion = schemaVersion,
             chunkSize = chunkSize,
+            levelId = levelId,
             displayName = displayName,
+            totalDwarves = totalDwarves,
+            requiredRescues = requiredRescues,
+            jobRules = CloneJobRules(jobRules),
             originInChunks = originInChunks,
             sizeInChunks = sizeInChunks,
             gameplayBoundsMinimum = gameplayBoundsMinimum,
@@ -44,6 +52,27 @@ public sealed class LevelSaveData
                 {
                     result.entities.Add(entity.Clone());
                 }
+            }
+        }
+
+        return result;
+    }
+
+    private static List<LevelJobRule> CloneJobRules(
+        IEnumerable<LevelJobRule> source)
+    {
+        List<LevelJobRule> result = new();
+
+        if (source == null)
+        {
+            return result;
+        }
+
+        foreach (LevelJobRule rule in source)
+        {
+            if (rule != null)
+            {
+                result.Add(rule.Clone());
             }
         }
 

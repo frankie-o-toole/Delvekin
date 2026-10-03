@@ -7,13 +7,30 @@ using UnityEngine;
     menuName = "Delvekin/Level Definition")]
 public sealed class LevelDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     [SerializeField]
     private int schemaVersion = CurrentSchemaVersion;
 
     [SerializeField]
+    private string levelId;
+
+    [SerializeField]
     private string displayName = "New Level";
+
+    [Header("Gameplay Rules")]
+    [Min(1)]
+    [SerializeField]
+    private int totalDwarves = 20;
+
+    [Min(1)]
+    [SerializeField]
+    private int requiredRescues = 1;
+
+    [Tooltip("Jobs absent from this list are unavailable in this level. " +
+             "Defaults are used until player loadouts are implemented.")]
+    [SerializeField]
+    private List<LevelJobRule> jobRules = new();
 
     [Tooltip("Lowest chunk coordinate belonging to this level.")]
     [SerializeField]
@@ -40,7 +57,11 @@ public sealed class LevelDefinition : ScriptableObject
     private List<LevelEntityRecord> entities = new();
 
     public int SchemaVersion => schemaVersion;
+    public string LevelId => levelId;
     public string DisplayName => displayName;
+    public int TotalDwarves => totalDwarves;
+    public int RequiredRescues => requiredRescues;
+    public IReadOnlyList<LevelJobRule> JobRules => jobRules;
     public Vector3Int OriginInChunks => originInChunks;
     public Vector3Int SizeInChunks => sizeInChunks;
     public Vector3Int GameplayBoundsMinimum =>
@@ -60,7 +81,11 @@ public sealed class LevelDefinition : ScriptableObject
     {
         return new RuntimeSnapshot(
             schemaVersion,
+            levelId,
             displayName,
+            totalDwarves,
+            requiredRescues,
+            CloneJobRules(jobRules),
             originInChunks,
             sizeInChunks,
             GameplayBoundsMinimum,
@@ -75,7 +100,11 @@ public sealed class LevelDefinition : ScriptableObject
         {
             schemaVersion = CurrentSchemaVersion,
             chunkSize = Chunk.ChunkSize,
+            levelId = levelId,
             displayName = displayName,
+            totalDwarves = totalDwarves,
+            requiredRescues = requiredRescues,
+            jobRules = CloneJobRules(jobRules),
             originInChunks = originInChunks,
             sizeInChunks = sizeInChunks,
             gameplayBoundsMinimum = GameplayBoundsMinimum,
@@ -114,9 +143,18 @@ public sealed class LevelDefinition : ScriptableObject
         }
 
         schemaVersion = CurrentSchemaVersion;
+        levelId = string.IsNullOrWhiteSpace(data.levelId)
+            ? Guid.NewGuid().ToString("N")
+            : data.levelId.Trim();
         displayName = string.IsNullOrWhiteSpace(data.displayName)
             ? "Imported Level"
             : data.displayName;
+        totalDwarves = Mathf.Max(1, data.totalDwarves);
+        requiredRescues = Mathf.Clamp(
+            data.requiredRescues,
+            1,
+            totalDwarves);
+        jobRules = CloneJobRules(data.jobRules);
         originInChunks = data.originInChunks;
         sizeInChunks = ClampSize(data.sizeInChunks);
         gameplayBoundsMinimum = data.gameplayBoundsMinimum;
@@ -652,9 +690,21 @@ public sealed class LevelDefinition : ScriptableObject
             // level-owned authoring entities. Version 4 adds Spawn Houses.
             // Version 5 adds exact voxel-space gameplay/kill bounds.
             // Version 6 is the unified, portable level-save schema.
+            // Version 7 adds stable identity and authored gameplay rules.
             schemaVersion = CurrentSchemaVersion;
         }
 
+        if (string.IsNullOrWhiteSpace(levelId))
+        {
+            levelId = Guid.NewGuid().ToString("N");
+        }
+
+        totalDwarves = Mathf.Max(1, totalDwarves);
+        requiredRescues = Mathf.Clamp(
+            requiredRescues,
+            1,
+            totalDwarves);
+        jobRules = NormalizeJobRules(jobRules);
         sizeInChunks = ClampSize(sizeInChunks);
         EnsureGameplayBoundsInsideWorld();
         voxels ??= new List<LevelVoxelRecord>();
@@ -690,6 +740,54 @@ public sealed class LevelDefinition : ScriptableObject
         return result;
     }
 
+    private static List<LevelJobRule> CloneJobRules(
+        IEnumerable<LevelJobRule> source)
+    {
+        List<LevelJobRule> result = new();
+
+        if (source == null)
+        {
+            return result;
+        }
+
+        foreach (LevelJobRule rule in source)
+        {
+            if (rule == null || rule.jobType == DwarfJobType.None)
+            {
+                continue;
+            }
+
+            LevelJobRule clone = rule.Clone();
+            clone.EnsureValid();
+            result.Add(clone);
+        }
+
+        return result;
+    }
+
+    private static List<LevelJobRule> NormalizeJobRules(
+        IEnumerable<LevelJobRule> source)
+    {
+        Dictionary<DwarfJobType, LevelJobRule> byType = new();
+
+        if (source != null)
+        {
+            foreach (LevelJobRule rule in source)
+            {
+                if (rule == null || rule.jobType == DwarfJobType.None)
+                {
+                    continue;
+                }
+
+                LevelJobRule clone = rule.Clone();
+                clone.EnsureValid();
+                byType[clone.jobType] = clone;
+            }
+        }
+
+        return new List<LevelJobRule>(byType.Values);
+    }
+
     private static Vector3Int ClampSize(Vector3Int size)
     {
         return new Vector3Int(
@@ -701,7 +799,11 @@ public sealed class LevelDefinition : ScriptableObject
     public sealed class RuntimeSnapshot
     {
         public int SchemaVersion { get; }
+        public string LevelId { get; }
         public string DisplayName { get; }
+        public int TotalDwarves { get; }
+        public int RequiredRescues { get; }
+        public IReadOnlyList<LevelJobRule> JobRules { get; }
         public Vector3Int OriginInChunks { get; }
         public Vector3Int SizeInChunks { get; }
         public Vector3Int GameplayBoundsMinimum { get; }
@@ -711,7 +813,11 @@ public sealed class LevelDefinition : ScriptableObject
 
         public RuntimeSnapshot(
             int schemaVersion,
+            string levelId,
             string displayName,
+            int totalDwarves,
+            int requiredRescues,
+            IReadOnlyList<LevelJobRule> jobRules,
             Vector3Int originInChunks,
             Vector3Int sizeInChunks,
             Vector3Int gameplayBoundsMinimum,
@@ -720,7 +826,11 @@ public sealed class LevelDefinition : ScriptableObject
             IReadOnlyList<LevelEntityRecord> entities)
         {
             SchemaVersion = schemaVersion;
+            LevelId = levelId;
             DisplayName = displayName;
+            TotalDwarves = totalDwarves;
+            RequiredRescues = requiredRescues;
+            JobRules = jobRules;
             OriginInChunks = originInChunks;
             SizeInChunks = sizeInChunks;
             GameplayBoundsMinimum = gameplayBoundsMinimum;

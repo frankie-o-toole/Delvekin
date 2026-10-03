@@ -33,6 +33,55 @@ public static class LevelSaveValidator
             valid = false;
         }
 
+        if (string.IsNullOrWhiteSpace(data.levelId))
+        {
+            AddError(errors, "Level ID must not be empty.");
+            valid = false;
+        }
+
+        if (data.totalDwarves < 1)
+        {
+            AddError(errors, "Total dwarves must be at least one.");
+            valid = false;
+        }
+
+        if (data.requiredRescues < 1 ||
+            data.requiredRescues > data.totalDwarves)
+        {
+            AddError(
+                errors,
+                "Required rescues must be between one and total dwarves.");
+            valid = false;
+        }
+
+        HashSet<DwarfJobType> jobTypes = new();
+
+        if (data.jobRules != null)
+        {
+            foreach (LevelJobRule rule in data.jobRules)
+            {
+                if (rule == null ||
+                    rule.jobType == DwarfJobType.None ||
+                    !jobTypes.Add(rule.jobType))
+                {
+                    AddError(
+                        errors,
+                        "Job rules must have unique, non-None job types.");
+                    valid = false;
+                    continue;
+                }
+
+                if (rule.defaultCount < 0 ||
+                    rule.maximumCount < rule.defaultCount)
+                {
+                    AddError(
+                        errors,
+                        $"Job rule {rule.jobType} has invalid stock limits.");
+                    valid = false;
+                }
+            }
+        }
+
         if (data.sizeInChunks.x <= 0 ||
             data.sizeInChunks.y <= 0 ||
             data.sizeInChunks.z <= 0)
