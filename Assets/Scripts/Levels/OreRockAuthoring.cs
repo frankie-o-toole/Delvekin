@@ -116,7 +116,11 @@ public sealed class OreRockAuthoring : MonoBehaviour
         visualPrefab = configuredVisualPrefab;
         runtimeCopy = isRuntimeCopy;
 
-        transform.SetPositionAndRotation(position, rotation);
+        transform.SetPositionAndRotation(
+            LevelEntityRecord.SnapVolumeCentreToVoxelGrid(
+                position,
+                authoringSize),
+            rotation);
         reservations.Clear();
         extracted = 0;
         RebuildVisual();
@@ -337,6 +341,17 @@ public sealed class OreRockAuthoring : MonoBehaviour
             !gameObject.scene.isLoaded)
         {
             return;
+        }
+
+        Vector3 snappedPosition =
+            LevelEntityRecord.SnapVolumeCentreToVoxelGrid(
+                transform.position,
+                authoringSize);
+
+        if ((transform.position - snappedPosition).sqrMagnitude >
+            0.000001f)
+        {
+            transform.position = snappedPosition;
         }
 
         int currentHash = CalculateStateHash();

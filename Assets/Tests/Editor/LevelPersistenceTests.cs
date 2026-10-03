@@ -192,6 +192,24 @@ public sealed class LevelPersistenceTests
     }
 
     [Test]
+    public void OreRockCentreSnapsToVoxelGridForEvenVolume()
+    {
+        LevelEntitySaveRecord saved = new()
+        {
+            entityId = "off-grid-ore",
+            type = LevelEntityType.OreRock,
+            position = new Vector3(3.24f, 4.8f, 48.49f),
+            volumeSize = new Vector3Int(6, 8, 6),
+            oreCapacity = 10
+        };
+
+        LevelEntityRecord record = saved.ToRuntime();
+
+        Assert.That(record.Position, Is.EqualTo(new Vector3(3f, 5f, 48f)));
+        Assert.That(record.MinimumVoxel, Is.EqualTo(new Vector3Int(0, 1, 45)));
+    }
+
+    [Test]
     public void SchemaEightRescueGoalMigratesToMinedResources()
     {
         string fileName = "schema-eight-resource-migration-test";

@@ -404,6 +404,13 @@ public sealed class LevelEntityRecord
             Mathf.Max(1, volumeSize.y),
             Mathf.Max(1, volumeSize.z));
 
+        if (type == LevelEntityType.OreRock)
+        {
+            position = SnapVolumeCentreToVoxelGrid(
+                position,
+                volumeSize);
+        }
+
         supplyUnitsPerTick = Mathf.Max(1, supplyUnitsPerTick);
         outletCapacityOverride = Mathf.Max(0, outletCapacityOverride);
         oreCapacity = Mathf.Max(1, oreCapacity);
@@ -412,5 +419,26 @@ public sealed class LevelEntityRecord
         {
             rotation = Quaternion.identity;
         }
+    }
+
+    public static Vector3 SnapVolumeCentreToVoxelGrid(
+        Vector3 worldPosition,
+        Vector3Int size)
+    {
+        size = new Vector3Int(
+            Mathf.Max(1, size.x),
+            Mathf.Max(1, size.y),
+            Mathf.Max(1, size.z));
+
+        return new Vector3(
+            SnapVolumeAxis(worldPosition.x, size.x),
+            SnapVolumeAxis(worldPosition.y, size.y),
+            SnapVolumeAxis(worldPosition.z, size.z));
+    }
+
+    private static float SnapVolumeAxis(float value, int size)
+    {
+        float halfSize = size * 0.5f;
+        return Mathf.Round(value - halfSize) + halfSize;
     }
 }
