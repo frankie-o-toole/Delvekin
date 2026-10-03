@@ -38,6 +38,8 @@ public class DwarfSpawner : MonoBehaviour
     private bool spawnFinished;
     private bool simulationResolved;
     private float timeScaleBeforePause = 1f;
+    private bool retryConfirmationOpen;
+    private LevelSimulationState stateBeforeRetryConfirmation;
 
     public LevelSimulationState SimulationState { get; private set; } =
         LevelSimulationState.Preparation;
@@ -100,6 +102,11 @@ public class DwarfSpawner : MonoBehaviour
 
         WarnAboutUnsafeSpawnPoints();
 
+        if (!world.CaptureAttemptStartSnapshot())
+        {
+            return;
+        }
+
         spawned = 0;
         rescued = 0;
         died = 0;
@@ -122,6 +129,7 @@ public class DwarfSpawner : MonoBehaviour
 
         Time.timeScale = 1f;
         timeScaleBeforePause = 1f;
+        retryConfirmationOpen = false;
 
         // Disable result accounting before recalling active dwarves.
         simulationStarted = false;
@@ -182,6 +190,30 @@ public class DwarfSpawner : MonoBehaviour
         SetSimulationState(LevelSimulationState.Preparation);
     }
 
+    public void WriteRuntimeConfigurationTo(
+        LevelSaveData data,
+        bool includeSceneJobRules)
+    {
+        if (data == null)
+        {
+            return;
+        }
+
+        data.totalDwarves = maxDwarves;
+        data.requiredRescues = GetRequiredRescues();
+
+        if (!includeSceneJobRules)
+        {
+            return;
+        }
+
+        DwarfJobInventory inventory =
+            FindFirstObjectByType<DwarfJobInventory>();
+
+        data.jobRules = inventory?.CreateStartingRules() ??
+            new List<LevelJobRule>();
+    }
+
     public void PauseSimulation()
     {
         if (SimulationState != LevelSimulationState.Running)
@@ -203,6 +235,50 @@ public class DwarfSpawner : MonoBehaviour
 
         Time.timeScale = timeScaleBeforePause;
         SetSimulationState(LevelSimulationState.Running);
+    }
+
+    public void RequestRetry()
+    {
+        if (retryConfirmationOpen ||
+            SimulationState != LevelSimulationState.Running)
+        {
+            return;
+        }
+
+        stateBeforeRetryConfirmation = SimulationState;
+        PauseSimulation();
+        retryConfirmationOpen = true;
+    }
+
+    public void CancelRetry()
+    {
+        if (!retryConfirmationOpen)
+        {
+            return;
+        }
+
+        retryConfirmationOpen = false;
+
+        if (stateBeforeRetryConfirmation ==
+            LevelSimulationState.Running)
+        {
+            ResumeSimulation();
+        }
+    }
+
+    public void ConfirmRetry()
+    {
+        if (!retryConfirmationOpen)
+        {
+            return;
+        }
+
+        retryConfirmationOpen = false;
+
+        if (!world.RetryAttempt())
+        {
+            ResumeSimulation();
+        }
     }
 
     private IEnumerator SpawnLoop()
@@ -454,6 +530,26 @@ public class DwarfSpawner : MonoBehaviour
                     statusWidth,
                     height),
                 status);
+
+            if (SimulationState == LevelSimulationState.Running &&
+                !retryConfirmationOpen &&
+                GUI.Button(
+                    new Rect(
+                        x,
+                        y + height + 4f,
+                        width,
+                        height),
+                    "Retry"))
+            {
+                RequestRetry();
+            }
+        }
+
+        if (retryConfirmationOpen)
+        {
+            DrawRetryConfirmation(
+                logicalScreenWidth,
+                Screen.height / uiScale);
         }
     }
 
@@ -476,5 +572,58 @@ public class DwarfSpawner : MonoBehaviour
             state == LevelSimulationState.Running);
 
         SimulationStateChanged?.Invoke(state);
+    }
+
+    private void DrawRetryConfirmation(
+        float logicalScreenWidth,
+        float logicalScreenHeight)
+    {
+        const float width = 320f;
+        const float height = 175f;
+        const float padding = 14f;
+
+        Rect panel = new(
+            (logicalScreenWidth - width) * 0.5f,
+            (logicalScreenHeight - height) * 0.5f,
+            width,
+            height);
+
+        GUI.Box(panel, "Retry Level?");
+
+        GUI.Label(
+            new Rect(
+                panel.x + padding,
+                panel.y + 34f,
+                width - padding * 2f,
+                58f),
+            $"Rescued: {rescued}/{GetRequiredRescues()}\n" +
+            $"Active: {pool.ActiveCount}   " +
+            $"Lost: {died + recalled}\n" +
+            "All progress in this attempt will be reset.");
+
+        float buttonY = panel.yMax - 50f;
+        float buttonWidth = (width - padding * 3f) * 0.5f;
+
+        if (GUI.Button(
+                new Rect(
+                    panel.x + padding,
+                    buttonY,
+                    buttonWidth,
+                    34f),
+                "Continue"))
+        {
+            CancelRetry();
+        }
+
+        if (GUI.Button(
+                new Rect(
+                    panel.x + padding * 2f + buttonWidth,
+                    buttonY,
+                    buttonWidth,
+                    34f),
+                "Retry"))
+        {
+            ConfirmRetry();
+        }
     }
 }

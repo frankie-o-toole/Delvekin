@@ -84,6 +84,7 @@ public class VoxelWorld : MonoBehaviour
     private Vector3Int gameplayBoundsMinimum;
     private Vector3Int gameplayBoundsMaximumExclusive;
     private LevelSaveData activeLevelSaveData;
+    private LevelSaveData attemptStartSnapshot;
 
     public bool HasLoadedChunks => chunks.Count > 0;
 
@@ -527,6 +528,52 @@ public class VoxelWorld : MonoBehaviour
         return CreateSaveData(template);
     }
 
+    public bool CaptureAttemptStartSnapshot()
+    {
+        LevelSaveData snapshot = CreateSaveData();
+
+        if (snapshot == null)
+        {
+            Debug.LogError(
+                "Cannot start simulation without a valid attempt snapshot.",
+                this);
+            return false;
+        }
+
+        DwarfSpawner spawner =
+            FindFirstObjectByType<DwarfSpawner>();
+
+        bool includeSceneJobRules =
+            activeLevelSaveData == null &&
+            startingLevel == null;
+
+        spawner?.WriteRuntimeConfigurationTo(
+            snapshot,
+            includeSceneJobRules);
+
+        attemptStartSnapshot = snapshot.Clone();
+        return true;
+    }
+
+    public bool RetryAttempt()
+    {
+        if (attemptStartSnapshot == null)
+        {
+            Debug.LogWarning(
+                "Cannot retry because no attempt snapshot was captured.",
+                this);
+            return false;
+        }
+
+        LevelSaveData snapshot = attemptStartSnapshot.Clone();
+        LoadSaveData(snapshot);
+
+        // Loading normally clears an old attempt. This snapshot remains the
+        // confirmed source for any later retries of the same attempt setup.
+        attemptStartSnapshot = snapshot.Clone();
+        return true;
+    }
+
     public void SaveLevel(
         string name)
     {
@@ -554,6 +601,11 @@ public class VoxelWorld : MonoBehaviour
             return;
         }
 
+        LoadSaveData(save);
+    }
+
+    private void LoadSaveData(LevelSaveData save)
+    {
         LevelDefinition loaded =
             ScriptableObject.CreateInstance<LevelDefinition>();
 
@@ -674,6 +726,8 @@ public class VoxelWorld : MonoBehaviour
 
     public void LoadLevelDefinition(LevelDefinition definition)
     {
+        attemptStartSnapshot = null;
+
         DwarfSpawner spawner = null;
 
         if (Application.isPlaying)
@@ -824,6 +878,7 @@ public class VoxelWorld : MonoBehaviour
         int heightInChunks,
         int depthInChunks)
     {
+        attemptStartSnapshot = null;
         activeLevelSaveData = null;
         ClearWorld();
 

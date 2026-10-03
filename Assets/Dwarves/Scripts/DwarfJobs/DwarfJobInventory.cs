@@ -132,6 +132,54 @@ public class DwarfJobInventory : MonoBehaviour
         ResetToStartingStock();
     }
 
+    public List<LevelJobRule> CreateStartingRules()
+    {
+        List<LevelJobRule> result = new();
+
+        if (usesLevelRules)
+        {
+            foreach (var pair in levelStartingCounts)
+            {
+                result.Add(
+                    new LevelJobRule
+                    {
+                        jobType = pair.Key,
+                        defaultCount = pair.Value,
+                        maximumCount = pair.Value
+                    });
+            }
+
+            return result;
+        }
+
+        Dictionary<DwarfJobType, int> totals = new();
+
+        foreach (JobStock stock in startingStock)
+        {
+            if (stock == null || stock.type == DwarfJobType.None)
+            {
+                continue;
+            }
+
+            totals.TryGetValue(stock.type, out int current);
+            totals[stock.type] =
+                current + Mathf.Max(0, stock.availableCount);
+        }
+
+        foreach (var pair in totals)
+        {
+            result.Add(
+                new LevelJobRule
+                {
+                    jobType = pair.Key,
+                    defaultCount = pair.Value,
+                    maximumCount = pair.Value
+                });
+        }
+
+        return result;
+    }
+
     private void RebuildInventory()
     {
         counts.Clear();
