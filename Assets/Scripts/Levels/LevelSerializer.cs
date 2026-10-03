@@ -11,6 +11,12 @@ public static class LevelSerializer
         public int schemaVersion;
     }
 
+    [Serializable]
+    private sealed class LegacyRescueGoal
+    {
+        public int requiredRescues;
+    }
+
     public static string GetPath(string fileName)
     {
         string safeName = Path.GetFileNameWithoutExtension(fileName);
@@ -140,6 +146,20 @@ public static class LevelSerializer
         }
 
         int loadedVersion = data.schemaVersion;
+
+        if (loadedVersion < 9)
+        {
+            LegacyRescueGoal legacyGoal =
+                JsonUtility.FromJson<LegacyRescueGoal>(json);
+
+            if (legacyGoal != null &&
+                legacyGoal.requiredRescues > 0)
+            {
+                data.requiredMinedResources =
+                    legacyGoal.requiredRescues;
+            }
+        }
+
         Normalize(data);
         data.schemaVersion = LevelDefinition.CurrentSchemaVersion;
 
@@ -257,8 +277,8 @@ public static class LevelSerializer
             ? "Loaded Level"
             : data.displayName;
         data.totalDwarves = Mathf.Max(1, data.totalDwarves);
-        data.requiredRescues = Mathf.Clamp(
-            data.requiredRescues,
+        data.requiredMinedResources = Mathf.Clamp(
+            data.requiredMinedResources,
             1,
             data.totalDwarves);
         data.jobRules ??= new List<LevelJobRule>();

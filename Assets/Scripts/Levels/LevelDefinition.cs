@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [CreateAssetMenu(
     fileName = "LevelDefinition",
     menuName = "Delvekin/Level Definition")]
 public sealed class LevelDefinition : ScriptableObject
 {
-    public const int CurrentSchemaVersion = 8;
+    public const int CurrentSchemaVersion = 9;
 
     [HideInInspector]
     [SerializeField]
@@ -26,7 +27,8 @@ public sealed class LevelDefinition : ScriptableObject
 
     [Min(1)]
     [SerializeField]
-    private int requiredRescues = 1;
+    [FormerlySerializedAs("requiredRescues")]
+    private int requiredMinedResources = 1;
 
     [Tooltip("Jobs absent from this list are unavailable in this level. " +
              "Defaults are used until player loadouts are implemented.")]
@@ -61,7 +63,7 @@ public sealed class LevelDefinition : ScriptableObject
     public string LevelId => levelId;
     public string DisplayName => displayName;
     public int TotalDwarves => totalDwarves;
-    public int RequiredRescues => requiredRescues;
+    public int RequiredMinedResources => requiredMinedResources;
     public IReadOnlyList<LevelJobRule> JobRules => jobRules;
     public Vector3Int OriginInChunks => originInChunks;
     public Vector3Int SizeInChunks => sizeInChunks;
@@ -86,7 +88,7 @@ public sealed class LevelDefinition : ScriptableObject
             levelId,
             displayName,
             totalDwarves,
-            requiredRescues,
+            requiredMinedResources,
             CloneJobRules(jobRules),
             originInChunks,
             sizeInChunks,
@@ -105,7 +107,7 @@ public sealed class LevelDefinition : ScriptableObject
             levelId = levelId,
             displayName = displayName,
             totalDwarves = totalDwarves,
-            requiredRescues = requiredRescues,
+            requiredMinedResources = requiredMinedResources,
             jobRules = CloneJobRules(jobRules),
             originInChunks = originInChunks,
             sizeInChunks = sizeInChunks,
@@ -152,8 +154,8 @@ public sealed class LevelDefinition : ScriptableObject
             ? "Imported Level"
             : data.displayName;
         totalDwarves = Mathf.Max(1, data.totalDwarves);
-        requiredRescues = Mathf.Clamp(
-            data.requiredRescues,
+        requiredMinedResources = Mathf.Clamp(
+            data.requiredMinedResources,
             1,
             totalDwarves);
         jobRules = CloneJobRules(data.jobRules);
@@ -694,6 +696,7 @@ public sealed class LevelDefinition : ScriptableObject
             // Version 6 is the unified, portable level-save schema.
             // Version 7 adds stable identity and authored gameplay rules.
             // Version 8 adds finite Ore Rock authoring entities.
+            // Version 9 replaces rescue goals with mined-resource goals.
             schemaVersion = CurrentSchemaVersion;
         }
 
@@ -703,8 +706,8 @@ public sealed class LevelDefinition : ScriptableObject
         }
 
         totalDwarves = Mathf.Max(1, totalDwarves);
-        requiredRescues = Mathf.Clamp(
-            requiredRescues,
+        requiredMinedResources = Mathf.Clamp(
+            requiredMinedResources,
             1,
             totalDwarves);
         jobRules ??= new List<LevelJobRule>();
@@ -809,7 +812,7 @@ public sealed class LevelDefinition : ScriptableObject
         public string LevelId { get; }
         public string DisplayName { get; }
         public int TotalDwarves { get; }
-        public int RequiredRescues { get; }
+        public int RequiredMinedResources { get; }
         public IReadOnlyList<LevelJobRule> JobRules { get; }
         public Vector3Int OriginInChunks { get; }
         public Vector3Int SizeInChunks { get; }
@@ -825,7 +828,7 @@ public sealed class LevelDefinition : ScriptableObject
             string levelId,
             string displayName,
             int totalDwarves,
-            int requiredRescues,
+            int requiredMinedResources,
             IReadOnlyList<LevelJobRule> jobRules,
             Vector3Int originInChunks,
             Vector3Int sizeInChunks,
@@ -838,7 +841,7 @@ public sealed class LevelDefinition : ScriptableObject
             LevelId = levelId;
             DisplayName = displayName;
             TotalDwarves = totalDwarves;
-            RequiredRescues = requiredRescues;
+            RequiredMinedResources = requiredMinedResources;
             JobRules = jobRules;
             OriginInChunks = originInChunks;
             SizeInChunks = sizeInChunks;

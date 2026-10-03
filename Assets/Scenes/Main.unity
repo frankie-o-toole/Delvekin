@@ -3201,7 +3201,7 @@ MonoBehaviour:
   spawnInterval: 2
   blockedRetryInterval: 0.25
   maxDwarves: 50
-  requiredRescues: 1
+  requiredMinedResources: 1
   initialFacing: 0
 --- !u!114 &1613263937
 MonoBehaviour:

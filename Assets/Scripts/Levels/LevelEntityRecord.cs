@@ -12,7 +12,7 @@ public enum LevelEntityType : byte
 /// <summary>
 /// Persistent, level-owned description of a non-voxel gameplay entity.
 /// Common transform data is intentionally shared so future prefab-backed
-/// entities (Spawn House, Exit, Mine, Waterfall) can use the same pipeline.
+/// entities (Spawn House, Ore Rock, Waterfall) can use the same pipeline.
 /// </summary>
 [Serializable]
 public sealed class LevelEntityRecord

@@ -41,7 +41,7 @@ public sealed class LevelPersistenceTests
         Assert.That(actual.levelId, Is.EqualTo(expected.levelId));
         Assert.That(actual.displayName, Is.EqualTo(expected.displayName));
         Assert.That(actual.totalDwarves, Is.EqualTo(24));
-        Assert.That(actual.requiredRescues, Is.EqualTo(18));
+        Assert.That(actual.requiredMinedResources, Is.EqualTo(18));
         Assert.That(actual.jobRules.Count, Is.EqualTo(2));
         Assert.That(actual.jobRules[0].jobType,
             Is.EqualTo(DwarfJobType.Tunneller));
@@ -92,7 +92,7 @@ public sealed class LevelPersistenceTests
             Assert.That(snapshot.LevelId,
                 Is.EqualTo("persistence-test-level"));
             Assert.That(snapshot.TotalDwarves, Is.EqualTo(24));
-            Assert.That(snapshot.RequiredRescues, Is.EqualTo(18));
+            Assert.That(snapshot.RequiredMinedResources, Is.EqualTo(18));
             Assert.That(snapshot.JobRules.Count, Is.EqualTo(2));
             Assert.That(snapshot.OriginInChunks,
                 Is.EqualTo(new Vector3Int(-1, 0, 2)));
@@ -142,7 +142,7 @@ public sealed class LevelPersistenceTests
         Assert.That(imported.entities, Is.Empty);
         Assert.That(imported.levelId, Is.Not.Empty);
         Assert.That(imported.totalDwarves, Is.EqualTo(20));
-        Assert.That(imported.requiredRescues, Is.EqualTo(1));
+        Assert.That(imported.requiredMinedResources, Is.EqualTo(1));
     }
 
     [Test]
@@ -177,6 +177,49 @@ public sealed class LevelPersistenceTests
     }
 
     [Test]
+    public void ValidatorRejectsTargetAboveTotalOreCapacity()
+    {
+        LevelSaveData data = CreateCompleteLevel();
+        data.requiredMinedResources = 20;
+        data.entities[3].oreCapacity = 19;
+        List<string> errors = new();
+
+        bool valid = LevelSaveValidator.Validate(data, errors);
+
+        Assert.That(valid, Is.False);
+        Assert.That(errors,
+            Has.Some.Contains("exceed total Ore Rock capacity"));
+    }
+
+    [Test]
+    public void SchemaEightRescueGoalMigratesToMinedResources()
+    {
+        string fileName = "schema-eight-resource-migration-test";
+        string path = LevelSerializer.GetPath(fileName);
+        createdFiles.Add(path);
+
+        LevelSaveData source = CreateCompleteLevel();
+        source.schemaVersion = 8;
+
+        string json = JsonUtility.ToJson(source)
+            .Replace(
+                "\"requiredMinedResources\":18",
+                "\"requiredRescues\":18");
+
+        File.WriteAllText(path, json);
+
+        LogAssert.Expect(
+            LogType.Log,
+            new Regex("Migrated.*schema 8.*schema 9"));
+
+        LevelSaveData migrated = LevelSerializer.Load(fileName);
+
+        Assert.That(migrated, Is.Not.Null);
+        Assert.That(migrated.requiredMinedResources, Is.EqualTo(18));
+        Assert.That(migrated.schemaVersion, Is.EqualTo(9));
+    }
+
+    [Test]
     public void NewerSchemaIsRejectedWithoutMutatingWorldData()
     {
         string fileName = "future-level-schema-test";
@@ -202,7 +245,7 @@ public sealed class LevelPersistenceTests
             levelId = "persistence-test-level",
             displayName = "Persistence Test",
             totalDwarves = 24,
-            requiredRescues = 18,
+            requiredMinedResources = 18,
             jobRules = new List<LevelJobRule>
             {
                 new()

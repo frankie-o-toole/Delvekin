@@ -5,7 +5,6 @@ using UnityEngine;
 public enum DwarfReleaseReason
 {
     Died,
-    Rescued,
     Mined,
     Recalled
 }

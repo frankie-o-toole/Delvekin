@@ -775,7 +775,7 @@ public sealed class LevelAuthoringRootEditor : Editor
         EditorGUILayout.HelpBox(
             "The magenta bounds use exact voxel coordinates. A dwarf is " +
             "lost after its complete 3×5×3 occupied volume leaves these " +
-            "bounds. Spawn and Exit voxels must remain inside.",
+            "bounds. Gameplay markers must remain inside.",
             MessageType.None);
 
         if (!string.IsNullOrWhiteSpace(

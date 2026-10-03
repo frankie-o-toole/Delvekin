@@ -3,10 +3,11 @@ using NUnit.Framework;
 public class LevelAttemptResultTests
 {
     [Test]
-    public void RescuePercentageUsesAuthoredTotal()
+    public void MinedPercentageUsesAuthoredOreCapacity()
     {
         LevelAttemptResult result = new(
             LevelOutcome.Success,
+            20,
             20,
             10,
             15,
@@ -17,7 +18,7 @@ public class LevelAttemptResultTests
             5,
             90d);
 
-        Assert.That(result.RescuePercentage, Is.EqualTo(50d));
+        Assert.That(result.MinedPercentage, Is.EqualTo(50d));
     }
 
     [Test]
@@ -25,6 +26,7 @@ public class LevelAttemptResultTests
     {
         LevelAttemptResult result = new(
             LevelOutcome.Success,
+            20,
             20,
             10,
             15,
@@ -51,10 +53,12 @@ public class LevelAttemptResultTests
             -1,
             -1,
             -1,
+            -1,
             -1d);
 
         Assert.That(result.TotalDwarves, Is.EqualTo(1));
-        Assert.That(result.Rescued, Is.Zero);
+        Assert.That(result.TotalOreCapacity, Is.Zero);
+        Assert.That(result.MinedResources, Is.Zero);
         Assert.That(result.LeftBehind, Is.Zero);
         Assert.That(result.SimulationSeconds, Is.Zero);
     }
