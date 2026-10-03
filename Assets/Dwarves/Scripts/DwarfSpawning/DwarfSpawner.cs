@@ -40,6 +40,7 @@ public class DwarfSpawner : MonoBehaviour
     private float timeScaleBeforePause = 1f;
     private bool retryConfirmationOpen;
     private LevelSimulationState stateBeforeRetryConfirmation;
+    private RescueGoalProgress rescueGoalProgress;
 
     public LevelSimulationState SimulationState { get; private set; } =
         LevelSimulationState.Preparation;
@@ -47,8 +48,15 @@ public class DwarfSpawner : MonoBehaviour
     public event System.Action<LevelSimulationState>
         SimulationStateChanged;
 
+    public event System.Action<RescueGoalProgress>
+        RescueGoalProgressChanged;
+
     public int TotalDwarves => maxDwarves;
     public int RequiredRescues => GetRequiredRescues();
+    public RescueGoalProgress RescueGoalProgress =>
+        rescueGoalProgress;
+    public bool IsRescueGoalImpossible =>
+        rescueGoalProgress.IsImpossible;
 
     private void OnEnable()
     {
@@ -116,6 +124,8 @@ public class DwarfSpawner : MonoBehaviour
         simulationResolved = false;
         simulationStarted = true;
 
+        RefreshRescueGoalProgress();
+
         SetSimulationState(LevelSimulationState.Running);
 
         world.StartFluidSimulation();
@@ -155,6 +165,8 @@ public class DwarfSpawner : MonoBehaviour
         recalled = 0;
         nextSpawnPointIndex = 0;
 
+        RefreshRescueGoalProgress();
+
         DwarfJobAssignmentManager assignmentManager =
             FindFirstObjectByType<DwarfJobAssignmentManager>();
 
@@ -181,6 +193,8 @@ public class DwarfSpawner : MonoBehaviour
             snapshot.RequiredRescues,
             1,
             maxDwarves);
+
+        RefreshRescueGoalProgress();
 
         DwarfJobInventory inventory =
             FindFirstObjectByType<DwarfJobInventory>();
@@ -288,6 +302,7 @@ public class DwarfSpawner : MonoBehaviour
             if (TrySpawnDwarf())
             {
                 spawned++;
+                RefreshRescueGoalProgress();
 
                 yield return new WaitForSeconds(
                     spawnInterval);
@@ -303,6 +318,7 @@ public class DwarfSpawner : MonoBehaviour
 
 
         spawnFinished = true;
+        RefreshRescueGoalProgress();
         TryResolveSimulation();
     }
 
@@ -329,6 +345,7 @@ public class DwarfSpawner : MonoBehaviour
             recalled++;
         }
 
+        RefreshRescueGoalProgress();
         TryResolveSimulation();
     }
 
@@ -523,6 +540,11 @@ public class DwarfSpawner : MonoBehaviour
                       + $"Lost: {died + recalled}  "
                       + $"Active: {pool.ActiveCount}/{maxDwarves}";
 
+            if (!simulationResolved && IsRescueGoalImpossible)
+            {
+                status += "  (UNSOLVABLE)";
+            }
+
             GUI.Label(
                 new Rect(
                     statusX,
@@ -579,7 +601,7 @@ public class DwarfSpawner : MonoBehaviour
         float logicalScreenHeight)
     {
         const float width = 320f;
-        const float height = 175f;
+        const float height = 190f;
         const float padding = 14f;
 
         Rect panel = new(
@@ -595,10 +617,13 @@ public class DwarfSpawner : MonoBehaviour
                 panel.x + padding,
                 panel.y + 34f,
                 width - padding * 2f,
-                58f),
+                76f),
             $"Rescued: {rescued}/{GetRequiredRescues()}\n" +
             $"Active: {pool.ActiveCount}   " +
             $"Lost: {died + recalled}\n" +
+            (IsRescueGoalImpossible
+                ? "Status: rescue target is no longer reachable.\n"
+                : string.Empty) +
             "All progress in this attempt will be reset.");
 
         float buttonY = panel.yMax - 50f;
@@ -624,6 +649,33 @@ public class DwarfSpawner : MonoBehaviour
                 "Retry"))
         {
             ConfirmRetry();
+        }
+    }
+
+    private void RefreshRescueGoalProgress()
+    {
+        int active = pool != null
+            ? pool.ActiveCount
+            : 0;
+
+        RescueGoalProgress next = new(
+            rescued,
+            active,
+            Mathf.Max(0, maxDwarves - spawned),
+            GetRequiredRescues());
+
+        bool changed =
+            next.Rescued != rescueGoalProgress.Rescued ||
+            next.Active != rescueGoalProgress.Active ||
+            next.Unspawned != rescueGoalProgress.Unspawned ||
+            next.Required != rescueGoalProgress.Required;
+
+        rescueGoalProgress = next;
+
+        if (changed)
+        {
+            RescueGoalProgressChanged?.Invoke(
+                rescueGoalProgress);
         }
     }
 }
