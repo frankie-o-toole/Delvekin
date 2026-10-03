@@ -152,6 +152,14 @@ public class DwarfJobController : MonoBehaviour
             return false;
         }
 
+        if (movement != null && movement.IsMining)
+        {
+            failureReason =
+                "The dwarf is already mining ore.";
+
+            return false;
+        }
+
         if (movement != null &&
             !movement.CanPerformJobInCurrentWater(
                 out failureReason))
@@ -438,6 +446,18 @@ public class DwarfJobController : MonoBehaviour
         CancelPendingJob(
             DwarfJobEndReason.Cancelled,
             refund: true);
+    }
+
+    public void PrepareForTerminalInteraction()
+    {
+        // A job that never activated has not delivered its effect and is
+        // returned to the inventory. An active job has already been used.
+        CancelPendingJob(
+            DwarfJobEndReason.DwarfDeactivated,
+            refund: true);
+
+        EndActiveJob(
+            DwarfJobEndReason.Completed);
     }
 
     private void CancelPendingJob(

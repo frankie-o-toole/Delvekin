@@ -15,7 +15,8 @@ public class DwarfMovement : MonoBehaviour
         LadderTransition,
         Turning,
         Falling,
-        Drifting
+        Drifting,
+        Mining
     }
 
     private enum LadderTraversalPhase
@@ -102,6 +103,14 @@ public class DwarfMovement : MonoBehaviour
     private float currentMoveSpeedMultiplier = 1f;
     private float deepWaterDistanceTravelled;
 
+    [Header("Mining")]
+    [SerializeField]
+    [Min(0.1f)]
+    private float miningDuration = 2f;
+
+    private OreRockAuthoring activeOreRock;
+    private float miningElapsed;
+
     // Persistent lane state prevents a broad corner's local water cells from
     // changing the dwarf's travel axis before its current lane actually ends.
     private bool hasWaterLaneHeading;
@@ -126,7 +135,17 @@ public class DwarfMovement : MonoBehaviour
         state;
 
     public bool IsMoving =>
-        state != MovementState.Idle;
+        state != MovementState.Idle &&
+        state != MovementState.Mining;
+
+    public bool IsMining =>
+        state == MovementState.Mining;
+
+    public float MiningProgress =>
+        IsMining
+            ? Mathf.Clamp01(
+                miningElapsed / Mathf.Max(0.1f, miningDuration))
+            : 0f;
 
     public int FatalFallDistance =>
         fatalFallDistance;
@@ -149,6 +168,11 @@ public class DwarfMovement : MonoBehaviour
     private void OnEnable()
     {
         ResetMovementState();
+    }
+
+    private void OnDisable()
+    {
+        CancelMiningReservation();
     }
 
     private void Update()
@@ -185,6 +209,10 @@ public class DwarfMovement : MonoBehaviour
                 UpdateDrifting();
                 break;
 
+            case MovementState.Mining:
+                UpdateMining();
+                break;
+
             case MovementState.Walking:
             case MovementState.SteppingUp:
             case MovementState.SteppingDown:
@@ -199,6 +227,11 @@ public class DwarfMovement : MonoBehaviour
     private void DecideNextMove()
     {
         if (TryReachExit())
+        {
+            return;
+        }
+
+        if (TryBeginMining())
         {
             return;
         }
@@ -661,6 +694,11 @@ public class DwarfMovement : MonoBehaviour
 
     private void UpdateDrifting()
     {
+        if (TryBeginMining())
+        {
+            return;
+        }
+
         Vector3Int waterSample =
             GetWaterSampleVoxel();
 
@@ -1525,6 +1563,68 @@ public class DwarfMovement : MonoBehaviour
         agent.Deactivate();
     }
 
+    private bool TryBeginMining()
+    {
+        if (!OreRockAuthoring.TryFindAtLeadingFace(
+                agent,
+                out OreRockAuthoring oreRock))
+        {
+            return false;
+        }
+
+        if (!oreRock.TryReserve(agent))
+        {
+            BeginTurnAround();
+            return true;
+        }
+
+        jobController?.PrepareForTerminalInteraction();
+
+        activeOreRock = oreRock;
+        miningElapsed = 0f;
+        moveProgress = 0f;
+        state = MovementState.Mining;
+        return true;
+    }
+
+    private void UpdateMining()
+    {
+        if (activeOreRock == null)
+        {
+            miningElapsed = 0f;
+            state = MovementState.Idle;
+            return;
+        }
+
+        miningElapsed += Time.deltaTime;
+
+        if (miningElapsed < Mathf.Max(0.1f, miningDuration))
+        {
+            return;
+        }
+
+        OreRockAuthoring completedRock = activeOreRock;
+        activeOreRock = null;
+        miningElapsed = 0f;
+        state = MovementState.Idle;
+
+        if (!completedRock.CompleteExtraction(agent))
+        {
+            return;
+        }
+
+        if (pool != null)
+        {
+            pool.Release(
+                agent,
+                DwarfReleaseReason.Mined);
+        }
+        else
+        {
+            agent.Deactivate();
+        }
+    }
+
     private bool TryReachExit()
     {
         if (world.GetVoxel(agent.CurrentVoxel).Type !=
@@ -1549,8 +1649,21 @@ public class DwarfMovement : MonoBehaviour
         return true;
     }
 
+    private void CancelMiningReservation()
+    {
+        if (activeOreRock != null)
+        {
+            activeOreRock.CancelReservation(agent);
+        }
+
+        activeOreRock = null;
+        miningElapsed = 0f;
+    }
+
     private void ResetMovementState()
     {
+        CancelMiningReservation();
+
         state = MovementState.Idle;
 
         moveProgress = 0f;
@@ -1560,6 +1673,7 @@ public class DwarfMovement : MonoBehaviour
         hasWaterLaneHeading = false;
         waterLaneHeading = Vector3Int.zero;
         observedLaneVersion = 0;
+        miningElapsed = 0f;
 
         startWorldPosition =
             transform.position;

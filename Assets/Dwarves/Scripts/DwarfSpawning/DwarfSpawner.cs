@@ -453,8 +453,12 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        if (reason == DwarfReleaseReason.Rescued)
+        if (reason == DwarfReleaseReason.Rescued ||
+            reason == DwarfReleaseReason.Mined)
         {
+            // Step 7B keeps the existing rescue presentation operational.
+            // Step 7C replaces this compatibility count with mined-resource
+            // terminology and authored resource goals.
             rescued++;
         }
         else if (reason == DwarfReleaseReason.Died)

@@ -1,10 +1,14 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 [ExecuteAlways]
 [AddComponentMenu("Delvekin/Ore Rock Authoring")]
 public sealed class OreRockAuthoring : MonoBehaviour
 {
+    private static readonly HashSet<OreRockAuthoring> RuntimeRocks =
+        new();
+
     [SerializeField]
     [HideInInspector]
     private string entityId;
@@ -39,13 +43,21 @@ public sealed class OreRockAuthoring : MonoBehaviour
 
     private GameObject visualInstance;
     private int synchronizedStateHash = int.MinValue;
+    private readonly HashSet<DwarfAgent> reservations = new();
+    private int extracted;
 
     public string EntityId => entityId;
     public LevelDefinition AuthoringDefinition => authoringDefinition;
     public GameObject VisualPrefab => visualPrefab;
     public Vector3Int AuthoringSize => authoringSize;
     public int Capacity => Mathf.Max(1, capacity);
+    public int Reserved => reservations.Count;
+    public int Extracted => extracted;
+    public int Remaining =>
+        Mathf.Max(0, Capacity - Reserved - Extracted);
     public PuzzleSide Facing => facing;
+
+    public event Action<OreRockAuthoring, DwarfAgent> OreExtracted;
 
     public void ConfigureIdentity(
         string newEntityId,
@@ -76,8 +88,108 @@ public sealed class OreRockAuthoring : MonoBehaviour
         runtimeCopy = isRuntimeCopy;
 
         transform.SetPositionAndRotation(position, rotation);
+        reservations.Clear();
+        extracted = 0;
         RebuildVisual();
         synchronizedStateHash = CalculateStateHash();
+    }
+
+    public static bool TryFindAtLeadingFace(
+        DwarfAgent dwarf,
+        out OreRockAuthoring oreRock)
+    {
+        oreRock = null;
+
+        if (dwarf == null || !dwarf.IsActive)
+        {
+            return false;
+        }
+
+        Vector3Int direction =
+            DirectionUtility.ToVector(dwarf.Facing);
+
+        Vector3Int candidateAnchor =
+            dwarf.CurrentVoxel + direction;
+
+        float nearestDistance = float.PositiveInfinity;
+
+        foreach (OreRockAuthoring candidate in RuntimeRocks)
+        {
+            if (candidate == null || !candidate.isActiveAndEnabled)
+            {
+                continue;
+            }
+
+            bool touches = false;
+
+            foreach (Vector3Int voxel in
+                     DwarfSpatialRules.GetLeadingFaceVoxels(
+                         candidateAnchor,
+                         direction))
+            {
+                if (!candidate.ContainsVoxel(voxel))
+                {
+                    continue;
+                }
+
+                touches = true;
+                break;
+            }
+
+            if (!touches)
+            {
+                continue;
+            }
+
+            float distance =
+                (candidate.transform.position - dwarf.transform.position)
+                .sqrMagnitude;
+
+            if (distance >= nearestDistance)
+            {
+                continue;
+            }
+
+            nearestDistance = distance;
+            oreRock = candidate;
+        }
+
+        return oreRock != null;
+    }
+
+    public bool TryReserve(DwarfAgent dwarf)
+    {
+        if (!runtimeCopy ||
+            dwarf == null ||
+            !dwarf.IsActive ||
+            reservations.Contains(dwarf) ||
+            Remaining <= 0)
+        {
+            return false;
+        }
+
+        reservations.Add(dwarf);
+        return true;
+    }
+
+    public bool CompleteExtraction(DwarfAgent dwarf)
+    {
+        if (dwarf == null || !reservations.Remove(dwarf))
+        {
+            return false;
+        }
+
+        extracted++;
+        OreExtracted?.Invoke(this, dwarf);
+        return true;
+    }
+
+    public void CancelReservation(DwarfAgent dwarf)
+    {
+        if (dwarf != null)
+        {
+            reservations.Remove(dwarf);
+        }
     }
 
     public LevelEntityRecord CreateEntityRecord()
@@ -163,6 +275,20 @@ public sealed class OreRockAuthoring : MonoBehaviour
         synchronizedStateHash = int.MinValue;
     }
 
+    private void OnEnable()
+    {
+        if (runtimeCopy)
+        {
+            RuntimeRocks.Add(this);
+        }
+    }
+
+    private void OnDisable()
+    {
+        RuntimeRocks.Remove(this);
+        reservations.Clear();
+    }
+
     private void Update()
     {
 #if UNITY_EDITOR
@@ -211,6 +337,8 @@ public sealed class OreRockAuthoring : MonoBehaviour
 
     private void OnDestroy()
     {
+        RuntimeRocks.Remove(this);
+
 #if UNITY_EDITOR
         if (Application.isPlaying ||
             runtimeCopy ||
@@ -259,5 +387,22 @@ public sealed class OreRockAuthoring : MonoBehaviour
             Mathf.Max(1, value.x),
             Mathf.Max(1, value.y),
             Mathf.Max(1, value.z));
+    }
+
+    private bool ContainsVoxel(Vector3Int voxel)
+    {
+        Vector3Int minimum = Vector3Int.FloorToInt(
+            transform.position - (Vector3)authoringSize * 0.5f +
+            Vector3.one * 0.001f);
+
+        Vector3Int maximumExclusive = minimum + authoringSize;
+
+        return
+            voxel.x >= minimum.x &&
+            voxel.y >= minimum.y &&
+            voxel.z >= minimum.z &&
+            voxel.x < maximumExclusive.x &&
+            voxel.y < maximumExclusive.y &&
+            voxel.z < maximumExclusive.z;
     }
 }

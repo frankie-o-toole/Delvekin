@@ -6,6 +6,7 @@ public enum DwarfReleaseReason
 {
     Died,
     Rescued,
+    Mined,
     Recalled
 }
 
