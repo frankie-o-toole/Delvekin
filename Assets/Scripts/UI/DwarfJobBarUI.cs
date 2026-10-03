@@ -134,6 +134,9 @@ public class DwarfJobBarUI : MonoBehaviour
         assignmentManager.DirectionAltererSelectionChanged +=
             HandleDirectionAltererSelectionChanged;
 
+        assignmentManager.InteractionEnabledChanged +=
+            HandleInteractionEnabledChanged;
+
         if (inventory != null)
         {
             inventory.CountChanged +=
@@ -167,6 +170,9 @@ public class DwarfJobBarUI : MonoBehaviour
 
             assignmentManager.DirectionAltererSelectionChanged -=
                 HandleDirectionAltererSelectionChanged;
+
+            assignmentManager.InteractionEnabledChanged -=
+                HandleInteractionEnabledChanged;
         }
 
         if (inventory != null)
@@ -369,7 +375,9 @@ public class DwarfJobBarUI : MonoBehaviour
             return;
         }
 
-        stopJobButton.interactable = true;
+        stopJobButton.interactable =
+            assignmentManager != null &&
+            assignmentManager.InteractionEnabled;
 
         if (stopJobButton.targetGraphic != null)
         {
@@ -448,6 +456,8 @@ public class DwarfJobBarUI : MonoBehaviour
                 binding.jobType);
 
         bool available =
+            assignmentManager != null &&
+            assignmentManager.InteractionEnabled &&
             implemented &&
             count > 0;
 
@@ -540,6 +550,11 @@ public class DwarfJobBarUI : MonoBehaviour
     private void HandleDirectionAltererSelectionChanged(
         bool optionsOpen,
         DirectionAltererTurn? selectedTurn)
+    {
+        RefreshAllButtons();
+    }
+
+    private void HandleInteractionEnabledChanged(bool enabled)
     {
         RefreshAllButtons();
     }

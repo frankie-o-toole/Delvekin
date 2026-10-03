@@ -37,6 +37,16 @@ public class DwarfSpawner : MonoBehaviour
     private int nextSpawnPointIndex;
     private bool spawnFinished;
     private bool simulationResolved;
+    private float timeScaleBeforePause = 1f;
+
+    public LevelSimulationState SimulationState { get; private set; } =
+        LevelSimulationState.Preparation;
+
+    public event System.Action<LevelSimulationState>
+        SimulationStateChanged;
+
+    public int TotalDwarves => maxDwarves;
+    public int RequiredRescues => GetRequiredRescues();
 
     private void OnEnable()
     {
@@ -58,7 +68,7 @@ public class DwarfSpawner : MonoBehaviour
 
     public void StartSimulation()
     {
-        if (simulationStarted)
+        if (SimulationState != LevelSimulationState.Preparation)
         {
             return;
         }
@@ -99,6 +109,8 @@ public class DwarfSpawner : MonoBehaviour
         simulationResolved = false;
         simulationStarted = true;
 
+        SetSimulationState(LevelSimulationState.Running);
+
         world.StartFluidSimulation();
 
         StartCoroutine(SpawnLoop());
@@ -107,6 +119,9 @@ public class DwarfSpawner : MonoBehaviour
     public void ResetSimulation()
     {
         StopAllCoroutines();
+
+        Time.timeScale = 1f;
+        timeScaleBeforePause = 1f;
 
         // Disable result accounting before recalling active dwarves.
         simulationStarted = false;
@@ -141,6 +156,53 @@ public class DwarfSpawner : MonoBehaviour
             FindFirstObjectByType<DwarfJobInventory>();
 
         inventory?.ResetToStartingStock();
+
+        SetSimulationState(LevelSimulationState.Preparation);
+    }
+
+    public void ConfigureLevel(
+        LevelDefinition.RuntimeSnapshot snapshot)
+    {
+        if (snapshot == null)
+        {
+            return;
+        }
+
+        maxDwarves = Mathf.Max(1, snapshot.TotalDwarves);
+        requiredRescues = Mathf.Clamp(
+            snapshot.RequiredRescues,
+            1,
+            maxDwarves);
+
+        DwarfJobInventory inventory =
+            FindFirstObjectByType<DwarfJobInventory>();
+
+        inventory?.ConfigureForLevel(snapshot.JobRules);
+
+        SetSimulationState(LevelSimulationState.Preparation);
+    }
+
+    public void PauseSimulation()
+    {
+        if (SimulationState != LevelSimulationState.Running)
+        {
+            return;
+        }
+
+        timeScaleBeforePause = Mathf.Max(0.01f, Time.timeScale);
+        Time.timeScale = 0f;
+        SetSimulationState(LevelSimulationState.Paused);
+    }
+
+    public void ResumeSimulation()
+    {
+        if (SimulationState != LevelSimulationState.Paused)
+        {
+            return;
+        }
+
+        Time.timeScale = timeScaleBeforePause;
+        SetSimulationState(LevelSimulationState.Running);
     }
 
     private IEnumerator SpawnLoop()
@@ -203,6 +265,8 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         simulationResolved = true;
+
+        SetSimulationState(LevelSimulationState.Completed);
 
         bool victory =
             rescued >= GetRequiredRescues();
@@ -351,7 +415,7 @@ public class DwarfSpawner : MonoBehaviour
 
         float y = margin;
 
-        if (!simulationStarted)
+        if (SimulationState == LevelSimulationState.Preparation)
         {
             if (GUI.Button(
                     new Rect(
@@ -399,5 +463,18 @@ public class DwarfSpawner : MonoBehaviour
             requiredRescues,
             1,
             Mathf.Max(1, maxDwarves));
+    }
+
+    private void SetSimulationState(LevelSimulationState state)
+    {
+        SimulationState = state;
+
+        DwarfJobAssignmentManager assignmentManager =
+            FindFirstObjectByType<DwarfJobAssignmentManager>();
+
+        assignmentManager?.SetInteractionEnabled(
+            state == LevelSimulationState.Running);
+
+        SimulationStateChanged?.Invoke(state);
     }
 }

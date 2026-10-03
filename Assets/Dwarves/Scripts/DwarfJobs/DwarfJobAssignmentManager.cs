@@ -14,6 +14,7 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     private bool stopJobSelected;
 
     private bool directionAltererOptionsOpen;
+    private bool interactionEnabled;
     private DirectionAltererTurn selectedDirectionAltererTurn =
         DirectionAltererTurn.Reverse;
 
@@ -37,6 +38,10 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         DwarfAgent,
         DwarfJobType,
         bool> JobStopped;
+
+    public event Action<bool> InteractionEnabledChanged;
+
+    public bool InteractionEnabled => interactionEnabled;
 
     public DwarfAgent SelectedDwarf =>
         selectedDwarf;
@@ -88,6 +93,11 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     public void ToggleJob(
         DwarfJobType jobType)
     {
+        if (!RequireInteraction())
+        {
+            return;
+        }
+
         if (jobType == DwarfJobType.DirectionAlter)
         {
             ToggleDirectionAltererOptions();
@@ -136,6 +146,11 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
     public void ToggleDirectionAltererOptions()
     {
+        if (!RequireInteraction())
+        {
+            return;
+        }
+
         if (directionAltererOptionsOpen ||
             selectedJob == DwarfJobType.DirectionAlter)
         {
@@ -176,6 +191,11 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     public void SelectDirectionAltererTurn(
         DirectionAltererTurn turn)
     {
+        if (!RequireInteraction())
+        {
+            return;
+        }
+
         if (!directionAltererOptionsOpen)
         {
             return;
@@ -210,6 +230,11 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
     public void ToggleStopJob()
     {
+        if (!RequireInteraction())
+        {
+            return;
+        }
+
         if (stopJobSelected)
         {
             ClearStopJobSelection();
@@ -229,6 +254,12 @@ public class DwarfJobAssignmentManager : MonoBehaviour
     public void ToggleDwarf(
         DwarfAgent dwarf)
     {
+        if (!interactionEnabled)
+        {
+            ClearSelectedDwarf();
+            return;
+        }
+
         if (dwarf == null)
         {
             ClearSelectedDwarf();
@@ -316,6 +347,23 @@ public class DwarfJobAssignmentManager : MonoBehaviour
         ClearSelectedJob();
         ClearDirectionAltererSelection();
         ClearStopJobSelection();
+    }
+
+    public void SetInteractionEnabled(bool enabled)
+    {
+        if (interactionEnabled == enabled)
+        {
+            return;
+        }
+
+        interactionEnabled = enabled;
+
+        if (!interactionEnabled)
+        {
+            ClearAllSelections();
+        }
+
+        InteractionEnabledChanged?.Invoke(interactionEnabled);
     }
 
     public bool CanStopJob(
@@ -527,5 +575,17 @@ public class DwarfJobAssignmentManager : MonoBehaviour
 
         AssignmentFailed?.Invoke(
             failureReason);
+    }
+
+    private bool RequireInteraction()
+    {
+        if (interactionEnabled)
+        {
+            return true;
+        }
+
+        ReportFailure(
+            "Jobs are available after the simulation starts.");
+        return false;
     }
 }

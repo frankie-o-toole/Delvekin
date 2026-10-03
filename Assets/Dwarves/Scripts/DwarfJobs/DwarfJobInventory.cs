@@ -18,6 +18,11 @@ public class DwarfJobInventory : MonoBehaviour
     private readonly Dictionary<DwarfJobType, int> counts =
         new();
 
+    private readonly Dictionary<DwarfJobType, int>
+        levelStartingCounts = new();
+
+    private bool usesLevelRules;
+
     public event Action<DwarfJobType, int> CountChanged;
 
     private void Awake()
@@ -71,8 +76,17 @@ public class DwarfJobInventory : MonoBehaviour
             return;
         }
 
-        int newCount =
-            GetCount(type) + 1;
+        int maximum = int.MaxValue;
+
+        if (usesLevelRules &&
+            !levelStartingCounts.TryGetValue(type, out maximum))
+        {
+            maximum = 0;
+        }
+
+        int newCount = Mathf.Min(
+            GetCount(type) + 1,
+            maximum);
 
         counts[type] =
             newCount;
@@ -94,9 +108,43 @@ public class DwarfJobInventory : MonoBehaviour
         }
     }
 
+    public void ConfigureForLevel(
+        IReadOnlyList<LevelJobRule> rules)
+    {
+        usesLevelRules = true;
+        levelStartingCounts.Clear();
+
+        if (rules != null)
+        {
+            foreach (LevelJobRule rule in rules)
+            {
+                if (rule == null ||
+                    rule.jobType == DwarfJobType.None)
+                {
+                    continue;
+                }
+
+                levelStartingCounts[rule.jobType] =
+                    Mathf.Max(0, rule.defaultCount);
+            }
+        }
+
+        ResetToStartingStock();
+    }
+
     private void RebuildInventory()
     {
         counts.Clear();
+
+        if (usesLevelRules)
+        {
+            foreach (var pair in levelStartingCounts)
+            {
+                counts[pair.Key] = pair.Value;
+            }
+
+            return;
+        }
 
         foreach (JobStock stock in startingStock)
         {

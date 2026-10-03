@@ -674,9 +674,11 @@ public class VoxelWorld : MonoBehaviour
 
     public void LoadLevelDefinition(LevelDefinition definition)
     {
+        DwarfSpawner spawner = null;
+
         if (Application.isPlaying)
         {
-            DwarfSpawner spawner =
+            spawner =
                 FindFirstObjectByType<DwarfSpawner>();
 
             spawner?.ResetSimulation();
@@ -800,6 +802,8 @@ public class VoxelWorld : MonoBehaviour
             }
 
             BuildRuntimeEntities(snapshot.Entities);
+
+            spawner?.ConfigureLevel(snapshot);
         }
 
         ChunkRefreshSystem.RequestFullRefresh();
