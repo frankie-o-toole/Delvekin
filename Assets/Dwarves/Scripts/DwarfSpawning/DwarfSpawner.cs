@@ -38,7 +38,6 @@ public class DwarfSpawner : MonoBehaviour
     private int nextSpawnPointIndex;
     private bool spawnFinished;
     private bool simulationResolved;
-    private float timeScaleBeforePause = 1f;
     private bool retryConfirmationOpen;
     private bool endLevelConfirmationOpen;
     private LevelSimulationState stateBeforeRetryConfirmation;
@@ -52,11 +51,17 @@ public class DwarfSpawner : MonoBehaviour
     public LevelOutcome Outcome { get; private set; } =
         LevelOutcome.Undecided;
 
+    public LevelSimulationSpeed SimulationSpeed { get; private set; } =
+        LevelSimulationSpeed.Normal;
+
     public event System.Action<LevelSimulationState>
         SimulationStateChanged;
 
     public event System.Action<RescueGoalProgress>
         RescueGoalProgressChanged;
+
+    public event System.Action<LevelSimulationSpeed>
+        SimulationSpeedChanged;
 
     public int TotalDwarves => maxDwarves;
     public int RequiredRescues => GetRequiredRescues();
@@ -150,6 +155,8 @@ public class DwarfSpawner : MonoBehaviour
         simulationClock.Reset();
         result = null;
 
+        ApplySimulationSpeed();
+
         RefreshRescueGoalProgress();
 
         SetSimulationState(LevelSimulationState.Running);
@@ -164,7 +171,6 @@ public class DwarfSpawner : MonoBehaviour
         StopAllCoroutines();
 
         Time.timeScale = 1f;
-        timeScaleBeforePause = 1f;
         retryConfirmationOpen = false;
         endLevelConfirmationOpen = false;
 
@@ -175,6 +181,7 @@ public class DwarfSpawner : MonoBehaviour
         Outcome = LevelOutcome.Undecided;
         simulationClock.Reset();
         result = null;
+        SetSimulationSpeed(LevelSimulationSpeed.Normal);
 
         if (pool != null)
         {
@@ -265,7 +272,6 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        timeScaleBeforePause = Mathf.Max(0.01f, Time.timeScale);
         Time.timeScale = 0f;
         SetSimulationState(LevelSimulationState.Paused);
     }
@@ -277,8 +283,29 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        Time.timeScale = timeScaleBeforePause;
+        ApplySimulationSpeed();
         SetSimulationState(LevelSimulationState.Running);
+    }
+
+    public void SetSimulationSpeed(LevelSimulationSpeed speed)
+    {
+        if (!LevelSimulationSpeedUtility.IsSupported(speed))
+        {
+            return;
+        }
+
+        bool changed = SimulationSpeed != speed;
+        SimulationSpeed = speed;
+
+        if (SimulationState == LevelSimulationState.Running)
+        {
+            ApplySimulationSpeed();
+        }
+
+        if (changed)
+        {
+            SimulationSpeedChanged?.Invoke(SimulationSpeed);
+        }
     }
 
     public void RequestRetry()
@@ -695,6 +722,14 @@ public class DwarfSpawner : MonoBehaviour
             {
                 RequestRetry();
             }
+
+            nextButtonY += height + 4f;
+
+            DrawSimulationSpeedControls(
+                x,
+                nextButtonY,
+                width,
+                32f);
         }
 
         if (retryConfirmationOpen)
@@ -717,6 +752,74 @@ public class DwarfSpawner : MonoBehaviour
             requiredRescues,
             1,
             Mathf.Max(1, maxDwarves));
+    }
+
+    private void ApplySimulationSpeed()
+    {
+        Time.timeScale =
+            LevelSimulationSpeedUtility.ToTimeScale(
+                SimulationSpeed);
+    }
+
+    private void DrawSimulationSpeedControls(
+        float x,
+        float y,
+        float width,
+        float height)
+    {
+        const float gap = 4f;
+        float buttonWidth = (width - gap * 2f) / 3f;
+
+        DrawSimulationSpeedButton(
+            LevelSimulationSpeed.Normal,
+            "1×",
+            new Rect(x, y, buttonWidth, height));
+
+        DrawSimulationSpeedButton(
+            LevelSimulationSpeed.Fast,
+            "2×",
+            new Rect(
+                x + buttonWidth + gap,
+                y,
+                buttonWidth,
+                height));
+
+        DrawSimulationSpeedButton(
+            LevelSimulationSpeed.VeryFast,
+            "4×",
+            new Rect(
+                x + (buttonWidth + gap) * 2f,
+                y,
+                buttonWidth,
+                height));
+    }
+
+    private void DrawSimulationSpeedButton(
+        LevelSimulationSpeed speed,
+        string label,
+        Rect rect)
+    {
+        Color previousColor = GUI.color;
+        bool previousEnabled = GUI.enabled;
+
+        if (SimulationSpeed == speed)
+        {
+            GUI.color = Color.green;
+        }
+
+        GUI.enabled =
+            previousEnabled &&
+            SimulationState == LevelSimulationState.Running &&
+            !retryConfirmationOpen &&
+            !endLevelConfirmationOpen;
+
+        if (GUI.Button(rect, label))
+        {
+            SetSimulationSpeed(speed);
+        }
+
+        GUI.enabled = previousEnabled;
+        GUI.color = previousColor;
     }
 
     private void SetSimulationState(LevelSimulationState state)
