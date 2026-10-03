@@ -254,13 +254,19 @@ public class DwarfSpawner : MonoBehaviour
     public void RequestRetry()
     {
         if (retryConfirmationOpen ||
-            SimulationState != LevelSimulationState.Running)
+            (SimulationState != LevelSimulationState.Running &&
+             SimulationState != LevelSimulationState.Completed))
         {
             return;
         }
 
         stateBeforeRetryConfirmation = SimulationState;
-        PauseSimulation();
+
+        if (SimulationState == LevelSimulationState.Running)
+        {
+            PauseSimulation();
+        }
+
         retryConfirmationOpen = true;
     }
 
@@ -538,7 +544,8 @@ public class DwarfSpawner : MonoBehaviour
                         : "LEVEL FAILED")
                     : $"Rescued: {rescued}/{GetRequiredRescues()}  "
                       + $"Lost: {died + recalled}  "
-                      + $"Active: {pool.ActiveCount}/{maxDwarves}";
+                      + $"Active: {rescueGoalProgress.Active}  "
+                      + $"Waiting: {rescueGoalProgress.Unspawned}";
 
             if (!simulationResolved && IsRescueGoalImpossible)
             {
@@ -553,7 +560,8 @@ public class DwarfSpawner : MonoBehaviour
                     height),
                 status);
 
-            if (SimulationState == LevelSimulationState.Running &&
+            if ((SimulationState == LevelSimulationState.Running ||
+                 SimulationState == LevelSimulationState.Completed) &&
                 !retryConfirmationOpen &&
                 GUI.Button(
                     new Rect(
