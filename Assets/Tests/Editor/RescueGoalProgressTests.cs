@@ -30,6 +30,14 @@ public class RescueGoalProgressTests
     }
 
     [Test]
+    public void TargetIsNotReachedBelowRequirement()
+    {
+        RescueGoalProgress progress = new(5, 3, 2, 6);
+
+        Assert.That(progress.TargetReached, Is.False);
+    }
+
+    [Test]
     public void InvalidCountsAreClampedToZero()
     {
         RescueGoalProgress progress = new(-1, -2, -3, 1);

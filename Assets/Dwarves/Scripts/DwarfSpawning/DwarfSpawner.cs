@@ -45,6 +45,9 @@ public class DwarfSpawner : MonoBehaviour
     public LevelSimulationState SimulationState { get; private set; } =
         LevelSimulationState.Preparation;
 
+    public LevelOutcome Outcome { get; private set; } =
+        LevelOutcome.Undecided;
+
     public event System.Action<LevelSimulationState>
         SimulationStateChanged;
 
@@ -57,6 +60,8 @@ public class DwarfSpawner : MonoBehaviour
         rescueGoalProgress;
     public bool IsRescueGoalImpossible =>
         rescueGoalProgress.IsImpossible;
+    public bool IsRescueTargetReached =>
+        rescueGoalProgress.TargetReached;
 
     private void OnEnable()
     {
@@ -123,6 +128,7 @@ public class DwarfSpawner : MonoBehaviour
         spawnFinished = false;
         simulationResolved = false;
         simulationStarted = true;
+        Outcome = LevelOutcome.Undecided;
 
         RefreshRescueGoalProgress();
 
@@ -145,6 +151,7 @@ public class DwarfSpawner : MonoBehaviour
         simulationStarted = false;
         simulationResolved = false;
         spawnFinished = false;
+        Outcome = LevelOutcome.Undecided;
 
         if (pool != null)
         {
@@ -301,6 +308,17 @@ public class DwarfSpawner : MonoBehaviour
         }
     }
 
+    public void EndLevel()
+    {
+        if (SimulationState != LevelSimulationState.Running ||
+            !IsRescueTargetReached)
+        {
+            return;
+        }
+
+        CompleteSimulation(LevelOutcome.Success);
+    }
+
     private IEnumerator SpawnLoop()
     {
         while (spawned < maxDwarves)
@@ -363,18 +381,10 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
-        simulationResolved = true;
-
-        SetSimulationState(LevelSimulationState.Completed);
-
-        bool victory =
-            rescued >= GetRequiredRescues();
-
-        Debug.Log(
-            victory
-                ? $"Level complete! Rescued {rescued}/{spawned} dwarves."
-                : $"Level failed. Rescued {rescued}/{spawned} dwarves; "
-                  + $"required {GetRequiredRescues()}.");
+        CompleteSimulation(
+            IsRescueTargetReached
+                ? LevelOutcome.Success
+                : LevelOutcome.Failure);
     }
 
     private bool TrySpawnDwarf()
@@ -537,9 +547,13 @@ public class DwarfSpawner : MonoBehaviour
             float statusX =
                 logicalScreenWidth - statusWidth - margin;
 
+            bool targetReached =
+                !simulationResolved &&
+                IsRescueTargetReached;
+
             string status =
                 simulationResolved
-                    ? (rescued >= GetRequiredRescues()
+                    ? (Outcome == LevelOutcome.Success
                         ? "LEVEL COMPLETE"
                         : "LEVEL FAILED")
                     : $"Rescued: {rescued}/{GetRequiredRescues()}  "
@@ -547,9 +561,20 @@ public class DwarfSpawner : MonoBehaviour
                       + $"Active: {rescueGoalProgress.Active}  "
                       + $"Waiting: {rescueGoalProgress.Unspawned}";
 
-            if (!simulationResolved && IsRescueGoalImpossible)
+            if (targetReached)
+            {
+                status = "✓ TARGET REACHED  " + status;
+            }
+            else if (!simulationResolved && IsRescueGoalImpossible)
             {
                 status += "  (UNSOLVABLE)";
+            }
+
+            Color previousColor = GUI.color;
+
+            if (targetReached)
+            {
+                GUI.color = Color.green;
             }
 
             GUI.Label(
@@ -560,13 +585,35 @@ public class DwarfSpawner : MonoBehaviour
                     height),
                 status);
 
+            GUI.color = previousColor;
+
+            float nextButtonY = y + height + 4f;
+
+            if (targetReached &&
+                !retryConfirmationOpen &&
+                GUI.Button(
+                    new Rect(
+                        x,
+                        nextButtonY,
+                        width,
+                        height),
+                    "End Level"))
+            {
+                EndLevel();
+            }
+
+            if (targetReached)
+            {
+                nextButtonY += height + 4f;
+            }
+
             if ((SimulationState == LevelSimulationState.Running ||
                  SimulationState == LevelSimulationState.Completed) &&
                 !retryConfirmationOpen &&
                 GUI.Button(
                     new Rect(
                         x,
-                        y + height + 4f,
+                        nextButtonY,
                         width,
                         height),
                     "Retry"))
@@ -685,5 +732,29 @@ public class DwarfSpawner : MonoBehaviour
             RescueGoalProgressChanged?.Invoke(
                 rescueGoalProgress);
         }
+    }
+
+    private void CompleteSimulation(LevelOutcome outcome)
+    {
+        if (simulationResolved ||
+            outcome == LevelOutcome.Undecided)
+        {
+            return;
+        }
+
+        StopAllCoroutines();
+
+        simulationStarted = false;
+        simulationResolved = true;
+        Outcome = outcome;
+        Time.timeScale = 0f;
+
+        SetSimulationState(LevelSimulationState.Completed);
+
+        Debug.Log(
+            outcome == LevelOutcome.Success
+                ? $"Level complete! Rescued {rescued}/{spawned} dwarves."
+                : $"Level failed. Rescued {rescued}/{spawned} dwarves; "
+                  + $"required {GetRequiredRescues()}.");
     }
 }
