@@ -13,6 +13,7 @@ public sealed class LevelAttemptResult
     public int ActiveAtEnd { get; }
     public int UnspawnedAtEnd { get; }
     public double SimulationSeconds { get; }
+    public LevelRewardResult Reward { get; }
 
     public int LeftBehind =>
         ActiveAtEnd + UnspawnedAtEnd;
@@ -43,7 +44,8 @@ public sealed class LevelAttemptResult
         int recalled,
         int activeAtEnd,
         int unspawnedAtEnd,
-        double simulationSeconds)
+        double simulationSeconds,
+        LevelRewardResult reward = null)
     {
         Outcome = outcome;
         TotalDwarves = Math.Max(1, totalDwarves);
@@ -59,5 +61,6 @@ public sealed class LevelAttemptResult
         ActiveAtEnd = Math.Max(0, activeAtEnd);
         UnspawnedAtEnd = Math.Max(0, unspawnedAtEnd);
         SimulationSeconds = Math.Max(0d, simulationSeconds);
+        Reward = reward;
     }
 }

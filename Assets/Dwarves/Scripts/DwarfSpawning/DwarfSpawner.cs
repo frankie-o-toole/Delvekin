@@ -45,6 +45,7 @@ public class DwarfSpawner : MonoBehaviour
     private ResourceGoalProgress resourceGoalProgress;
     private readonly LevelSimulationClock simulationClock = new();
     private LevelAttemptResult result;
+    private string activeLevelId;
 
     public LevelSimulationState SimulationState { get; private set; } =
         LevelSimulationState.Preparation;
@@ -63,6 +64,9 @@ public class DwarfSpawner : MonoBehaviour
 
     public event System.Action<LevelSimulationSpeed>
         SimulationSpeedChanged;
+
+    public event System.Action<LevelRewardResult>
+        RewardResolved;
 
     public int TotalDwarves => maxDwarves;
     public int RequiredMinedResources => GetRequiredMinedResources();
@@ -244,6 +248,7 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         maxDwarves = Mathf.Max(1, snapshot.TotalDwarves);
+        activeLevelId = snapshot.LevelId;
         requiredMinedResources = Mathf.Clamp(
             snapshot.RequiredMinedResources,
             1,
@@ -972,7 +977,7 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         const float width = 360f;
-        const float height = 350f;
+        const float height = 430f;
         const float padding = 18f;
 
         Rect panel = new(
@@ -1022,7 +1027,37 @@ public class DwarfSpawner : MonoBehaviour
             $"Simulation time: " +
             $"{FormatSimulationTime(result.SimulationTime)}");
 
-        float buttonY = panel.y + 228f;
+        float rewardY = panel.y + 222f;
+
+        if (result.Reward != null)
+        {
+            string rewardText = result.Reward.AttemptSucceeded
+                ? $"Previous best: " +
+                  $"{result.Reward.PreviousBestDelivered}/" +
+                  $"{result.Reward.TotalOreCapacity}\n" +
+                  $"New best: {result.Reward.BestDelivered}/" +
+                  $"{result.Reward.TotalOreCapacity}\n" +
+                  $"New ore earned: +" +
+                  $"{result.Reward.NewlyEarnedResources}"
+                : $"No ore earned: level target not reached.\n" +
+                  $"Current best: {result.Reward.BestDelivered}/" +
+                  $"{result.Reward.TotalOreCapacity}";
+
+            if (result.Reward.IsFirstCompletion)
+            {
+                rewardText = "FIRST COMPLETION\n" + rewardText;
+            }
+
+            GUI.Label(
+                new Rect(
+                    panel.x + padding,
+                    rewardY,
+                    width - padding * 2f,
+                    82f),
+                rewardText);
+        }
+
+        float buttonY = panel.y + 310f;
 
         if (!retryConfirmationOpen &&
             GUI.Button(
@@ -1139,6 +1174,13 @@ public class DwarfSpawner : MonoBehaviour
         Outcome = outcome;
         Time.timeScale = 0f;
 
+        LevelRewardResult reward =
+            SessionLevelRewardHistory.ResolveAttempt(
+                activeLevelId,
+                outcome,
+                resourceGoalProgress.Mined,
+                resourceGoalProgress.Ore.TotalCapacity);
+
         result = new LevelAttemptResult(
             outcome,
             maxDwarves,
@@ -1150,7 +1192,10 @@ public class DwarfSpawner : MonoBehaviour
             recalled,
             resourceGoalProgress.ActiveDwarves,
             resourceGoalProgress.UnspawnedDwarves,
-            simulationClock.ElapsedSeconds);
+            simulationClock.ElapsedSeconds,
+            reward);
+
+        RewardResolved?.Invoke(reward);
 
         SetSimulationState(LevelSimulationState.Completed);
 
