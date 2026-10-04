@@ -66,13 +66,14 @@ public class DwarfJobBarUI : MonoBehaviour
     [SerializeField]
     private float jobSlotSpacing = 8f;
 
+    [Min(0f)]
+    [SerializeField]
+    private float bottomOffset = 24f;
+
     [FormerlySerializedAs("jobButtons")]
     [SerializeField]
     private List<JobButtonBinding> jobButtonDefinitions =
         new();
-
-    [SerializeField]
-    private TMP_Text feedbackLabel;
 
     [Header("Stop Job")]
     [SerializeField]
@@ -188,17 +189,8 @@ public class DwarfJobBarUI : MonoBehaviour
         assignmentManager.SelectedJobChanged +=
             HandleSelectedJobChanged;
 
-        assignmentManager.AssignmentSucceeded +=
-            HandleAssignmentSucceeded;
-
-        assignmentManager.AssignmentFailed +=
-            HandleAssignmentFailed;
-
         assignmentManager.StopJobSelectionChanged +=
             HandleStopJobSelectionChanged;
-
-        assignmentManager.JobStopped +=
-            HandleJobStopped;
 
         assignmentManager.DirectionAltererSelectionChanged +=
             HandleDirectionAltererSelectionChanged;
@@ -236,17 +228,8 @@ public class DwarfJobBarUI : MonoBehaviour
             assignmentManager.SelectedJobChanged -=
                 HandleSelectedJobChanged;
 
-            assignmentManager.AssignmentSucceeded -=
-                HandleAssignmentSucceeded;
-
-            assignmentManager.AssignmentFailed -=
-                HandleAssignmentFailed;
-
             assignmentManager.StopJobSelectionChanged -=
                 HandleStopJobSelectionChanged;
-
-            assignmentManager.JobStopped -=
-                HandleJobStopped;
 
             assignmentManager.DirectionAltererSelectionChanged -=
                 HandleDirectionAltererSelectionChanged;
@@ -326,6 +309,7 @@ public class DwarfJobBarUI : MonoBehaviour
         jobSlotWidth = Mathf.Max(1f, jobSlotWidth);
         jobSlotHeight = Mathf.Max(1f, jobSlotHeight);
         jobSlotSpacing = Mathf.Max(0f, jobSlotSpacing);
+        bottomOffset = Mathf.Max(0f, bottomOffset);
 
         if (Application.isPlaying && isActiveAndEnabled)
         {
@@ -371,8 +355,7 @@ public class DwarfJobBarUI : MonoBehaviour
 
         bool needsDedicatedContainer =
             jobButtonContainer == null ||
-            stopJobButton != null &&
-            stopJobButton.transform.parent == jobButtonContainer;
+            jobButtonContainer == transform;
 
         if (needsDedicatedContainer)
         {
@@ -429,6 +412,22 @@ public class DwarfJobBarUI : MonoBehaviour
             runtimeJobButtons.Add(binding);
         }
 
+        if (stopJobButton != null)
+        {
+            stopJobButton.transform.SetParent(
+                jobButtonContainer,
+                false);
+            stopJobButton.transform.localScale = Vector3.one;
+            stopJobButton.gameObject.SetActive(true);
+        }
+
+        if (stopJobLabel != null)
+        {
+            stopJobLabel.text = stopJobDisplayName;
+        }
+
+        DisableLegacyFeedback();
+
         fixedSlotsInitialized = true;
     }
 
@@ -450,6 +449,10 @@ public class DwarfJobBarUI : MonoBehaviour
             containerObject.GetComponent<RectTransform>();
         containerRect.SetParent(parent, false);
         containerRect.SetSiblingIndex(0);
+        containerRect.anchorMin = new Vector2(0.5f, 0f);
+        containerRect.anchorMax = new Vector2(0.5f, 0f);
+        containerRect.pivot = new Vector2(0.5f, 0f);
+        containerRect.anchoredPosition = Vector2.zero;
 
         return containerRect;
     }
@@ -472,9 +475,11 @@ public class DwarfJobBarUI : MonoBehaviour
         grid.constraint = GridLayoutGroup.Constraint.FixedRowCount;
         grid.constraintCount = 1;
 
-        int visibleSlotCount = Mathf.Max(
+        int jobSlotCount = Mathf.Max(
             fixedSlotCount,
             runtimeJobButtons.Count);
+        int visibleSlotCount = jobSlotCount +
+                               (stopJobButton != null ? 1 : 0);
         float width = visibleSlotCount * jobSlotWidth +
                       Mathf.Max(0, visibleSlotCount - 1) * jobSlotSpacing;
 
@@ -489,6 +494,10 @@ public class DwarfJobBarUI : MonoBehaviour
 
         if (jobButtonContainer is RectTransform containerRect)
         {
+            containerRect.anchorMin = new Vector2(0.5f, 0f);
+            containerRect.anchorMax = new Vector2(0.5f, 0f);
+            containerRect.pivot = new Vector2(0.5f, 0f);
+            containerRect.anchoredPosition = Vector2.zero;
             containerRect.SetSizeWithCurrentAnchors(
                 RectTransform.Axis.Horizontal,
                 width);
@@ -496,6 +505,44 @@ public class DwarfJobBarUI : MonoBehaviour
                 RectTransform.Axis.Vertical,
                 jobSlotHeight);
             LayoutRebuilder.ForceRebuildLayoutImmediate(containerRect);
+        }
+
+        ConfigureRootRect(width);
+    }
+
+    private void ConfigureRootRect(float width)
+    {
+        RectTransform rootRect = transform as RectTransform;
+        if (rootRect == null)
+        {
+            return;
+        }
+
+        HorizontalLayoutGroup legacyLayout =
+            GetComponent<HorizontalLayoutGroup>();
+        if (legacyLayout != null)
+        {
+            legacyLayout.enabled = false;
+        }
+
+        rootRect.anchorMin = new Vector2(0.5f, 0f);
+        rootRect.anchorMax = new Vector2(0.5f, 0f);
+        rootRect.pivot = new Vector2(0.5f, 0f);
+        rootRect.anchoredPosition = new Vector2(0f, bottomOffset);
+        rootRect.SetSizeWithCurrentAnchors(
+            RectTransform.Axis.Horizontal,
+            width);
+        rootRect.SetSizeWithCurrentAnchors(
+            RectTransform.Axis.Vertical,
+            jobSlotHeight);
+    }
+
+    private void DisableLegacyFeedback()
+    {
+        Transform feedback = transform.Find("FeedbackLabel");
+        if (feedback != null)
+        {
+            feedback.gameObject.SetActive(false);
         }
     }
 
@@ -997,45 +1044,10 @@ public class DwarfJobBarUI : MonoBehaviour
         RefreshAllButtons();
     }
 
-    private void HandleAssignmentSucceeded(
-        DwarfAgent dwarf,
-        DwarfJobType jobType)
-    {
-        if (feedbackLabel != null)
-        {
-            feedbackLabel.text =
-                $"Assigned {jobType} to {dwarf.name}";
-        }
-    }
-
-    private void HandleAssignmentFailed(
-        string failureReason)
-    {
-        if (feedbackLabel != null)
-        {
-            feedbackLabel.text =
-                failureReason;
-        }
-    }
-
     private void HandleStopJobSelectionChanged(
         bool selected)
     {
         RefreshAllButtons();
-    }
-
-    private void HandleJobStopped(
-        DwarfAgent dwarf,
-        DwarfJobType jobType,
-        bool dwarfRecalled)
-    {
-        if (feedbackLabel != null)
-        {
-            feedbackLabel.text =
-                dwarfRecalled
-                    ? $"Recalled {dwarf.name} after stopping {jobType}"
-                    : $"Stopped {jobType} on {dwarf.name}";
-        }
     }
 
     private void HandleDirectionAltererSelectionChanged(
