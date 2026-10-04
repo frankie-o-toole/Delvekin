@@ -972,7 +972,7 @@ public class DwarfSpawner : MonoBehaviour
         }
 
         const float width = 360f;
-        const float height = 300f;
+        const float height = 350f;
         const float padding = 18f;
 
         Rect panel = new(
@@ -987,21 +987,42 @@ public class DwarfSpawner : MonoBehaviour
 
         GUI.Box(panel, title);
 
+        Color previousColor = GUI.color;
+
+        if (result.IsPerfectResourceRun)
+        {
+            GUI.color = Color.green;
+            GUI.Label(
+                new Rect(
+                    panel.x + padding,
+                    panel.y + 35f,
+                    width - padding * 2f,
+                    28f),
+                "PERFECT RESOURCE RUN");
+            GUI.color = previousColor;
+        }
+
+        float detailsY = result.IsPerfectResourceRun
+            ? panel.y + 66f
+            : panel.y + 42f;
+
         GUI.Label(
             new Rect(
                 panel.x + padding,
-                panel.y + 38f,
+                detailsY,
                 width - padding * 2f,
-                125f),
-            $"Mined: {result.MinedResources}/{result.TotalOreCapacity} " +
-            $"({result.MinedPercentage:0.#}%)\n" +
-            $"Required: {result.RequiredMinedResources}\n" +
-            $"Lost: {result.Died + result.Recalled}\n" +
-            $"Left behind: {result.LeftBehind}\n" +
+                155f),
+            $"Resources delivered: {result.DeliveredResources}/" +
+            $"{result.TotalOreCapacity} " +
+            $"({result.DeliveredResourcePercentage:0.#}%)\n" +
+            $"Required to complete: {result.RequiredMinedResources}\n" +
+            $"Resources left behind: {result.RemainingResources}\n" +
+            $"Dwarves lost: {result.Died + result.Recalled}\n" +
+            $"Dwarves left behind: {result.LeftBehind}\n" +
             $"Simulation time: " +
             $"{FormatSimulationTime(result.SimulationTime)}");
 
-        float buttonY = panel.y + 178f;
+        float buttonY = panel.y + 228f;
 
         if (!retryConfirmationOpen &&
             GUI.Button(

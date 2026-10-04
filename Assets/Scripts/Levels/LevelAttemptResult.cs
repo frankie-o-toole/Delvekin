@@ -7,7 +7,7 @@ public sealed class LevelAttemptResult
     public int TotalOreCapacity { get; }
     public int RequiredMinedResources { get; }
     public int Spawned { get; }
-    public int MinedResources { get; }
+    public int DeliveredResources { get; }
     public int Died { get; }
     public int Recalled { get; }
     public int ActiveAtEnd { get; }
@@ -17,9 +17,16 @@ public sealed class LevelAttemptResult
     public int LeftBehind =>
         ActiveAtEnd + UnspawnedAtEnd;
 
-    public double MinedPercentage =>
+    public int RemainingResources =>
+        Math.Max(0, TotalOreCapacity - DeliveredResources);
+
+    public bool IsPerfectResourceRun =>
+        TotalOreCapacity > 0 &&
+        DeliveredResources == TotalOreCapacity;
+
+    public double DeliveredResourcePercentage =>
         TotalOreCapacity > 0
-            ? MinedResources * 100d / TotalOreCapacity
+            ? DeliveredResources * 100d / TotalOreCapacity
             : 0d;
 
     public TimeSpan SimulationTime =>
@@ -31,7 +38,7 @@ public sealed class LevelAttemptResult
         int totalOreCapacity,
         int requiredMinedResources,
         int spawned,
-        int minedResources,
+        int deliveredResources,
         int died,
         int recalled,
         int activeAtEnd,
@@ -44,7 +51,9 @@ public sealed class LevelAttemptResult
         RequiredMinedResources =
             Math.Max(1, requiredMinedResources);
         Spawned = Math.Max(0, spawned);
-        MinedResources = Math.Max(0, minedResources);
+        DeliveredResources = Math.Min(
+            TotalOreCapacity,
+            Math.Max(0, deliveredResources));
         Died = Math.Max(0, died);
         Recalled = Math.Max(0, recalled);
         ActiveAtEnd = Math.Max(0, activeAtEnd);
