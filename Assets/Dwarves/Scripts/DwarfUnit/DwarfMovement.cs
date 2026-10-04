@@ -111,12 +111,6 @@ public class DwarfMovement : MonoBehaviour
     private OreRockAuthoring activeOreRock;
     private float miningElapsed;
 
-    // Persistent lane state prevents a broad corner's local water cells from
-    // changing the dwarf's travel axis before its current lane actually ends.
-    private bool hasWaterLaneHeading;
-    private Vector3Int waterLaneHeading;
-    private int observedLaneVersion;
-
     private int fallStartY;
 
     private Vector3 startWorldPosition;
@@ -666,13 +660,11 @@ public class DwarfMovement : MonoBehaviour
         if (!world.TryGetWaterLaneSample(
                 waterSample,
                 out _,
-                out int version))
+                out _))
         {
-            observedLaneVersion = 0;
             return false;
         }
 
-        observedLaneVersion = version;
         state = MovementState.Drifting;
         return true;
     }
@@ -690,14 +682,11 @@ public class DwarfMovement : MonoBehaviour
         if (!world.TryGetWaterLaneSample(
                 waterSample,
                 out WaterLaneSample lane,
-                out int version))
+                out _))
         {
-            observedLaneVersion = 0;
             state = MovementState.Idle;
             return;
         }
-
-        observedLaneVersion = version;
 
         Vector3 tangent = lane.Tangent;
         tangent.y = 0f;
@@ -1627,9 +1616,6 @@ public class DwarfMovement : MonoBehaviour
         currentFallSpeed = 0f;
         currentMoveSpeedMultiplier = 1f;
         deepWaterDistanceTravelled = 0f;
-        hasWaterLaneHeading = false;
-        waterLaneHeading = Vector3Int.zero;
-        observedLaneVersion = 0;
         miningElapsed = 0f;
 
         startWorldPosition =
