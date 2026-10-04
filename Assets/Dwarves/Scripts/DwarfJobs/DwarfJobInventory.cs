@@ -21,9 +21,15 @@ public class DwarfJobInventory : MonoBehaviour
     private readonly Dictionary<DwarfJobType, int>
         levelStartingCounts = new();
 
+    private readonly List<EffectiveJobAvailability>
+        effectiveJobs = new();
+
     private bool usesLevelRules;
 
     public event Action<DwarfJobType, int> CountChanged;
+
+    public IReadOnlyList<EffectiveJobAvailability> EffectiveJobs =>
+        effectiveJobs;
 
     private void Awake()
     {
@@ -109,23 +115,24 @@ public class DwarfJobInventory : MonoBehaviour
     }
 
     public void ConfigureForLevel(
-        IReadOnlyList<LevelJobRule> rules)
+        IReadOnlyList<EffectiveJobAvailability> jobs)
     {
         usesLevelRules = true;
         levelStartingCounts.Clear();
+        effectiveJobs.Clear();
 
-        if (rules != null)
+        if (jobs != null)
         {
-            foreach (LevelJobRule rule in rules)
+            foreach (EffectiveJobAvailability job in jobs)
             {
-                if (rule == null ||
-                    rule.jobType == DwarfJobType.None)
+                if (job == null ||
+                    !DwarfJobFactory.IsImplemented(job.JobType))
                 {
                     continue;
                 }
 
-                levelStartingCounts[rule.jobType] =
-                    Mathf.Max(0, rule.defaultCount);
+                effectiveJobs.Add(job);
+                levelStartingCounts[job.JobType] = job.StartingCount;
             }
         }
 
@@ -138,14 +145,14 @@ public class DwarfJobInventory : MonoBehaviour
 
         if (usesLevelRules)
         {
-            foreach (var pair in levelStartingCounts)
+            foreach (EffectiveJobAvailability availability in effectiveJobs)
             {
                 result.Add(
                     new LevelJobRule
                     {
-                        jobType = pair.Key,
-                        defaultCount = pair.Value,
-                        maximumCount = pair.Value
+                        jobType = availability.JobType,
+                        defaultCount = availability.StartingCount,
+                        maximumCount = availability.MaximumCount
                     });
             }
 

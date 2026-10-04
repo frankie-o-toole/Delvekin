@@ -272,7 +272,12 @@ public class DwarfSpawner : MonoBehaviour
         DwarfJobInventory inventory =
             FindFirstObjectByType<DwarfJobInventory>();
 
-        inventory?.ConfigureForLevel(snapshot.JobRules);
+        IReadOnlyList<EffectiveJobAvailability> effectiveJobs =
+            EffectiveJobAvailabilityResolver.Resolve(
+                snapshot.JobRules,
+                CampaignProgressService.Instance);
+
+        inventory?.ConfigureForLevel(effectiveJobs);
 
         SetSimulationState(LevelSimulationState.Preparation);
     }
