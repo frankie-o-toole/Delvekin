@@ -319,12 +319,19 @@ public class DwarfJobBarUI : MonoBehaviour
             return;
         }
 
+        PrepareExistingLayoutChildren(container);
+
         HorizontalLayoutGroup layout =
             container.GetComponent<HorizontalLayoutGroup>();
 
         if (layout != null)
         {
+            layout.enabled = true;
             layout.spacing = jobButtonSpacing;
+            layout.childControlWidth = true;
+            layout.childControlHeight = false;
+            layout.childForceExpandWidth = false;
+            layout.childForceExpandHeight = false;
         }
 
         int siblingIndex = stopJobButton != null &&
@@ -355,6 +362,11 @@ public class DwarfJobBarUI : MonoBehaviour
                     jobButtonHeight);
             }
 
+            ConfigureLayoutElement(
+                button.gameObject,
+                buttonWidth,
+                jobButtonHeight);
+
             button.transform.SetSiblingIndex(siblingIndex++);
             button.gameObject.SetActive(true);
 
@@ -371,6 +383,60 @@ public class DwarfJobBarUI : MonoBehaviour
         }
 
         BindButtons();
+
+        if (container is RectTransform containerRect)
+        {
+            LayoutRebuilder.ForceRebuildLayoutImmediate(containerRect);
+        }
+    }
+
+    private static void PrepareExistingLayoutChildren(
+        Transform container)
+    {
+        for (int index = 0; index < container.childCount; index++)
+        {
+            Transform child = container.GetChild(index);
+
+            if (!child.gameObject.activeSelf ||
+                child is not RectTransform childRect)
+            {
+                continue;
+            }
+
+            float width = childRect.rect.width *
+                          Mathf.Abs(childRect.localScale.x);
+            float height = childRect.rect.height *
+                           Mathf.Abs(childRect.localScale.y);
+
+            childRect.localScale = Vector3.one;
+
+            ConfigureLayoutElement(
+                child.gameObject,
+                Mathf.Max(1f, width),
+                Mathf.Max(1f, height));
+        }
+    }
+
+    private static void ConfigureLayoutElement(
+        GameObject target,
+        float width,
+        float height)
+    {
+        LayoutElement layoutElement =
+            target.GetComponent<LayoutElement>();
+
+        if (layoutElement == null)
+        {
+            layoutElement = target.AddComponent<LayoutElement>();
+        }
+
+        layoutElement.ignoreLayout = false;
+        layoutElement.minWidth = width;
+        layoutElement.preferredWidth = width;
+        layoutElement.flexibleWidth = 0f;
+        layoutElement.minHeight = height;
+        layoutElement.preferredHeight = height;
+        layoutElement.flexibleHeight = 0f;
     }
 
     public static float CalculateJobButtonWidth(
