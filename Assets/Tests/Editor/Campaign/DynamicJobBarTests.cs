@@ -3,38 +3,58 @@ using NUnit.Framework;
 public sealed class DynamicJobBarTests
 {
     [Test]
-    public void ButtonsShareConfiguredWidthBudget()
+    public void LockedJobHasLockedSlotState()
     {
-        float width = DwarfJobBarUI.CalculateJobButtonWidth(
-            jobCount: 5,
-            widthBudget: 900f,
-            minimumWidth: 120f,
-            maximumWidth: 225f);
+        DwarfJobBarUI.JobSlotState state =
+            DwarfJobBarUI.ResolveJobSlotState(
+                implemented: true,
+                unlocked: false,
+                offeredInLevel: true,
+                count: 5);
 
-        Assert.That(width, Is.EqualTo(180f));
+        Assert.That(state,
+            Is.EqualTo(DwarfJobBarUI.JobSlotState.Locked));
     }
 
     [Test]
-    public void SingleButtonDoesNotGrowBeyondMaximum()
+    public void UnlockedJobAbsentFromLevelIsUnavailable()
     {
-        float width = DwarfJobBarUI.CalculateJobButtonWidth(
-            jobCount: 1,
-            widthBudget: 900f,
-            minimumWidth: 120f,
-            maximumWidth: 225f);
+        DwarfJobBarUI.JobSlotState state =
+            DwarfJobBarUI.ResolveJobSlotState(
+                implemented: true,
+                unlocked: true,
+                offeredInLevel: false,
+                count: 0);
 
-        Assert.That(width, Is.EqualTo(225f));
+        Assert.That(state, Is.EqualTo(
+            DwarfJobBarUI.JobSlotState.UnavailableInLevel));
     }
 
     [Test]
-    public void CrowdedBarDoesNotShrinkBelowMinimum()
+    public void EmptyOfferedJobIsExhausted()
     {
-        float width = DwarfJobBarUI.CalculateJobButtonWidth(
-            jobCount: 20,
-            widthBudget: 900f,
-            minimumWidth: 120f,
-            maximumWidth: 225f);
+        DwarfJobBarUI.JobSlotState state =
+            DwarfJobBarUI.ResolveJobSlotState(
+                implemented: true,
+                unlocked: true,
+                offeredInLevel: true,
+                count: 0);
 
-        Assert.That(width, Is.EqualTo(120f));
+        Assert.That(state,
+            Is.EqualTo(DwarfJobBarUI.JobSlotState.Exhausted));
+    }
+
+    [Test]
+    public void StockedOfferedJobIsAvailable()
+    {
+        DwarfJobBarUI.JobSlotState state =
+            DwarfJobBarUI.ResolveJobSlotState(
+                implemented: true,
+                unlocked: true,
+                offeredInLevel: true,
+                count: 3);
+
+        Assert.That(state,
+            Is.EqualTo(DwarfJobBarUI.JobSlotState.Available));
     }
 }

@@ -8,13 +8,28 @@ using UnityEngine.Serialization;
 
 public class DwarfJobBarUI : MonoBehaviour
 {
+    public enum JobSlotState
+    {
+        Locked,
+        UnavailableInLevel,
+        Exhausted,
+        Available
+    }
+
     [Serializable]
     private class JobButtonBinding
     {
         public DwarfJobType jobType;
         public string displayName;
+        public Sprite icon;
         public Button button;
         public TMP_Text countLabel;
+
+        [NonSerialized]
+        public TMP_Text stockLabel;
+
+        [NonSerialized]
+        public Image iconImage;
 
         [NonSerialized]
         public UnityAction callback;
@@ -26,35 +41,30 @@ public class DwarfJobBarUI : MonoBehaviour
     [SerializeField]
     private VoxelWorld voxelWorld;
 
-    [Header("Dynamic Job Buttons")]
-    [Tooltip("Optional reusable prefab. Until an art prefab is supplied, " +
-             "the first legacy button is used as the runtime template.")]
+    [Header("Fixed Job Bar")]
+    [Tooltip("Optional art prefab used for future locked slots. " +
+             "The first authored button is used until one is supplied.")]
     [SerializeField]
     private Button jobButtonPrefab;
 
     [SerializeField]
     private Transform jobButtonContainer;
 
-    [Tooltip("Total horizontal space the generated job buttons may share.")]
-    [Min(1f)]
+    [Min(1)]
     [SerializeField]
-    private float jobButtonWidthBudget = 900f;
+    private int fixedSlotCount = 9;
 
     [Min(1f)]
     [SerializeField]
-    private float minimumJobButtonWidth = 120f;
+    private float jobSlotWidth = 90f;
 
     [Min(1f)]
     [SerializeField]
-    private float maximumJobButtonWidth = 225f;
-
-    [Min(1f)]
-    [SerializeField]
-    private float jobButtonHeight = 45f;
+    private float jobSlotHeight = 64f;
 
     [Min(0f)]
     [SerializeField]
-    private float jobButtonSpacing = 12f;
+    private float jobSlotSpacing = 8f;
 
     [FormerlySerializedAs("jobButtons")]
     [SerializeField]
@@ -109,6 +119,7 @@ public class DwarfJobBarUI : MonoBehaviour
     private CanvasGroup canvasGroup;
     private readonly List<JobButtonBinding> runtimeJobButtons =
         new();
+    private bool fixedSlotsInitialized;
 
     private void Awake()
     {
@@ -200,6 +211,12 @@ public class DwarfJobBarUI : MonoBehaviour
             SubscribeToInventory();
         }
 
+        if (CampaignProgressService.Instance != null)
+        {
+            CampaignProgressService.Instance.CampaignChanged +=
+                HandleCampaignChanged;
+        }
+
         RebuildJobButtons();
         BindStopJobButton();
         BindDirectionAltererOptionButtons();
@@ -247,8 +264,13 @@ public class DwarfJobBarUI : MonoBehaviour
                 HandleInventoryConfigurationChanged;
         }
 
+        if (CampaignProgressService.Instance != null)
+        {
+            CampaignProgressService.Instance.CampaignChanged -=
+                HandleCampaignChanged;
+        }
+
         UnbindButtons();
-        ClearRuntimeJobButtons();
         UnbindStopJobButton();
         UnbindDirectionAltererOptionButtons();
     }
@@ -293,230 +315,17 @@ public class DwarfJobBarUI : MonoBehaviour
     public void RebuildJobButtons()
     {
         UnbindButtons();
-        ClearRuntimeJobButtons();
-
-        foreach (JobButtonBinding definition in jobButtonDefinitions)
-        {
-            if (definition?.button != null)
-            {
-                definition.button.gameObject.SetActive(false);
-            }
-        }
-
-        Button template = ResolveJobButtonTemplate();
-
-        if (inventory == null || template == null)
-        {
-            return;
-        }
-
-        Transform container = jobButtonContainer != null
-            ? jobButtonContainer
-            : template.transform.parent;
-
-        if (container == null)
-        {
-            return;
-        }
-
-        PrepareExistingLayoutChildren(container);
-
-        HorizontalLayoutGroup layout =
-            container.GetComponent<HorizontalLayoutGroup>();
-
-        if (layout != null)
-        {
-            layout.enabled = true;
-            layout.spacing = jobButtonSpacing;
-            layout.childControlWidth = true;
-            layout.childControlHeight = false;
-            layout.childForceExpandWidth = false;
-            layout.childForceExpandHeight = false;
-        }
-
-        int siblingIndex = stopJobButton != null &&
-                           stopJobButton.transform.parent == container
-            ? stopJobButton.transform.GetSiblingIndex()
-            : container.childCount;
-
-        int jobCount = inventory.EffectiveJobs.Count;
-        float buttonWidth = CalculateJobButtonWidth(
-            jobCount,
-            jobButtonWidthBudget,
-            minimumJobButtonWidth,
-            maximumJobButtonWidth);
-
-        foreach (EffectiveJobAvailability job in inventory.EffectiveJobs)
-        {
-            Button button = Instantiate(template, container);
-            button.name = $"{job.JobType}Button";
-            button.transform.localScale = Vector3.one;
-
-            if (button.transform is RectTransform buttonRect)
-            {
-                buttonRect.SetSizeWithCurrentAnchors(
-                    RectTransform.Axis.Horizontal,
-                    buttonWidth);
-                buttonRect.SetSizeWithCurrentAnchors(
-                    RectTransform.Axis.Vertical,
-                    jobButtonHeight);
-            }
-
-            ConfigureLayoutElement(
-                button.gameObject,
-                buttonWidth,
-                jobButtonHeight);
-
-            button.transform.SetSiblingIndex(siblingIndex++);
-            button.gameObject.SetActive(true);
-
-            JobButtonBinding definition =
-                FindButtonDefinition(job.JobType);
-
-            runtimeJobButtons.Add(new JobButtonBinding
-            {
-                jobType = job.JobType,
-                displayName = definition?.displayName,
-                button = button,
-                countLabel = button.GetComponentInChildren<TMP_Text>(true)
-            });
-        }
-
+        EnsureFixedJobSlots();
+        ConfigureFixedSlotLayout();
         BindButtons();
-
-        if (container is RectTransform containerRect)
-        {
-            LayoutRebuilder.ForceRebuildLayoutImmediate(containerRect);
-        }
-    }
-
-    private static void PrepareExistingLayoutChildren(
-        Transform container)
-    {
-        for (int index = 0; index < container.childCount; index++)
-        {
-            Transform child = container.GetChild(index);
-
-            if (!child.gameObject.activeSelf ||
-                child is not RectTransform childRect)
-            {
-                continue;
-            }
-
-            float width = childRect.rect.width *
-                          Mathf.Abs(childRect.localScale.x);
-            float height = childRect.rect.height *
-                           Mathf.Abs(childRect.localScale.y);
-
-            childRect.localScale = Vector3.one;
-
-            ConfigureLayoutElement(
-                child.gameObject,
-                Mathf.Max(1f, width),
-                Mathf.Max(1f, height));
-        }
-    }
-
-    private static void ConfigureLayoutElement(
-        GameObject target,
-        float width,
-        float height)
-    {
-        LayoutElement layoutElement =
-            target.GetComponent<LayoutElement>();
-
-        if (layoutElement == null)
-        {
-            layoutElement = target.AddComponent<LayoutElement>();
-        }
-
-        layoutElement.ignoreLayout = false;
-        layoutElement.minWidth = width;
-        layoutElement.preferredWidth = width;
-        layoutElement.flexibleWidth = 0f;
-        layoutElement.minHeight = height;
-        layoutElement.preferredHeight = height;
-        layoutElement.flexibleHeight = 0f;
-    }
-
-    public static float CalculateJobButtonWidth(
-        int jobCount,
-        float widthBudget,
-        float minimumWidth,
-        float maximumWidth)
-    {
-        float safeMinimum = Mathf.Max(1f, minimumWidth);
-        float safeMaximum = Mathf.Max(safeMinimum, maximumWidth);
-        float safeBudget = Mathf.Max(safeMinimum, widthBudget);
-
-        return Mathf.Clamp(
-            safeBudget / Mathf.Max(1, jobCount),
-            safeMinimum,
-            safeMaximum);
-    }
-
-    private Button ResolveJobButtonTemplate()
-    {
-        if (jobButtonPrefab != null)
-        {
-            return jobButtonPrefab;
-        }
-
-        foreach (JobButtonBinding definition in jobButtonDefinitions)
-        {
-            if (definition?.button != null)
-            {
-                return definition.button;
-            }
-        }
-
-        return null;
-    }
-
-    private JobButtonBinding FindButtonDefinition(
-        DwarfJobType jobType)
-    {
-        return jobButtonDefinitions.Find(
-            definition => definition != null &&
-                          definition.jobType == jobType);
-    }
-
-    private void ClearRuntimeJobButtons()
-    {
-        foreach (JobButtonBinding binding in runtimeJobButtons)
-        {
-            if (binding?.button == null)
-            {
-                continue;
-            }
-
-            binding.button.gameObject.SetActive(false);
-
-            if (Application.isPlaying)
-            {
-                Destroy(binding.button.gameObject);
-            }
-            else
-            {
-                DestroyImmediate(binding.button.gameObject);
-            }
-        }
-
-        runtimeJobButtons.Clear();
     }
 
     private void OnValidate()
     {
-        minimumJobButtonWidth =
-            Mathf.Max(1f, minimumJobButtonWidth);
-        maximumJobButtonWidth =
-            Mathf.Max(minimumJobButtonWidth, maximumJobButtonWidth);
-        jobButtonWidthBudget =
-            Mathf.Max(minimumJobButtonWidth, jobButtonWidthBudget);
-        jobButtonHeight =
-            Mathf.Max(1f, jobButtonHeight);
-        jobButtonSpacing =
-            Mathf.Max(0f, jobButtonSpacing);
+        fixedSlotCount = Mathf.Max(1, fixedSlotCount);
+        jobSlotWidth = Mathf.Max(1f, jobSlotWidth);
+        jobSlotHeight = Mathf.Max(1f, jobSlotHeight);
+        jobSlotSpacing = Mathf.Max(0f, jobSlotSpacing);
 
         if (Application.isPlaying && isActiveAndEnabled)
         {
@@ -525,12 +334,266 @@ public class DwarfJobBarUI : MonoBehaviour
         }
     }
 
+    private void EnsureFixedJobSlots()
+    {
+        if (fixedSlotsInitialized)
+        {
+            return;
+        }
+
+        Button template = jobButtonPrefab;
+
+        foreach (JobButtonBinding definition in jobButtonDefinitions)
+        {
+            if (definition?.button == null)
+            {
+                continue;
+            }
+
+            template ??= definition.button;
+        }
+
+        if (template == null)
+        {
+            return;
+        }
+
+        Transform originalParent = null;
+
+        foreach (JobButtonBinding definition in jobButtonDefinitions)
+        {
+            if (definition?.button != null)
+            {
+                originalParent = definition.button.transform.parent;
+                break;
+            }
+        }
+
+        bool needsDedicatedContainer =
+            jobButtonContainer == null ||
+            stopJobButton != null &&
+            stopJobButton.transform.parent == jobButtonContainer;
+
+        if (needsDedicatedContainer)
+        {
+            jobButtonContainer =
+                CreateFixedSlotContainer(originalParent);
+        }
+
+        if (jobButtonContainer == null)
+        {
+            return;
+        }
+
+        runtimeJobButtons.Clear();
+
+        foreach (JobButtonBinding definition in jobButtonDefinitions)
+        {
+            if (definition?.button == null)
+            {
+                continue;
+            }
+
+            definition.button.transform.SetParent(
+                jobButtonContainer,
+                false);
+            definition.button.transform.localScale = Vector3.one;
+            definition.button.gameObject.SetActive(true);
+            definition.iconImage = EnsureIconImage(definition.button);
+            definition.stockLabel = EnsureStockLabel(definition);
+            runtimeJobButtons.Add(definition);
+        }
+
+        while (runtimeJobButtons.Count < fixedSlotCount)
+        {
+            Button placeholder = Instantiate(
+                template,
+                jobButtonContainer);
+            placeholder.name =
+                $"LockedJobSlot{runtimeJobButtons.Count + 1}";
+            placeholder.transform.localScale = Vector3.one;
+            placeholder.onClick.RemoveAllListeners();
+            placeholder.gameObject.SetActive(true);
+
+            JobButtonBinding binding = new()
+            {
+                jobType = DwarfJobType.None,
+                displayName = "?",
+                icon = null,
+                button = placeholder,
+                countLabel = FindPrimaryLabel(placeholder)
+            };
+
+            binding.iconImage = EnsureIconImage(placeholder);
+            binding.stockLabel = EnsureStockLabel(binding);
+            runtimeJobButtons.Add(binding);
+        }
+
+        fixedSlotsInitialized = true;
+    }
+
+    private Transform CreateFixedSlotContainer(
+        Transform parent)
+    {
+        if (parent == null)
+        {
+            return null;
+        }
+
+        GameObject containerObject = new(
+            "FixedJobSlots",
+            typeof(RectTransform),
+            typeof(GridLayoutGroup),
+            typeof(LayoutElement));
+
+        RectTransform containerRect =
+            containerObject.GetComponent<RectTransform>();
+        containerRect.SetParent(parent, false);
+        containerRect.SetSiblingIndex(0);
+
+        return containerRect;
+    }
+
+    private void ConfigureFixedSlotLayout()
+    {
+        if (jobButtonContainer == null)
+        {
+            return;
+        }
+
+        GridLayoutGroup grid =
+            jobButtonContainer.GetComponent<GridLayoutGroup>();
+        grid ??= jobButtonContainer.gameObject.AddComponent<GridLayoutGroup>();
+        grid.cellSize = new Vector2(jobSlotWidth, jobSlotHeight);
+        grid.spacing = new Vector2(jobSlotSpacing, 0f);
+        grid.startCorner = GridLayoutGroup.Corner.UpperLeft;
+        grid.startAxis = GridLayoutGroup.Axis.Horizontal;
+        grid.childAlignment = TextAnchor.MiddleLeft;
+        grid.constraint = GridLayoutGroup.Constraint.FixedRowCount;
+        grid.constraintCount = 1;
+
+        int visibleSlotCount = Mathf.Max(
+            fixedSlotCount,
+            runtimeJobButtons.Count);
+        float width = visibleSlotCount * jobSlotWidth +
+                      Mathf.Max(0, visibleSlotCount - 1) * jobSlotSpacing;
+
+        LayoutElement layout =
+            jobButtonContainer.GetComponent<LayoutElement>();
+        layout ??= jobButtonContainer.gameObject.AddComponent<LayoutElement>();
+        layout.minWidth = width;
+        layout.preferredWidth = width;
+        layout.flexibleWidth = 0f;
+        layout.minHeight = jobSlotHeight;
+        layout.preferredHeight = jobSlotHeight;
+
+        if (jobButtonContainer is RectTransform containerRect)
+        {
+            containerRect.SetSizeWithCurrentAnchors(
+                RectTransform.Axis.Horizontal,
+                width);
+            containerRect.SetSizeWithCurrentAnchors(
+                RectTransform.Axis.Vertical,
+                jobSlotHeight);
+            LayoutRebuilder.ForceRebuildLayoutImmediate(containerRect);
+        }
+    }
+
+    private TMP_Text EnsureStockLabel(
+        JobButtonBinding binding)
+    {
+        Transform existing = binding.button.transform.Find("StockCount");
+
+        if (existing != null)
+        {
+            return existing.GetComponent<TMP_Text>();
+        }
+
+        GameObject stockObject = new(
+            "StockCount",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(TextMeshProUGUI));
+
+        RectTransform stockRect =
+            stockObject.GetComponent<RectTransform>();
+        stockRect.SetParent(binding.button.transform, false);
+        stockRect.anchorMin = new Vector2(1f, 0f);
+        stockRect.anchorMax = new Vector2(1f, 0f);
+        stockRect.pivot = new Vector2(1f, 0f);
+        stockRect.anchoredPosition = new Vector2(-5f, 4f);
+        stockRect.sizeDelta = new Vector2(36f, 24f);
+
+        TMP_Text stockLabel = stockObject.GetComponent<TMP_Text>();
+        stockLabel.alignment = TextAlignmentOptions.BottomRight;
+        stockLabel.raycastTarget = false;
+        stockLabel.fontSize = 18f;
+
+        if (binding.countLabel != null)
+        {
+            stockLabel.font = binding.countLabel.font;
+            stockLabel.color = binding.countLabel.color;
+        }
+
+        return stockLabel;
+    }
+
+    private static Image EnsureIconImage(
+        Button button)
+    {
+        Transform existing = button.transform.Find("JobIcon");
+
+        if (existing != null)
+        {
+            return existing.GetComponent<Image>();
+        }
+
+        GameObject iconObject = new(
+            "JobIcon",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(Image));
+
+        RectTransform iconRect =
+            iconObject.GetComponent<RectTransform>();
+        iconRect.SetParent(button.transform, false);
+        iconRect.anchorMin = Vector2.zero;
+        iconRect.anchorMax = Vector2.one;
+        iconRect.offsetMin = new Vector2(8f, 8f);
+        iconRect.offsetMax = new Vector2(-8f, -8f);
+
+        Image iconImage = iconObject.GetComponent<Image>();
+        iconImage.preserveAspect = true;
+        iconImage.raycastTarget = false;
+        iconImage.enabled = false;
+        return iconImage;
+    }
+
+    private static TMP_Text FindPrimaryLabel(
+        Button button)
+    {
+        foreach (TMP_Text label in
+                 button.GetComponentsInChildren<TMP_Text>(true))
+        {
+            if (label.name != "StockCount")
+            {
+                return label;
+            }
+        }
+
+        return null;
+    }
+
     private void BindButtons()
     {
         foreach (JobButtonBinding binding in runtimeJobButtons)
         {
-            if (binding.button == null)
+            if (binding.button == null ||
+                binding.jobType == DwarfJobType.None ||
+                assignmentManager == null)
+            {
                 continue;
+            }
 
             DwarfJobType capturedType =
                 binding.jobType;
@@ -794,17 +857,33 @@ public class DwarfJobBarUI : MonoBehaviour
             DwarfJobFactory.IsImplemented(
                 binding.jobType);
 
+        bool unlocked =
+            implemented &&
+            CampaignProgressService.Instance != null &&
+            CampaignProgressService.Instance.IsJobUnlocked(
+                binding.jobType);
+
+        bool offeredInLevel =
+            unlocked &&
+            IsOfferedInLevel(binding.jobType);
+
+        JobSlotState state = ResolveJobSlotState(
+            implemented,
+            unlocked,
+            offeredInLevel,
+            count);
+
         bool available =
             assignmentManager != null &&
             assignmentManager.InteractionEnabled &&
-            implemented &&
-            count > 0;
+            state == JobSlotState.Available;
 
         bool selected =
-            assignmentManager.SelectedJob ==
+            assignmentManager != null &&
+            (assignmentManager.SelectedJob ==
                 binding.jobType ||
             binding.jobType == DwarfJobType.DirectionAlter &&
-            assignmentManager.AreDirectionAltererOptionsOpen;
+            assignmentManager.AreDirectionAltererOptionsOpen);
 
         binding.button.interactable =
             available;
@@ -828,8 +907,70 @@ public class DwarfJobBarUI : MonoBehaviour
                     : binding.displayName;
 
             binding.countLabel.text =
-                $"{displayName} ({count})";
+                state == JobSlotState.Locked
+                    ? "?"
+                    : binding.icon != null
+                        ? string.Empty
+                        : displayName;
         }
+
+        if (binding.iconImage != null)
+        {
+            binding.iconImage.sprite = binding.icon;
+            binding.iconImage.enabled =
+                state != JobSlotState.Locked &&
+                binding.icon != null;
+            binding.iconImage.color =
+                state == JobSlotState.Available
+                    ? Color.white
+                    : new Color(1f, 1f, 1f, 0.4f);
+        }
+
+        if (binding.stockLabel != null)
+        {
+            binding.stockLabel.text = state switch
+            {
+                JobSlotState.Available => count.ToString(),
+                JobSlotState.Exhausted => "0",
+                JobSlotState.UnavailableInLevel => "—",
+                _ => string.Empty
+            };
+        }
+    }
+
+    private bool IsOfferedInLevel(
+        DwarfJobType jobType)
+    {
+        foreach (EffectiveJobAvailability job in inventory.EffectiveJobs)
+        {
+            if (job.JobType == jobType)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static JobSlotState ResolveJobSlotState(
+        bool implemented,
+        bool unlocked,
+        bool offeredInLevel,
+        int count)
+    {
+        if (!implemented || !unlocked)
+        {
+            return JobSlotState.Locked;
+        }
+
+        if (!offeredInLevel)
+        {
+            return JobSlotState.UnavailableInLevel;
+        }
+
+        return count > 0
+            ? JobSlotState.Available
+            : JobSlotState.Exhausted;
     }
 
     private void HandleSelectedJobChanged(
@@ -848,6 +989,11 @@ public class DwarfJobBarUI : MonoBehaviour
     private void HandleInventoryConfigurationChanged()
     {
         RebuildJobButtons();
+        RefreshAllButtons();
+    }
+
+    private void HandleCampaignChanged()
+    {
         RefreshAllButtons();
     }
 
