@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.UI;
 
 public sealed class DynamicJobBarTests
 {
@@ -56,5 +58,47 @@ public sealed class DynamicJobBarTests
 
         Assert.That(state,
             Is.EqualTo(DwarfJobBarUI.JobSlotState.Available));
+    }
+
+    [Test]
+    public void ApplyingSlotStateDoesNotChangeEditorLayout()
+    {
+        GameObject slotObject = new(
+            "JobSlot",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(Image),
+            typeof(Button),
+            typeof(JobSlotUI));
+
+        RectTransform rect =
+            slotObject.GetComponent<RectTransform>();
+        rect.anchorMin = new Vector2(0.25f, 0.1f);
+        rect.anchorMax = new Vector2(0.75f, 0.2f);
+        rect.pivot = new Vector2(0.3f, 0.4f);
+        rect.anchoredPosition = new Vector2(123f, 45f);
+        rect.sizeDelta = new Vector2(91f, 63f);
+
+        Vector2 anchorMin = rect.anchorMin;
+        Vector2 anchorMax = rect.anchorMax;
+        Vector2 pivot = rect.pivot;
+        Vector2 position = rect.anchoredPosition;
+        Vector2 size = rect.sizeDelta;
+
+        slotObject.GetComponent<JobSlotUI>().ApplyJobState(
+            "Tunneller",
+            null,
+            DwarfJobBarUI.JobSlotState.Available,
+            5,
+            true,
+            false);
+
+        Assert.That(rect.anchorMin, Is.EqualTo(anchorMin));
+        Assert.That(rect.anchorMax, Is.EqualTo(anchorMax));
+        Assert.That(rect.pivot, Is.EqualTo(pivot));
+        Assert.That(rect.anchoredPosition, Is.EqualTo(position));
+        Assert.That(rect.sizeDelta, Is.EqualTo(size));
+
+        Object.DestroyImmediate(slotObject);
     }
 }
