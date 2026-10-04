@@ -32,7 +32,8 @@ public class DwarfAgent : MonoBehaviour
     public Transform VisualRoot =>
         visualRoot;
 
-    private Renderer[] renderers;
+    private Renderer[] renderers =
+        System.Array.Empty<Renderer>();
 
     private void Awake()
     {
@@ -80,6 +81,10 @@ public class DwarfAgent : MonoBehaviour
 
     public void SetVisibility(bool visible)
     {
+        // Edit-mode tests and authoring tools can call Activate before
+        // Unity has invoked Awake. Keep visibility safe in that lifecycle.
+        renderers ??= System.Array.Empty<Renderer>();
+
         foreach (Renderer renderer in renderers)
         {
             if (renderer != null)

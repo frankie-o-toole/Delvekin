@@ -1,8 +1,40 @@
 using System.Collections.Generic;
 using NUnit.Framework;
+using UnityEditor;
+using UnityEngine;
 
 public sealed class CampaignSaveDataTests
 {
+    [Test]
+    public void CampaignStartDefinitionKeepsNewInspectorSlotEditable()
+    {
+        CampaignStartDefinition definition =
+            ScriptableObject.CreateInstance<CampaignStartDefinition>();
+
+        try
+        {
+            SerializedObject serialized = new(definition);
+            SerializedProperty jobs =
+                serialized.FindProperty("startingUnlockedJobs");
+
+            jobs.arraySize = 2;
+            jobs.GetArrayElementAtIndex(1).enumValueIndex =
+                (int)DwarfJobType.None;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+
+            Assert.That(
+                definition.StartingUnlockedJobs.Count,
+                Is.EqualTo(2));
+            Assert.That(
+                definition.CreateNewCampaign().unlockedJobIds,
+                Does.Not.Contain(string.Empty));
+        }
+        finally
+        {
+            Object.DestroyImmediate(definition);
+        }
+    }
+
     [Test]
     public void NewCampaignHasStableIdentityAndUniqueJobIds()
     {

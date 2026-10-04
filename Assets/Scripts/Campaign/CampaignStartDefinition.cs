@@ -32,19 +32,5 @@ public sealed class CampaignStartDefinition : ScriptableObject
     {
         startingOre = Mathf.Max(0, startingOre);
         startingUnlockedJobs ??= new List<DwarfJobType>();
-
-        HashSet<DwarfJobType> unique = new();
-        List<DwarfJobType> normalized = new();
-
-        foreach (DwarfJobType jobType in startingUnlockedJobs)
-        {
-            if (DwarfJobFactory.IsImplemented(jobType) &&
-                unique.Add(jobType))
-            {
-                normalized.Add(jobType);
-            }
-        }
-
-        startingUnlockedJobs = normalized;
     }
 }
