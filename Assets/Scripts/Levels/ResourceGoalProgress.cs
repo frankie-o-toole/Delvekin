@@ -16,6 +16,10 @@ public readonly struct ResourceGoalProgress
     public bool TargetReached =>
         Mined >= Required;
 
+    public bool AllResourcesDelivered =>
+        Ore.TotalCapacity > 0 &&
+        Mined >= Ore.TotalCapacity;
+
     public bool IsImpossible =>
         !TargetReached &&
         MaximumPossibleMinedResources < Required;

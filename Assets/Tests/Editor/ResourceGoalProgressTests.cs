@@ -61,6 +61,30 @@ public class ResourceGoalProgressTests
     }
 
     [Test]
+    public void AllResourcesDeliveredRequiresFullExtractedCapacity()
+    {
+        ResourceGoalProgress progress = new(
+            50,
+            0,
+            60,
+            new OreRuntimeProgress(100, 100, 0, 0));
+
+        Assert.That(progress.AllResourcesDelivered, Is.True);
+    }
+
+    [Test]
+    public void ReservedFinalResourceIsNotDeliveredYet()
+    {
+        ResourceGoalProgress progress = new(
+            51,
+            0,
+            60,
+            new OreRuntimeProgress(100, 99, 1, 0));
+
+        Assert.That(progress.AllResourcesDelivered, Is.False);
+    }
+
+    [Test]
     public void TargetIsNotReachedBelowRequirement()
     {
         ResourceGoalProgress progress = new(

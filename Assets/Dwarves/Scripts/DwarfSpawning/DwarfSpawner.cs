@@ -504,6 +504,15 @@ public class DwarfSpawner : MonoBehaviour
 
     private void TryResolveSimulation()
     {
+        // Once every available resource has been delivered, no active or
+        // unspawned dwarf can improve the result. Resolve immediately instead
+        // of waiting for surplus dwarves that have no remaining destination.
+        if (resourceGoalProgress.AllResourcesDelivered)
+        {
+            CompleteSimulation(LevelOutcome.Success);
+            return;
+        }
+
         if (!spawnFinished ||
             resourceGoalProgress.Mined + died + recalled < spawned)
         {
