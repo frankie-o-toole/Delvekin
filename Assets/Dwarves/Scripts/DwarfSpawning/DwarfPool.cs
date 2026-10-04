@@ -14,9 +14,6 @@ public class DwarfPool : MonoBehaviour
     [SerializeField]
     private DwarfAgent prefab;
 
-    [SerializeField]
-    private int poolSize = 50;
-
     private readonly Queue<DwarfAgent> availableDwarves =
         new();
 
@@ -31,6 +28,9 @@ public class DwarfPool : MonoBehaviour
 
     public int ActiveCount =>
         activeDwarves.Count;
+
+    public int Capacity =>
+        availableDwarves.Count + activeDwarves.Count;
 
     public int FatalFallDistance
     {
@@ -53,9 +53,11 @@ public class DwarfPool : MonoBehaviour
     public event Action<DwarfAgent, DwarfReleaseReason>
         DwarfReleased;
 
-    private void Awake()
+    public void EnsureCapacity(int requiredCapacity)
     {
-        for (int i = 0; i < poolSize; i++)
+        int target = Mathf.Max(0, requiredCapacity);
+
+        while (Capacity < target)
         {
             DwarfAgent dwarf =
                 CreateDwarf();

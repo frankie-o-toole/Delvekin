@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 [DefaultExecutionOrder(-100)]
@@ -119,8 +118,16 @@ public class DwarfSelectionManager : MonoBehaviour
     private void UpdateDwarfHover()
     {
         if (Mouse.current == null ||
-            cam == null ||
-            IsPointerOverUI())
+            cam == null)
+        {
+            SetHoveredDwarf(null);
+            return;
+        }
+
+        Vector2 mousePosition =
+            Mouse.current.position.ReadValue();
+
+        if (PointerUiUtility.IsPointerOverUI(mousePosition))
         {
             SetHoveredDwarf(null);
             return;
@@ -128,7 +135,7 @@ public class DwarfSelectionManager : MonoBehaviour
 
         Ray ray =
             cam.ScreenPointToRay(
-                Mouse.current.position.ReadValue());
+                mousePosition);
 
         if (!Physics.Raycast(
                 ray,
@@ -159,7 +166,8 @@ public class DwarfSelectionManager : MonoBehaviour
         if (assignmentManager == null ||
             Mouse.current == null ||
             !Mouse.current.leftButton.wasPressedThisFrame ||
-            IsPointerOverUI())
+            PointerUiUtility.IsPointerOverUI(
+                Mouse.current.position.ReadValue()))
         {
             return;
         }
@@ -354,12 +362,5 @@ public class DwarfSelectionManager : MonoBehaviour
         }
 
         return highlight;
-    }
-
-    private bool IsPointerOverUI()
-    {
-        return
-            EventSystem.current != null &&
-            EventSystem.current.IsPointerOverGameObject();
     }
 }

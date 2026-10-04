@@ -2,7 +2,6 @@ using System.Collections;
 using System.Collections.Generic;
 using System;
 using UnityEngine;
-using UnityEngine.Serialization;
 
 public class DwarfSpawner : MonoBehaviour
 {
@@ -20,12 +19,9 @@ public class DwarfSpawner : MonoBehaviour
     [SerializeField]
     private float blockedRetryInterval = 0.25f;
 
-    [SerializeField]
-    private int maxDwarves = 20;
-
-    [SerializeField]
-    [Min(1)]
-    [FormerlySerializedAs("requiredRescues")]
+    // Runtime copies of the active LevelDefinition values. These are not
+    // authored on the spawner; LevelDefinition is the gameplay source.
+    private int maxDwarves = 1;
     private int requiredMinedResources = 1;
 
     [SerializeField]
@@ -46,6 +42,7 @@ public class DwarfSpawner : MonoBehaviour
     private readonly LevelSimulationClock simulationClock = new();
     private LevelAttemptResult result;
     private string activeLevelId;
+    private static DwarfSpawner activeInstance;
 
     public LevelSimulationState SimulationState { get; private set; } =
         LevelSimulationState.Preparation;
@@ -86,6 +83,8 @@ public class DwarfSpawner : MonoBehaviour
 
     private void OnEnable()
     {
+        activeInstance = this;
+
         if (pool != null)
         {
             pool.DwarfReleased +=
@@ -98,6 +97,11 @@ public class DwarfSpawner : MonoBehaviour
 
     private void OnDisable()
     {
+        if (activeInstance == this)
+        {
+            activeInstance = null;
+        }
+
         if (pool != null)
         {
             pool.DwarfReleased -=
@@ -126,6 +130,8 @@ public class DwarfSpawner : MonoBehaviour
         {
             return;
         }
+
+        pool.EnsureCapacity(maxDwarves);
 
         world.ScanSpawnPoints();
 
@@ -253,6 +259,8 @@ public class DwarfSpawner : MonoBehaviour
             snapshot.RequiredMinedResources,
             1,
             maxDwarves);
+
+        pool?.EnsureCapacity(maxDwarves);
 
         RefreshResourceGoalProgress();
 
@@ -769,6 +777,119 @@ public class DwarfSpawner : MonoBehaviour
                 logicalScreenWidth,
                 Screen.height / uiScale);
         }
+    }
+
+    public static bool IsPointerOverRuntimeUI(Vector2 screenPosition)
+    {
+        return activeInstance != null &&
+            activeInstance.ContainsRuntimeUI(screenPosition);
+    }
+
+    private bool ContainsRuntimeUI(Vector2 screenPosition)
+    {
+        const float uiScale = 2.5f;
+        const float width = 180f;
+        const float height = 40f;
+        const float margin = 10f;
+
+        Vector2 point = new(
+            screenPosition.x / uiScale,
+            (Screen.height - screenPosition.y) / uiScale);
+
+        float logicalScreenWidth = Screen.width / uiScale;
+        float logicalScreenHeight = Screen.height / uiScale;
+        float x = logicalScreenWidth - width - margin;
+        float y = margin;
+
+        if (SimulationState == LevelSimulationState.Preparation)
+        {
+            return new Rect(x, y, width, height).Contains(point);
+        }
+
+        if (SimulationState == LevelSimulationState.Completed)
+        {
+            Rect resultPanel = new(
+                (logicalScreenWidth - 360f) * 0.5f,
+                (logicalScreenHeight - 430f) * 0.5f,
+                360f,
+                430f);
+
+            if (resultPanel.Contains(point))
+            {
+                return true;
+            }
+        }
+        else
+        {
+            float statusWidth = Mathf.Min(
+                360f,
+                logicalScreenWidth - margin * 2f);
+            float statusX =
+                logicalScreenWidth - statusWidth - margin;
+
+            if (new Rect(
+                    statusX,
+                    y,
+                    statusWidth,
+                    height).Contains(point))
+            {
+                return true;
+            }
+
+            bool targetReached =
+                !simulationResolved &&
+                IsResourceTargetReached;
+            float nextY = y + height + 4f;
+
+            if (targetReached)
+            {
+                if (new Rect(x, nextY, width, height).Contains(point))
+                {
+                    return true;
+                }
+
+                nextY += height + 4f;
+            }
+
+            if (SimulationState == LevelSimulationState.Running)
+            {
+                if (new Rect(x, nextY, width, height).Contains(point))
+                {
+                    return true;
+                }
+            }
+
+            nextY += height + 4f;
+
+            if (new Rect(x, nextY, width, 32f).Contains(point))
+            {
+                return true;
+            }
+        }
+
+        if (retryConfirmationOpen)
+        {
+            Rect panel = new(
+                (logicalScreenWidth - 320f) * 0.5f,
+                (logicalScreenHeight - 190f) * 0.5f,
+                320f,
+                190f);
+
+            return panel.Contains(point);
+        }
+
+        if (endLevelConfirmationOpen)
+        {
+            Rect panel = new(
+                (logicalScreenWidth - 340f) * 0.5f,
+                (logicalScreenHeight - 190f) * 0.5f,
+                340f,
+                190f);
+
+            return panel.Contains(point);
+        }
+
+        return false;
     }
 
     private int GetRequiredMinedResources()

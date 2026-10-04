@@ -1,5 +1,4 @@
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 [DefaultExecutionOrder(0)]
@@ -35,9 +34,9 @@ public class VoxelHover : MonoBehaviour
         if (cam == null ||
             voxelWorld == null ||
             highlight == null ||
-            IsPointerOverUI() ||
-            InteractionState.IsHoveringDwarf ||
-            !TryGetMousePosition(out Vector2 mousePosition))
+            !TryGetMousePosition(out Vector2 mousePosition) ||
+            PointerUiUtility.IsPointerOverUI(mousePosition) ||
+            InteractionState.IsHoveringDwarf)
         {
             ClearHover();
             return;
@@ -139,12 +138,5 @@ public class VoxelHover : MonoBehaviour
         {
             highlight.gameObject.SetActive(false);
         }
-    }
-
-    private static bool IsPointerOverUI()
-    {
-        return
-            EventSystem.current != null &&
-            EventSystem.current.IsPointerOverGameObject();
     }
 }
