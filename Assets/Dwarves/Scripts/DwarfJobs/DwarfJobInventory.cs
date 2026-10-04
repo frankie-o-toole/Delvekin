@@ -27,6 +27,7 @@ public class DwarfJobInventory : MonoBehaviour
     private bool usesLevelRules;
 
     public event Action<DwarfJobType, int> CountChanged;
+    public event Action ConfigurationChanged;
 
     public IReadOnlyList<EffectiveJobAvailability> EffectiveJobs =>
         effectiveJobs;
@@ -137,6 +138,7 @@ public class DwarfJobInventory : MonoBehaviour
         }
 
         ResetToStartingStock();
+        ConfigurationChanged?.Invoke();
     }
 
     public List<LevelJobRule> CreateStartingRules()

@@ -4,6 +4,7 @@ using UnityEngine;
 using UnityEngine.Events;
 using UnityEngine.UI;
 using TMPro;
+using UnityEngine.Serialization;
 
 public class DwarfJobBarUI : MonoBehaviour
 {
@@ -25,8 +26,39 @@ public class DwarfJobBarUI : MonoBehaviour
     [SerializeField]
     private VoxelWorld voxelWorld;
 
+    [Header("Dynamic Job Buttons")]
+    [Tooltip("Optional reusable prefab. Until an art prefab is supplied, " +
+             "the first legacy button is used as the runtime template.")]
     [SerializeField]
-    private List<JobButtonBinding> jobButtons =
+    private Button jobButtonPrefab;
+
+    [SerializeField]
+    private Transform jobButtonContainer;
+
+    [Tooltip("Total horizontal space the generated job buttons may share.")]
+    [Min(1f)]
+    [SerializeField]
+    private float jobButtonWidthBudget = 900f;
+
+    [Min(1f)]
+    [SerializeField]
+    private float minimumJobButtonWidth = 120f;
+
+    [Min(1f)]
+    [SerializeField]
+    private float maximumJobButtonWidth = 225f;
+
+    [Min(1f)]
+    [SerializeField]
+    private float jobButtonHeight = 45f;
+
+    [Min(0f)]
+    [SerializeField]
+    private float jobButtonSpacing = 12f;
+
+    [FormerlySerializedAs("jobButtons")]
+    [SerializeField]
+    private List<JobButtonBinding> jobButtonDefinitions =
         new();
 
     [SerializeField]
@@ -75,6 +107,8 @@ public class DwarfJobBarUI : MonoBehaviour
     private UnityAction directionAltererReverseCallback;
     private UnityAction directionAltererRightCallback;
     private CanvasGroup canvasGroup;
+    private readonly List<JobButtonBinding> runtimeJobButtons =
+        new();
 
     private void Awake()
     {
@@ -85,14 +119,8 @@ public class DwarfJobBarUI : MonoBehaviour
     private void Start()
     {
         ResolveInventory();
-
-        if (inventory != null)
-        {
-            // Prevent duplicate subscriptions.
-            inventory.CountChanged -= HandleCountChanged;
-            inventory.CountChanged += HandleCountChanged;
-        }
-
+        SubscribeToInventory();
+        RebuildJobButtons();
         RefreshAllButtons();
         RefreshLoadingVisibility();
     }
@@ -115,6 +143,22 @@ public class DwarfJobBarUI : MonoBehaviour
             inventory =
                 FindFirstObjectByType<DwarfJobInventory>();
         }
+    }
+
+    private void SubscribeToInventory()
+    {
+        if (inventory == null)
+        {
+            return;
+        }
+
+        inventory.CountChanged -= HandleCountChanged;
+        inventory.CountChanged += HandleCountChanged;
+
+        inventory.ConfigurationChanged -=
+            HandleInventoryConfigurationChanged;
+        inventory.ConfigurationChanged +=
+            HandleInventoryConfigurationChanged;
     }
 
     private void OnEnable()
@@ -153,11 +197,10 @@ public class DwarfJobBarUI : MonoBehaviour
 
         if (inventory != null)
         {
-            inventory.CountChanged +=
-                HandleCountChanged;
+            SubscribeToInventory();
         }
 
-        BindButtons();
+        RebuildJobButtons();
         BindStopJobButton();
         BindDirectionAltererOptionButtons();
         RefreshAllButtons();
@@ -199,9 +242,13 @@ public class DwarfJobBarUI : MonoBehaviour
         {
             inventory.CountChanged -=
                 HandleCountChanged;
+
+            inventory.ConfigurationChanged -=
+                HandleInventoryConfigurationChanged;
         }
 
         UnbindButtons();
+        ClearRuntimeJobButtons();
         UnbindStopJobButton();
         UnbindDirectionAltererOptionButtons();
     }
@@ -243,9 +290,178 @@ public class DwarfJobBarUI : MonoBehaviour
         canvasGroup.blocksRaycasts = visible;
     }
 
+    public void RebuildJobButtons()
+    {
+        UnbindButtons();
+        ClearRuntimeJobButtons();
+
+        foreach (JobButtonBinding definition in jobButtonDefinitions)
+        {
+            if (definition?.button != null)
+            {
+                definition.button.gameObject.SetActive(false);
+            }
+        }
+
+        Button template = ResolveJobButtonTemplate();
+
+        if (inventory == null || template == null)
+        {
+            return;
+        }
+
+        Transform container = jobButtonContainer != null
+            ? jobButtonContainer
+            : template.transform.parent;
+
+        if (container == null)
+        {
+            return;
+        }
+
+        HorizontalLayoutGroup layout =
+            container.GetComponent<HorizontalLayoutGroup>();
+
+        if (layout != null)
+        {
+            layout.spacing = jobButtonSpacing;
+        }
+
+        int siblingIndex = stopJobButton != null &&
+                           stopJobButton.transform.parent == container
+            ? stopJobButton.transform.GetSiblingIndex()
+            : container.childCount;
+
+        int jobCount = inventory.EffectiveJobs.Count;
+        float buttonWidth = CalculateJobButtonWidth(
+            jobCount,
+            jobButtonWidthBudget,
+            minimumJobButtonWidth,
+            maximumJobButtonWidth);
+
+        foreach (EffectiveJobAvailability job in inventory.EffectiveJobs)
+        {
+            Button button = Instantiate(template, container);
+            button.name = $"{job.JobType}Button";
+            button.transform.localScale = Vector3.one;
+
+            if (button.transform is RectTransform buttonRect)
+            {
+                buttonRect.SetSizeWithCurrentAnchors(
+                    RectTransform.Axis.Horizontal,
+                    buttonWidth);
+                buttonRect.SetSizeWithCurrentAnchors(
+                    RectTransform.Axis.Vertical,
+                    jobButtonHeight);
+            }
+
+            button.transform.SetSiblingIndex(siblingIndex++);
+            button.gameObject.SetActive(true);
+
+            JobButtonBinding definition =
+                FindButtonDefinition(job.JobType);
+
+            runtimeJobButtons.Add(new JobButtonBinding
+            {
+                jobType = job.JobType,
+                displayName = definition?.displayName,
+                button = button,
+                countLabel = button.GetComponentInChildren<TMP_Text>(true)
+            });
+        }
+
+        BindButtons();
+    }
+
+    public static float CalculateJobButtonWidth(
+        int jobCount,
+        float widthBudget,
+        float minimumWidth,
+        float maximumWidth)
+    {
+        float safeMinimum = Mathf.Max(1f, minimumWidth);
+        float safeMaximum = Mathf.Max(safeMinimum, maximumWidth);
+        float safeBudget = Mathf.Max(safeMinimum, widthBudget);
+
+        return Mathf.Clamp(
+            safeBudget / Mathf.Max(1, jobCount),
+            safeMinimum,
+            safeMaximum);
+    }
+
+    private Button ResolveJobButtonTemplate()
+    {
+        if (jobButtonPrefab != null)
+        {
+            return jobButtonPrefab;
+        }
+
+        foreach (JobButtonBinding definition in jobButtonDefinitions)
+        {
+            if (definition?.button != null)
+            {
+                return definition.button;
+            }
+        }
+
+        return null;
+    }
+
+    private JobButtonBinding FindButtonDefinition(
+        DwarfJobType jobType)
+    {
+        return jobButtonDefinitions.Find(
+            definition => definition != null &&
+                          definition.jobType == jobType);
+    }
+
+    private void ClearRuntimeJobButtons()
+    {
+        foreach (JobButtonBinding binding in runtimeJobButtons)
+        {
+            if (binding?.button == null)
+            {
+                continue;
+            }
+
+            binding.button.gameObject.SetActive(false);
+
+            if (Application.isPlaying)
+            {
+                Destroy(binding.button.gameObject);
+            }
+            else
+            {
+                DestroyImmediate(binding.button.gameObject);
+            }
+        }
+
+        runtimeJobButtons.Clear();
+    }
+
+    private void OnValidate()
+    {
+        minimumJobButtonWidth =
+            Mathf.Max(1f, minimumJobButtonWidth);
+        maximumJobButtonWidth =
+            Mathf.Max(minimumJobButtonWidth, maximumJobButtonWidth);
+        jobButtonWidthBudget =
+            Mathf.Max(minimumJobButtonWidth, jobButtonWidthBudget);
+        jobButtonHeight =
+            Mathf.Max(1f, jobButtonHeight);
+        jobButtonSpacing =
+            Mathf.Max(0f, jobButtonSpacing);
+
+        if (Application.isPlaying && isActiveAndEnabled)
+        {
+            RebuildJobButtons();
+            RefreshAllButtons();
+        }
+    }
+
     private void BindButtons()
     {
-        foreach (JobButtonBinding binding in jobButtons)
+        foreach (JobButtonBinding binding in runtimeJobButtons)
         {
             if (binding.button == null)
                 continue;
@@ -264,7 +480,7 @@ public class DwarfJobBarUI : MonoBehaviour
 
     private void UnbindButtons()
     {
-        foreach (JobButtonBinding binding in jobButtons)
+        foreach (JobButtonBinding binding in runtimeJobButtons)
         {
             if (binding.button == null ||
                 binding.callback == null)
@@ -416,7 +632,7 @@ public class DwarfJobBarUI : MonoBehaviour
 
     private void RefreshAllButtons()
     {
-        foreach (JobButtonBinding binding in jobButtons)
+        foreach (JobButtonBinding binding in runtimeJobButtons)
         {
             RefreshButton(binding);
         }
@@ -560,6 +776,12 @@ public class DwarfJobBarUI : MonoBehaviour
         DwarfJobType jobType,
         int count)
     {
+        RefreshAllButtons();
+    }
+
+    private void HandleInventoryConfigurationChanged()
+    {
+        RebuildJobButtons();
         RefreshAllButtons();
     }
 
