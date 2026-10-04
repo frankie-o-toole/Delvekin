@@ -1,7 +1,8 @@
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-public class VoxelWorld : MonoBehaviour
+public class VoxelWorld : MonoBehaviour, ILevelLoadingProgress
 {
     [Header("Level Authoring")]
     [Tooltip("Persistent authored level. When empty, the existing generated-level fallback is used.")]
@@ -14,6 +15,19 @@ public class VoxelWorld : MonoBehaviour
 
     [Header("Rendering")]
     public Material voxelMaterial;
+
+    [Header("Runtime Loading")]
+    [Min(1)]
+    [SerializeField]
+    private int loadingChunksPerFrame = 4;
+
+    [Min(1)]
+    [SerializeField]
+    private int loadingVoxelRecordsPerFrame = 2048;
+
+    [Min(1)]
+    [SerializeField]
+    private int loadingEntitiesPerFrame = 4;
 
     [Header("Fluid Simulation")]
     [SerializeField]
@@ -85,11 +99,21 @@ public class VoxelWorld : MonoBehaviour
     private Vector3Int gameplayBoundsMaximumExclusive;
     private LevelSaveData activeLevelSaveData;
     private LevelSaveData attemptStartSnapshot;
+    private Coroutine levelLoadingCoroutine;
+
+    public LevelLoadingProgress LoadingProgress { get; private set; } =
+        new(LevelLoadingState.Idle, "Waiting", 0f);
+
+    public bool IsLevelReady => LoadingProgress.IsReady;
+    public bool IsLevelLoading => LoadingProgress.IsLoading;
 
     public bool HasLoadedChunks => chunks.Count > 0;
 
     public event System.Action<Vector3Int, Voxel, Voxel>
         VoxelChanged;
+
+    public event System.Action<LevelLoadingProgress>
+        LoadingProgressChanged;
 
     private void Awake()
     {
@@ -120,11 +144,25 @@ public class VoxelWorld : MonoBehaviour
             cameraStateController =
                 FindFirstObjectByType<CameraStateController>();
         }
+
+        if (Application.isPlaying)
+        {
+            LevelLoadingOverlay overlay =
+                GetComponent<LevelLoadingOverlay>();
+
+            if (overlay == null)
+            {
+                overlay = gameObject.AddComponent<LevelLoadingOverlay>();
+            }
+
+            overlay.Configure(this);
+        }
     }
 
     private void Update()
     {
-        if (!simulateFluids ||
+        if (IsLevelLoading ||
+            !simulateFluids ||
             (!fluidSimulationStarted &&
              !simulateFluidsBeforeDwarves))
         {
@@ -325,11 +363,21 @@ public class VoxelWorld : MonoBehaviour
         }
         else
         {
+            SetLoadingProgress(
+                LevelLoadingState.Preparing,
+                "Generating level",
+                0f);
+
             LoadGeneratedLevel(
                 1234,
                 5,
                 4,
                 5);
+
+            SetLoadingProgress(
+                LevelLoadingState.Ready,
+                "Ready",
+                1f);
         }
     }
 
@@ -550,15 +598,15 @@ public class VoxelWorld : MonoBehaviour
         }
 
         LevelSaveData snapshot = attemptStartSnapshot.Clone();
-        LoadSaveData(snapshot);
-
-        // Loading normally clears an old attempt. This snapshot remains the
-        // confirmed source for any later retries of the same attempt setup.
-        attemptStartSnapshot = snapshot.Clone();
+        LoadSaveData(
+            snapshot,
+            retainAsAttemptStart: true);
         return true;
     }
 
-    private void LoadSaveData(LevelSaveData save)
+    private void LoadSaveData(
+        LevelSaveData save,
+        bool retainAsAttemptStart = false)
     {
         LevelDefinition loaded =
             ScriptableObject.CreateInstance<LevelDefinition>();
@@ -567,7 +615,28 @@ public class VoxelWorld : MonoBehaviour
         {
             loaded.name = save.displayName;
             loaded.ReplaceAllContent(save);
-            LoadLevelDefinition(loaded);
+
+            LevelDefinition.RuntimeSnapshot runtimeSnapshot =
+                loaded.CreateRuntimeSnapshot();
+            LevelSaveData runtimeSave =
+                loaded.CreateSaveData();
+
+            if (Application.isPlaying)
+            {
+                BeginRuntimeLevelLoad(
+                    runtimeSnapshot,
+                    runtimeSave,
+                    retainAsAttemptStart
+                        ? save.Clone()
+                        : null);
+            }
+            else
+            {
+                LoadLevelDefinitionImmediate(
+                    loaded,
+                    runtimeSnapshot,
+                    runtimeSave);
+            }
         }
         finally
         {
@@ -680,18 +749,6 @@ public class VoxelWorld : MonoBehaviour
 
     public void LoadLevelDefinition(LevelDefinition definition)
     {
-        attemptStartSnapshot = null;
-
-        DwarfSpawner spawner = null;
-
-        if (Application.isPlaying)
-        {
-            spawner =
-                FindFirstObjectByType<DwarfSpawner>();
-
-            spawner?.ResetSimulation();
-        }
-
         if (definition == null)
         {
             Debug.LogError("Cannot load a null LevelDefinition.", this);
@@ -701,7 +758,378 @@ public class VoxelWorld : MonoBehaviour
         LevelDefinition.RuntimeSnapshot snapshot =
             definition.CreateRuntimeSnapshot();
 
-        activeLevelSaveData = definition.CreateSaveData();
+        LevelSaveData saveData =
+            definition.CreateSaveData();
+
+        if (Application.isPlaying)
+        {
+            BeginRuntimeLevelLoad(
+                snapshot,
+                saveData,
+                retainedAttemptStart: null);
+            return;
+        }
+
+        LoadLevelDefinitionImmediate(
+            definition,
+            snapshot,
+            saveData);
+    }
+
+    private void BeginRuntimeLevelLoad(
+        LevelDefinition.RuntimeSnapshot snapshot,
+        LevelSaveData saveData,
+        LevelSaveData retainedAttemptStart)
+    {
+        if (levelLoadingCoroutine != null)
+        {
+            StopCoroutine(levelLoadingCoroutine);
+        }
+
+        DwarfSpawner spawner =
+            FindFirstObjectByType<DwarfSpawner>();
+
+        spawner?.ResetSimulation();
+
+        SetLoadingProgress(
+            LevelLoadingState.Preparing,
+            "Preparing level",
+            0f);
+
+        levelLoadingCoroutine = StartCoroutine(
+            GuardLevelLoadRoutine(
+                snapshot,
+                saveData,
+                spawner,
+                retainedAttemptStart));
+    }
+
+    private IEnumerator GuardLevelLoadRoutine(
+        LevelDefinition.RuntimeSnapshot snapshot,
+        LevelSaveData saveData,
+        DwarfSpawner spawner,
+        LevelSaveData retainedAttemptStart)
+    {
+        IEnumerator routine = LoadLevelDefinitionRoutine(
+            snapshot,
+            saveData,
+            spawner,
+            retainedAttemptStart);
+
+        while (true)
+        {
+            bool hasNext = false;
+            object current = null;
+            System.Exception failure = null;
+
+            try
+            {
+                hasNext = routine.MoveNext();
+
+                if (hasNext)
+                {
+                    current = routine.Current;
+                }
+            }
+            catch (System.Exception exception)
+            {
+                failure = exception;
+            }
+
+            if (failure != null)
+            {
+                levelLoadingCoroutine = null;
+                SetLoadingProgress(
+                    LevelLoadingState.Failed,
+                    "Loading failed",
+                    LoadingProgress.Progress);
+                Debug.LogException(failure, this);
+                yield break;
+            }
+
+            if (!hasNext)
+            {
+                yield break;
+            }
+
+            yield return current;
+        }
+    }
+
+    private IEnumerator LoadLevelDefinitionRoutine(
+        LevelDefinition.RuntimeSnapshot snapshot,
+        LevelSaveData saveData,
+        DwarfSpawner spawner,
+        LevelSaveData retainedAttemptStart)
+    {
+        // Allow the loading overlay to render before any heavy work begins.
+        yield return null;
+
+        attemptStartSnapshot = retainedAttemptStart?.Clone();
+        activeLevelSaveData = saveData;
+        fluidSimulationStarted = false;
+        ClearWorld();
+
+        gameplayBoundsMinimum =
+            snapshot.GameplayBoundsMinimum;
+        gameplayBoundsMaximumExclusive =
+            gameplayBoundsMinimum + snapshot.GameplayBoundsSize;
+        hasGameplayBounds = true;
+
+        VoxelVisibilitySystem.SetToInitialPuzzleState();
+
+        Vector3Int minimumChunk = snapshot.OriginInChunks;
+        Vector3Int sizeInChunks = snapshot.SizeInChunks;
+        int totalChunks = Mathf.Max(
+            1,
+            sizeInChunks.x * sizeInChunks.y * sizeInChunks.z);
+        int completedChunks = 0;
+
+        for (int cx = 0; cx < sizeInChunks.x; cx++)
+        {
+            for (int cy = 0; cy < sizeInChunks.y; cy++)
+            {
+                for (int cz = 0; cz < sizeInChunks.z; cz++)
+                {
+                    Vector3Int chunkCoordinate =
+                        minimumChunk + new Vector3Int(cx, cy, cz);
+
+                    chunks.Add(
+                        chunkCoordinate,
+                        new Chunk(chunkCoordinate));
+
+                    completedChunks++;
+                    SetPhaseProgress(
+                        LevelLoadingState.BuildingChunks,
+                        "Building chunks",
+                        0.05f,
+                        0.20f,
+                        completedChunks,
+                        totalChunks);
+
+                    if (completedChunks %
+                        Mathf.Max(1, loadingChunksPerFrame) == 0)
+                    {
+                        yield return null;
+                    }
+                }
+            }
+        }
+
+        int totalVoxels = Mathf.Max(1, snapshot.Voxels.Count);
+        int completedVoxels = 0;
+
+        foreach (LevelVoxelRecord record in snapshot.Voxels)
+        {
+            ApplyLevelVoxelRecord(record, null);
+            completedVoxels++;
+
+            if (completedVoxels %
+                Mathf.Max(1, loadingVoxelRecordsPerFrame) == 0)
+            {
+                SetPhaseProgress(
+                    LevelLoadingState.ApplyingVoxels,
+                    "Applying voxels",
+                    0.20f,
+                    0.45f,
+                    completedVoxels,
+                    totalVoxels);
+                yield return null;
+            }
+        }
+
+        SetPhaseProgress(
+            LevelLoadingState.ApplyingVoxels,
+            "Applying voxels",
+            0.20f,
+            0.45f,
+            totalVoxels,
+            totalVoxels);
+
+        List<Chunk> chunksToRender = new(chunks.Values);
+
+        for (int index = 0; index < chunksToRender.Count; index++)
+        {
+            CreateChunkRenderer(
+                chunksToRender[index],
+                rebuildImmediately: false);
+
+            SetPhaseProgress(
+                LevelLoadingState.CreatingRenderers,
+                "Creating renderers",
+                0.45f,
+                0.58f,
+                index + 1,
+                chunksToRender.Count);
+
+            if ((index + 1) %
+                Mathf.Max(1, loadingChunksPerFrame) == 0)
+            {
+                yield return null;
+            }
+        }
+
+        RefreshWorldSpatialState(recenterCamera: true);
+        VoxelVisibilitySystem.SetView(SliceAxis.Z, +1);
+        VoxelVisibilitySystem.ResetVisibility();
+
+        SetLoadingProgress(
+            LevelLoadingState.InitializingSystems,
+            "Initializing water",
+            0.60f,
+            0,
+            3);
+        waterSystem?.ResetFromWorld();
+        yield return null;
+
+        if (waterSystem != null)
+        {
+            foreach (LevelVoxelRecord record in snapshot.Voxels)
+            {
+                if (record.Type == VoxelType.Water &&
+                    record.Amount == WaterAmount.Half)
+                {
+                    waterSystem.SetAmount(
+                        record.Position,
+                        WaterAmount.Half);
+                }
+            }
+        }
+
+        SetLoadingProgress(
+            LevelLoadingState.InitializingSystems,
+            "Initializing fluids",
+            0.64f,
+            1,
+            3);
+        fluidSimulation?.ResetFromWorld();
+        yield return null;
+
+        foreach (LevelEntityRecord record in snapshot.Entities)
+        {
+            if (record != null &&
+                record.Type == LevelEntityType.SpawnHouse)
+            {
+                RegisterRuntimeSpawnPoint(
+                    record.SpawnVoxel,
+                    record.Facing);
+            }
+        }
+
+        SetLoadingProgress(
+            LevelLoadingState.InitializingSystems,
+            "Initializing gameplay",
+            0.68f,
+            3,
+            3);
+
+        ClearRuntimeEntities();
+
+        if (snapshot.Entities.Count > 0)
+        {
+            GameObject rootObject = new("Runtime Entities");
+            rootObject.transform.SetParent(transform, false);
+            runtimeEntityRoot = rootObject.transform;
+        }
+
+        int totalEntities = Mathf.Max(1, snapshot.Entities.Count);
+
+        for (int index = 0; index < snapshot.Entities.Count; index++)
+        {
+            LevelEntityFactory.CreateEntity(
+                snapshot.Entities[index],
+                this,
+                runtimeEntityRoot,
+                runtimeCopy: true);
+
+            SetPhaseProgress(
+                LevelLoadingState.BuildingEntities,
+                "Building entities",
+                0.70f,
+                0.82f,
+                index + 1,
+                totalEntities);
+
+            if ((index + 1) %
+                Mathf.Max(1, loadingEntitiesPerFrame) == 0)
+            {
+                yield return null;
+            }
+        }
+
+        if (snapshot.Entities.Count == 0)
+        {
+            SetPhaseProgress(
+                LevelLoadingState.BuildingEntities,
+                "Building entities",
+                0.70f,
+                0.82f,
+                1,
+                1);
+        }
+
+        spawner?.ConfigureLevel(snapshot);
+
+        int totalMeshes = Mathf.Max(1, chunksToRender.Count * 2);
+        int completedMeshes = 0;
+
+        foreach (Chunk chunk in chunksToRender)
+        {
+            if (chunkRenderers.TryGetValue(
+                    chunk.ChunkCoordinate,
+                    out ChunkRenderer terrainRenderer))
+            {
+                terrainRenderer.RebuildMesh();
+                completedMeshes++;
+                SetPhaseProgress(
+                    LevelLoadingState.BuildingMeshes,
+                    "Building terrain meshes",
+                    0.82f,
+                    1f,
+                    completedMeshes,
+                    totalMeshes);
+            }
+
+            if (fluidChunkRenderers.TryGetValue(
+                    chunk.ChunkCoordinate,
+                    out FluidChunkRenderer fluidRenderer))
+            {
+                fluidRenderer.RebuildMesh();
+                completedMeshes++;
+                SetPhaseProgress(
+                    LevelLoadingState.BuildingMeshes,
+                    "Building fluid meshes",
+                    0.82f,
+                    1f,
+                    completedMeshes,
+                    totalMeshes);
+            }
+
+            if (completedMeshes > 0 &&
+                completedMeshes %
+                (Mathf.Max(1, loadingChunksPerFrame) * 2) == 0)
+            {
+                yield return null;
+            }
+        }
+
+        levelLoadingCoroutine = null;
+        SetLoadingProgress(
+            LevelLoadingState.Ready,
+            "Ready",
+            1f,
+            1,
+            1);
+    }
+
+    private void LoadLevelDefinitionImmediate(
+        LevelDefinition definition,
+        LevelDefinition.RuntimeSnapshot snapshot,
+        LevelSaveData saveData)
+    {
+        attemptStartSnapshot = null;
+
+        activeLevelSaveData = saveData;
 
         fluidSimulationStarted = false;
         ClearWorld();
@@ -735,34 +1163,7 @@ public class VoxelWorld : MonoBehaviour
 
         foreach (LevelVoxelRecord record in snapshot.Voxels)
         {
-            Vector3Int chunkCoordinate =
-                VoxelMath.WorldToChunkCoord(record.Position);
-
-            if (!chunks.TryGetValue(
-                    chunkCoordinate,
-                    out Chunk chunk))
-            {
-                Debug.LogWarning(
-                    $"Skipping authored voxel outside level bounds at " +
-                    $"{record.Position}.",
-                    definition);
-                continue;
-            }
-
-            Vector3Int localPosition =
-                VoxelMath.WorldToLocalVoxel(record.Position);
-
-            chunk.SetVoxel(
-                localPosition.x,
-                localPosition.y,
-                localPosition.z,
-                new Voxel(record.Type, record.Facing));
-
-            if (record.Type == VoxelType.Water)
-            {
-                authoredWaterAmounts[record.Position] =
-                    record.Amount;
-            }
+            ApplyLevelVoxelRecord(record, definition);
         }
 
         foreach (Chunk chunk in chunks.Values)
@@ -793,29 +1194,78 @@ public class VoxelWorld : MonoBehaviour
 
         fluidSimulation?.ResetFromWorld();
 
-        if (Application.isPlaying)
+        ChunkRefreshSystem.RequestFullRefresh();
+    }
+
+    private void ApplyLevelVoxelRecord(
+        LevelVoxelRecord record,
+        Object warningContext)
+    {
+        Vector3Int chunkCoordinate =
+            VoxelMath.WorldToChunkCoord(record.Position);
+
+        if (!chunks.TryGetValue(
+                chunkCoordinate,
+                out Chunk chunk))
         {
-            // Gameplay data comes directly from the level snapshot. Runtime
-            // GameObjects are representations of these records and are not
-            // responsible for making the spawn data exist.
-            foreach (LevelEntityRecord record in snapshot.Entities)
-            {
-                if (record != null &&
-                    record.Type == LevelEntityType.SpawnHouse)
-                {
-                    RegisterRuntimeSpawnPoint(
-                        record.SpawnVoxel,
-                        record.Facing);
-                }
-            }
-
-            BuildRuntimeEntities(snapshot.Entities);
-
-            spawner?.ConfigureLevel(snapshot);
+            Debug.LogWarning(
+                $"Skipping authored voxel outside level bounds at " +
+                $"{record.Position}.",
+                warningContext);
+            return;
         }
 
-        ChunkRefreshSystem.RequestFullRefresh();
+        Vector3Int localPosition =
+            VoxelMath.WorldToLocalVoxel(record.Position);
 
+        chunk.SetVoxel(
+            localPosition.x,
+            localPosition.y,
+            localPosition.z,
+            new Voxel(record.Type, record.Facing));
+
+        if (record.Type == VoxelType.Water)
+        {
+            authoredWaterAmounts[record.Position] =
+                record.Amount;
+        }
+    }
+
+    private void SetPhaseProgress(
+        LevelLoadingState state,
+        string phase,
+        float phaseStart,
+        float phaseEnd,
+        int completedWork,
+        int totalWork)
+    {
+        float phaseProgress = totalWork > 0
+            ? Mathf.Clamp01((float)completedWork / totalWork)
+            : 0f;
+
+        SetLoadingProgress(
+            state,
+            phase,
+            Mathf.Lerp(phaseStart, phaseEnd, phaseProgress),
+            completedWork,
+            totalWork);
+    }
+
+    private void SetLoadingProgress(
+        LevelLoadingState state,
+        string phase,
+        float progress,
+        int completedWork = 0,
+        int totalWork = 0)
+    {
+        LoadingProgress = new LevelLoadingProgress(
+            state,
+            phase,
+            progress,
+            completedWork,
+            totalWork);
+
+        LoadingProgressChanged?.Invoke(LoadingProgress);
     }
 
     // =====================================================
@@ -1076,7 +1526,8 @@ public class VoxelWorld : MonoBehaviour
     // =====================================================
 
     private void CreateChunkRenderer(
-        Chunk chunk)
+        Chunk chunk,
+        bool rebuildImmediately = true)
     {
         EnsureChunkRoot();
 
@@ -1115,7 +1566,8 @@ public class VoxelWorld : MonoBehaviour
 
         renderer.Initialize(
             chunk,
-            this);
+            this,
+            rebuildImmediately);
 
         chunkRenderers.Add(
             chunk.ChunkCoordinate,
@@ -1138,7 +1590,10 @@ public class VoxelWorld : MonoBehaviour
         fluidObject.GetComponent<MeshRenderer>().material =
             voxelMaterial;
 
-        fluidRenderer.Initialize(chunk, this);
+        fluidRenderer.Initialize(
+            chunk,
+            this,
+            rebuildImmediately);
 
         fluidChunkRenderers.Add(
             chunk.ChunkCoordinate,

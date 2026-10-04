@@ -52,6 +52,12 @@ public class CameraStateController : MonoBehaviour
     private void Update()
     {
         HandleQuit();
+
+        if (voxelWorld != null && !voxelWorld.IsLevelReady)
+        {
+            return;
+        }
+
         HandleTab();
 
         if (!isTransitioning)

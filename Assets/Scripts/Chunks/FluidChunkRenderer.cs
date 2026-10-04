@@ -42,7 +42,10 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         }
     }
 
-    public void Initialize(Chunk chunk, VoxelWorld world)
+    public void Initialize(
+        Chunk chunk,
+        VoxelWorld world,
+        bool rebuildImmediately = true)
     {
         this.chunk = chunk;
         this.world = world;
@@ -53,7 +56,10 @@ public sealed class FluidChunkRenderer : MonoBehaviour
         };
 
         GetComponent<MeshFilter>().mesh = mesh;
-        RebuildMesh();
+        if (rebuildImmediately)
+        {
+            RebuildMesh();
+        }
     }
 
     public void RebuildMesh()

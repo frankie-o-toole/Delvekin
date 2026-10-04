@@ -23,6 +23,9 @@ public class DwarfJobBarUI : MonoBehaviour
     private DwarfJobAssignmentManager assignmentManager;
 
     [SerializeField]
+    private VoxelWorld voxelWorld;
+
+    [SerializeField]
     private List<JobButtonBinding> jobButtons =
         new();
 
@@ -71,10 +74,12 @@ public class DwarfJobBarUI : MonoBehaviour
     private UnityAction directionAltererLeftCallback;
     private UnityAction directionAltererReverseCallback;
     private UnityAction directionAltererRightCallback;
+    private CanvasGroup canvasGroup;
 
     private void Awake()
     {
         ResolveInventory();
+        ResolveLoadingReferences();
     }
 
     private void Start()
@@ -89,6 +94,7 @@ public class DwarfJobBarUI : MonoBehaviour
         }
 
         RefreshAllButtons();
+        RefreshLoadingVisibility();
     }
 
     private void ResolveInventory()
@@ -113,6 +119,14 @@ public class DwarfJobBarUI : MonoBehaviour
 
     private void OnEnable()
     {
+        ResolveLoadingReferences();
+
+        if (voxelWorld != null)
+        {
+            voxelWorld.LoadingProgressChanged +=
+                HandleLoadingProgressChanged;
+        }
+
         if (assignmentManager == null)
             return;
 
@@ -151,6 +165,12 @@ public class DwarfJobBarUI : MonoBehaviour
 
     private void OnDisable()
     {
+        if (voxelWorld != null)
+        {
+            voxelWorld.LoadingProgressChanged -=
+                HandleLoadingProgressChanged;
+        }
+
         if (assignmentManager != null)
         {
             assignmentManager.SelectedJobChanged -=
@@ -184,6 +204,43 @@ public class DwarfJobBarUI : MonoBehaviour
         UnbindButtons();
         UnbindStopJobButton();
         UnbindDirectionAltererOptionButtons();
+    }
+
+    private void ResolveLoadingReferences()
+    {
+        if (voxelWorld == null)
+        {
+            voxelWorld = FindFirstObjectByType<VoxelWorld>();
+        }
+
+        if (canvasGroup == null)
+        {
+            canvasGroup = GetComponent<CanvasGroup>();
+
+            if (canvasGroup == null)
+            {
+                canvasGroup = gameObject.AddComponent<CanvasGroup>();
+            }
+        }
+    }
+
+    private void HandleLoadingProgressChanged(
+        LevelLoadingProgress progress)
+    {
+        RefreshLoadingVisibility();
+    }
+
+    private void RefreshLoadingVisibility()
+    {
+        if (canvasGroup == null)
+        {
+            return;
+        }
+
+        bool visible = voxelWorld == null || voxelWorld.IsLevelReady;
+        canvasGroup.alpha = visible ? 1f : 0f;
+        canvasGroup.interactable = visible;
+        canvasGroup.blocksRaycasts = visible;
     }
 
     private void BindButtons()

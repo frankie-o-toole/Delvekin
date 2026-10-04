@@ -20,7 +20,8 @@ public class ChunkRenderer : MonoBehaviour
 
     public void Initialize(
         Chunk chunk,
-        VoxelWorld voxelWorld)
+        VoxelWorld voxelWorld,
+        bool rebuildImmediately = true)
     {
         this.chunk = chunk;
         this.voxelWorld = voxelWorld;
@@ -40,7 +41,10 @@ public class ChunkRenderer : MonoBehaviour
                 gameObject.AddComponent<MeshCollider>();
         }
 
-        RebuildMesh();
+        if (rebuildImmediately)
+        {
+            RebuildMesh();
+        }
     }
 
     public void RebuildMesh()

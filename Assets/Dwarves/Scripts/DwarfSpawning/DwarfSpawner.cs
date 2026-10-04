@@ -126,6 +126,11 @@ public class DwarfSpawner : MonoBehaviour
             return;
         }
 
+        if (world == null || !world.IsLevelReady)
+        {
+            return;
+        }
+
         if (!ValidateReferences())
         {
             return;
@@ -638,6 +643,11 @@ public class DwarfSpawner : MonoBehaviour
 
     private void OnGUI()
     {
+        if (world != null && !world.IsLevelReady)
+        {
+            return;
+        }
+
         const float uiScale = 2.5f;
 
         GUI.matrix =
@@ -796,6 +806,11 @@ public class DwarfSpawner : MonoBehaviour
 
     private bool ContainsRuntimeUI(Vector2 screenPosition)
     {
+        if (world != null && !world.IsLevelReady)
+        {
+            return true;
+        }
+
         const float uiScale = 2.5f;
         const float width = 180f;
         const float height = 40f;
