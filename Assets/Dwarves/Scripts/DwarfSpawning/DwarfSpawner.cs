@@ -1324,12 +1324,25 @@ public class DwarfSpawner : MonoBehaviour
         Outcome = outcome;
         Time.timeScale = 0f;
 
-        LevelRewardResult reward =
-            SessionLevelRewardHistory.ResolveAttempt(
+        CampaignProgressService campaign =
+            CampaignProgressService.Instance;
+        bool hasPersistentCampaign =
+            campaign != null &&
+            !string.IsNullOrWhiteSpace(activeLevelId);
+
+        LevelRewardResult reward = hasPersistentCampaign
+            ? campaign.ResolveLevelReward(
                 activeLevelId,
                 outcome,
                 resourceGoalProgress.Mined,
-                resourceGoalProgress.Ore.TotalCapacity);
+                resourceGoalProgress.Ore.TotalCapacity)
+            : LevelRewardCalculator.Calculate(
+                activeLevelId,
+                outcome,
+                resourceGoalProgress.Mined,
+                resourceGoalProgress.Ore.TotalCapacity,
+                hasPreviousCompletion: false,
+                previousBestDelivered: 0);
 
         result = new LevelAttemptResult(
             outcome,
@@ -1345,10 +1358,9 @@ public class DwarfSpawner : MonoBehaviour
             simulationClock.ElapsedSeconds,
             reward);
 
-        if (CampaignProgressService.Instance != null &&
-            !string.IsNullOrWhiteSpace(activeLevelId))
+        if (hasPersistentCampaign)
         {
-            CampaignProgressService.Instance.RecordLevelAttempt(
+            campaign.RecordLevelAttempt(
                 activeLevelId,
                 result);
         }

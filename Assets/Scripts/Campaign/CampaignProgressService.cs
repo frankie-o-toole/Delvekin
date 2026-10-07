@@ -166,6 +166,34 @@ public sealed class CampaignProgressService : MonoBehaviour
         return null;
     }
 
+    public LevelRewardResult ResolveLevelReward(
+        string levelId,
+        LevelOutcome outcome,
+        int deliveredResources,
+        int totalOreCapacity)
+    {
+        if (string.IsNullOrWhiteSpace(levelId))
+        {
+            throw new ArgumentException(
+                "A stable level ID is required.",
+                nameof(levelId));
+        }
+
+        EnsureInitialized();
+
+        string normalizedId = levelId.Trim();
+        CampaignLevelProgressData previous =
+            GetLevelProgress(normalizedId);
+
+        return LevelRewardCalculator.Calculate(
+            normalizedId,
+            outcome,
+            deliveredResources,
+            totalOreCapacity,
+            previous?.completed ?? false,
+            previous?.bestDeliveredResources ?? 0);
+    }
+
     public bool RecordLevelAttempt(
         string levelId,
         LevelAttemptResult attempt)
