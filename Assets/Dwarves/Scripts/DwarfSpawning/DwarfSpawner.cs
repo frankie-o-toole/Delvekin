@@ -1331,11 +1331,12 @@ public class DwarfSpawner : MonoBehaviour
             !string.IsNullOrWhiteSpace(activeLevelId);
 
         LevelRewardResult reward = hasPersistentCampaign
-            ? campaign.ResolveLevelReward(
+            ? campaign.CommitLevelAttempt(
                 activeLevelId,
                 outcome,
                 resourceGoalProgress.Mined,
-                resourceGoalProgress.Ore.TotalCapacity)
+                resourceGoalProgress.Ore.TotalCapacity,
+                simulationClock.ElapsedSeconds)
             : LevelRewardCalculator.Calculate(
                 activeLevelId,
                 outcome,
@@ -1357,13 +1358,6 @@ public class DwarfSpawner : MonoBehaviour
             resourceGoalProgress.UnspawnedDwarves,
             simulationClock.ElapsedSeconds,
             reward);
-
-        if (hasPersistentCampaign)
-        {
-            campaign.RecordLevelAttempt(
-                activeLevelId,
-                result);
-        }
 
         RewardResolved?.Invoke(reward);
 

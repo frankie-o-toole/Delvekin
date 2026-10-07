@@ -284,6 +284,158 @@ public sealed class CampaignProgressServiceTests
     }
 
     [Test]
+    public void LevelCommitUpdatesProgressAndWalletTogether()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+
+        LevelRewardResult reward = service.CommitLevelAttempt(
+            "level-a",
+            LevelOutcome.Success,
+            deliveredResources: 50,
+            totalOreCapacity: 100,
+            simulationSeconds: 90d);
+
+        CampaignLevelProgressData progress =
+            service.GetLevelProgress("level-a");
+
+        Assert.That(reward.NewlyEarnedResources, Is.EqualTo(50));
+        Assert.That(service.TotalEarnedOre, Is.EqualTo(50));
+        Assert.That(service.TotalSpentOre, Is.Zero);
+        Assert.That(service.AvailableOre, Is.EqualTo(50));
+        Assert.That(progress.completed, Is.True);
+        Assert.That(progress.bestDeliveredResources, Is.EqualTo(50));
+    }
+
+    [Test]
+    public void ReprocessingSameCompletionCannotPayTwice()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+
+        LevelRewardResult first = service.CommitLevelAttempt(
+            "level-a",
+            LevelOutcome.Success,
+            50,
+            100,
+            90d);
+        LevelRewardResult duplicate = service.CommitLevelAttempt(
+            "level-a",
+            LevelOutcome.Success,
+            50,
+            100,
+            90d);
+
+        Assert.That(first.NewlyEarnedResources, Is.EqualTo(50));
+        Assert.That(duplicate.NewlyEarnedResources, Is.Zero);
+        Assert.That(service.TotalEarnedOre, Is.EqualTo(50));
+    }
+
+    [Test]
+    public void ImprovedReplayAddsOnlyImprovementToWallet()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+        service.CommitLevelAttempt(
+            "level-a",
+            LevelOutcome.Success,
+            50,
+            100,
+            90d);
+
+        LevelRewardResult improved = service.CommitLevelAttempt(
+            "level-a",
+            LevelOutcome.Success,
+            80,
+            100,
+            85d);
+
+        Assert.That(improved.NewlyEarnedResources, Is.EqualTo(30));
+        Assert.That(service.TotalEarnedOre, Is.EqualTo(80));
+        Assert.That(service.AvailableOre, Is.EqualTo(80));
+    }
+
+    [Test]
+    public void FailedCommitDoesNotChangeWalletOrProgress()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+
+        LevelRewardResult reward = service.CommitLevelAttempt(
+            "level-a",
+            LevelOutcome.Failure,
+            50,
+            100,
+            60d);
+
+        Assert.That(reward.NewlyEarnedResources, Is.Zero);
+        Assert.That(service.AvailableOre, Is.Zero);
+        Assert.That(service.GetLevelProgress("level-a"), Is.Null);
+    }
+
+    [Test]
+    public void WalletSurvivesSnapshotReload()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+        service.CommitLevelAttempt(
+            "level-a",
+            LevelOutcome.Success,
+            70,
+            100,
+            90d);
+        Assert.That(service.TrySpendOre(25, "test purchase"), Is.True);
+
+        CampaignSaveData saved = service.CreateSnapshot();
+        service.InitializeNewCampaign();
+        service.LoadFromData(saved);
+
+        Assert.That(service.TotalEarnedOre, Is.EqualTo(70));
+        Assert.That(service.TotalSpentOre, Is.EqualTo(25));
+        Assert.That(service.AvailableOre, Is.EqualTo(45));
+    }
+
+    [Test]
+    public void SpendingRejectsInsufficientFundsWithoutMutation()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew(
+            startingOre: 20));
+
+        bool spent = service.TrySpendOre(25, "too expensive");
+
+        Assert.That(spent, Is.False);
+        Assert.That(service.TotalSpentOre, Is.Zero);
+        Assert.That(service.AvailableOre, Is.EqualTo(20));
+    }
+
+    [Test]
+    public void SpendingRequiresPositiveAmountAndReason()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew(
+            startingOre: 20));
+
+        Assert.Throws<System.ArgumentOutOfRangeException>(
+            () => service.TrySpendOre(0, "free"));
+        Assert.Throws<System.ArgumentException>(
+            () => service.TrySpendOre(5, " "));
+        Assert.That(service.AvailableOre, Is.EqualTo(20));
+    }
+
+    [Test]
+    public void WalletOverflowCannotPartiallyCommitProgress()
+    {
+        CampaignSaveData fullWallet = CampaignSaveData.CreateNew();
+        fullWallet.earnedOre = int.MaxValue;
+        service.LoadFromData(fullWallet);
+
+        Assert.Throws<System.OverflowException>(() =>
+            service.CommitLevelAttempt(
+                "level-a",
+                LevelOutcome.Success,
+                1,
+                1,
+                10d));
+
+        Assert.That(service.TotalEarnedOre, Is.EqualTo(int.MaxValue));
+        Assert.That(service.GetLevelProgress("level-a"), Is.Null);
+    }
+
+    [Test]
     public void BlankLevelIdIsRejected()
     {
         service.LoadFromData(CampaignSaveData.CreateNew());
