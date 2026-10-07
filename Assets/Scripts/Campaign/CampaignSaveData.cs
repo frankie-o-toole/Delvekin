@@ -125,7 +125,24 @@ public sealed class CampaignSaveData
                     progress.levelId,
                     out int existingIndex))
             {
-                normalizedLevels[existingIndex] = progress;
+                CampaignLevelProgressData existing =
+                    normalizedLevels[existingIndex];
+                existing.completed |= progress.completed;
+                existing.bestDeliveredResources = Math.Max(
+                    existing.bestDeliveredResources,
+                    progress.bestDeliveredResources);
+                existing.perfectResourceRun |=
+                    progress.perfectResourceRun;
+
+                if (existing.bestSimulationSeconds <= 0d ||
+                    progress.bestSimulationSeconds > 0d &&
+                    progress.bestSimulationSeconds <
+                    existing.bestSimulationSeconds)
+                {
+                    existing.bestSimulationSeconds =
+                        progress.bestSimulationSeconds;
+                }
+
                 continue;
             }
 

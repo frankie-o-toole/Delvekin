@@ -109,6 +109,39 @@ public sealed class CampaignSaveDataTests
             Is.EqualTo(30));
     }
 
+    [Test]
+    public void NormalizeMergesDuplicateLevelRecordsWithoutLosingBests()
+    {
+        CampaignSaveData data = CampaignSaveData.CreateNew();
+        data.levelProgress.Add(new CampaignLevelProgressData
+        {
+            levelId = "level-a",
+            completed = true,
+            bestDeliveredResources = 80,
+            bestSimulationSeconds = 90d
+        });
+        data.levelProgress.Add(new CampaignLevelProgressData
+        {
+            levelId = "level-a",
+            completed = false,
+            bestDeliveredResources = 50,
+            perfectResourceRun = true,
+            bestSimulationSeconds = 70d
+        });
+
+        data.Normalize();
+
+        Assert.That(data.levelProgress, Has.Count.EqualTo(1));
+        Assert.That(data.levelProgress[0].completed, Is.True);
+        Assert.That(
+            data.levelProgress[0].bestDeliveredResources,
+            Is.EqualTo(80));
+        Assert.That(data.levelProgress[0].perfectResourceRun, Is.True);
+        Assert.That(
+            data.levelProgress[0].bestSimulationSeconds,
+            Is.EqualTo(70d));
+    }
+
     [TestCase(DwarfJobType.DirectionAlter, DwarfJobIdUtility.DirectionAlter)]
     [TestCase(DwarfJobType.Tunneller, DwarfJobIdUtility.Tunneller)]
     [TestCase(DwarfJobType.Digger, DwarfJobIdUtility.Digger)]

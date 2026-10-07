@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using UnityEngine;
 
 [DefaultExecutionOrder(-500)]
@@ -15,7 +16,16 @@ public sealed class CampaignProgressService : MonoBehaviour
     [SerializeField]
     private bool persistAcrossScenes = true;
 
+    [Header("Persistence")]
+    [SerializeField]
+    private bool automaticPersistence = true;
+
+    [SerializeField]
+    private string campaignSaveFileName =
+        CampaignSaveStore.DefaultFileName;
+
     private CampaignSaveData current;
+    private bool persistenceBlocked;
 
     public static CampaignProgressService Instance { get; private set; }
 
@@ -24,6 +34,11 @@ public sealed class CampaignProgressService : MonoBehaviour
     public int TotalEarnedOre => current?.earnedOre ?? 0;
     public int TotalSpentOre => current?.spentOre ?? 0;
     public int AvailableOre => current?.AvailableOre ?? 0;
+    public string SavePath => Path.Combine(
+        Application.persistentDataPath,
+        string.IsNullOrWhiteSpace(campaignSaveFileName)
+            ? CampaignSaveStore.DefaultFileName
+            : Path.GetFileName(campaignSaveFileName));
 
     public event Action CampaignChanged;
     public event Action<int, string> OreSpent;
@@ -48,7 +63,14 @@ public sealed class CampaignProgressService : MonoBehaviour
 
         if (initializeOnAwake)
         {
-            InitializeNewCampaign();
+            if (ShouldUsePersistence)
+            {
+                LoadPersistentCampaign();
+            }
+            else
+            {
+                InitializeNewCampaign();
+            }
         }
     }
 
@@ -66,7 +88,52 @@ public sealed class CampaignProgressService : MonoBehaviour
             ? startDefinition.CreateNewCampaign()
             : CampaignSaveData.CreateNew();
 
-        CampaignChanged?.Invoke();
+        PublishCampaignChange();
+    }
+
+    public void LoadPersistentCampaign()
+    {
+        persistenceBlocked = false;
+
+        try
+        {
+            CampaignSaveLoadResult loaded =
+                CampaignSaveStore.LoadOrCreate(
+                    SavePath,
+                    CreateFreshCampaignData);
+            current = loaded.Data.Clone();
+            current.Normalize();
+
+            if (!string.IsNullOrWhiteSpace(
+                    loaded.ArchivedCorruptPath))
+            {
+                Debug.LogWarning(
+                    "A corrupt campaign save was archived to '" +
+                    loaded.ArchivedCorruptPath + "'.");
+            }
+
+            CampaignChanged?.Invoke();
+        }
+        catch (CampaignSaveUnsupportedVersionException exception)
+        {
+            persistenceBlocked = true;
+            current = CreateFreshCampaignData();
+            Debug.LogError(
+                $"Campaign save was preserved but cannot be loaded: " +
+                exception.Message,
+                this);
+            CampaignChanged?.Invoke();
+        }
+        catch (Exception exception)
+        {
+            persistenceBlocked = true;
+            current = CreateFreshCampaignData();
+            Debug.LogError(
+                $"Campaign persistence failed without overwriting the " +
+                $"existing save: {exception.Message}",
+                this);
+            CampaignChanged?.Invoke();
+        }
     }
 
     public void LoadFromData(CampaignSaveData data)
@@ -86,7 +153,7 @@ public sealed class CampaignProgressService : MonoBehaviour
 
         current = data.Clone();
         current.Normalize();
-        CampaignChanged?.Invoke();
+        PublishCampaignChange();
     }
 
     public CampaignSaveData CreateSnapshot()
@@ -118,7 +185,7 @@ public sealed class CampaignProgressService : MonoBehaviour
         }
 
         current.unlockedJobIds.Add(jobId);
-        CampaignChanged?.Invoke();
+        PublishCampaignChange();
         return true;
     }
 
@@ -230,7 +297,7 @@ public sealed class CampaignProgressService : MonoBehaviour
 
         if (progressChanged || walletChanged)
         {
-            CampaignChanged?.Invoke();
+            PublishCampaignChange();
         }
 
         return reward;
@@ -265,7 +332,7 @@ public sealed class CampaignProgressService : MonoBehaviour
         string normalizedReason = reason.Trim();
 
         OreSpent?.Invoke(amount, normalizedReason);
-        CampaignChanged?.Invoke();
+        PublishCampaignChange();
         return true;
     }
 
@@ -296,7 +363,7 @@ public sealed class CampaignProgressService : MonoBehaviour
 
         if (changed)
         {
-            CampaignChanged?.Invoke();
+            PublishCampaignChange();
         }
 
         return changed;
@@ -383,5 +450,59 @@ public sealed class CampaignProgressService : MonoBehaviour
         {
             InitializeNewCampaign();
         }
+    }
+
+    [ContextMenu("Development/Reset Campaign Save")]
+    public void ResetCampaignSaveForDevelopment()
+    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        CampaignSaveStore.DeleteDevelopmentSave(SavePath);
+        persistenceBlocked = false;
+        InitializeNewCampaign();
+        Debug.Log($"Campaign progress reset at '{SavePath}'.", this);
+#else
+        Debug.LogWarning(
+            "Campaign reset is only available in the Editor or a " +
+            "Development Build.",
+            this);
+#endif
+    }
+
+    public bool SaveNow()
+    {
+        if (!ShouldUsePersistence || persistenceBlocked || current == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            CampaignSaveStore.Save(SavePath, current);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            Debug.LogError(
+                $"Failed to save campaign to '{SavePath}': " +
+                exception.Message,
+                this);
+            return false;
+        }
+    }
+
+    private bool ShouldUsePersistence =>
+        automaticPersistence && Application.isPlaying;
+
+    private CampaignSaveData CreateFreshCampaignData()
+    {
+        return startDefinition != null
+            ? startDefinition.CreateNewCampaign()
+            : CampaignSaveData.CreateNew();
+    }
+
+    private void PublishCampaignChange()
+    {
+        SaveNow();
+        CampaignChanged?.Invoke();
     }
 }
