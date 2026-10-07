@@ -1345,6 +1345,14 @@ public class DwarfSpawner : MonoBehaviour
             simulationClock.ElapsedSeconds,
             reward);
 
+        if (CampaignProgressService.Instance != null &&
+            !string.IsNullOrWhiteSpace(activeLevelId))
+        {
+            CampaignProgressService.Instance.RecordLevelAttempt(
+                activeLevelId,
+                result);
+        }
+
         RewardResolved?.Invoke(reward);
 
         SetSimulationState(LevelSimulationState.Completed);

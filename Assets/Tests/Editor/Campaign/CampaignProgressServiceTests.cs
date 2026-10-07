@@ -75,4 +75,157 @@ public sealed class CampaignProgressServiceTests
         Assert.Throws<System.InvalidOperationException>(
             () => service.LoadFromData(future));
     }
+
+    [Test]
+    public void FirstSuccessfulAttemptCreatesPermanentProgress()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+
+        bool changed = service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(
+                LevelOutcome.Success,
+                delivered: 40,
+                capacity: 60,
+                simulationSeconds: 90d));
+
+        CampaignLevelProgressData progress =
+            service.GetLevelProgress("level-a");
+
+        Assert.That(changed, Is.True);
+        Assert.That(progress.completed, Is.True);
+        Assert.That(progress.bestDeliveredResources, Is.EqualTo(40));
+        Assert.That(progress.perfectResourceRun, Is.False);
+        Assert.That(progress.bestSimulationSeconds, Is.EqualTo(90d));
+    }
+
+    [Test]
+    public void WorseReplayCannotLowerStoredHighWaterMarks()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+        service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Success, 50, 60, 80d));
+
+        bool changed = service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Success, 30, 60, 120d));
+
+        CampaignLevelProgressData progress =
+            service.GetLevelProgress("level-a");
+
+        Assert.That(changed, Is.False);
+        Assert.That(progress.bestDeliveredResources, Is.EqualTo(50));
+        Assert.That(progress.bestSimulationSeconds, Is.EqualTo(80d));
+    }
+
+    [Test]
+    public void ReplayCanImproveResourcesPerfectRunAndTimeIndependently()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+        service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Success, 40, 60, 100d));
+        service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Success, 60, 60, 130d));
+        service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Success, 50, 60, 70d));
+
+        CampaignLevelProgressData progress =
+            service.GetLevelProgress("level-a");
+
+        Assert.That(progress.bestDeliveredResources, Is.EqualTo(60));
+        Assert.That(progress.perfectResourceRun, Is.True);
+        Assert.That(progress.bestSimulationSeconds, Is.EqualTo(70d));
+    }
+
+    [Test]
+    public void FailedAttemptDoesNotCreateOrChangeProgress()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+
+        bool changed = service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Failure, 40, 60, 90d));
+
+        Assert.That(changed, Is.False);
+        Assert.That(service.GetLevelProgress("level-a"), Is.Null);
+    }
+
+    [Test]
+    public void ProgressIsIsolatedByStableLevelIdAndSnapshots()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+        service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Success, 40, 60, 90d));
+        service.RecordLevelAttempt(
+            "level-b",
+            CreateAttempt(LevelOutcome.Success, 20, 30, 50d));
+
+        CampaignLevelProgressData levelA =
+            service.GetLevelProgress("level-a");
+        CampaignLevelProgressData levelB =
+            service.GetLevelProgress("level-b");
+        levelA.bestDeliveredResources = 999;
+
+        Assert.That(levelB.bestDeliveredResources, Is.EqualTo(20));
+        Assert.That(
+            service.GetLevelProgress("level-a").bestDeliveredResources,
+            Is.EqualTo(40));
+    }
+
+    [Test]
+    public void ProgressSurvivesCampaignSnapshotReload()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+        service.RecordLevelAttempt(
+            "level-a",
+            CreateAttempt(LevelOutcome.Success, 60, 60, 75d));
+
+        CampaignSaveData saved = service.CreateSnapshot();
+        service.InitializeNewCampaign();
+        service.LoadFromData(saved);
+
+        CampaignLevelProgressData progress =
+            service.GetLevelProgress("level-a");
+
+        Assert.That(progress.completed, Is.True);
+        Assert.That(progress.bestDeliveredResources, Is.EqualTo(60));
+        Assert.That(progress.perfectResourceRun, Is.True);
+        Assert.That(progress.bestSimulationSeconds, Is.EqualTo(75d));
+    }
+
+    [Test]
+    public void BlankLevelIdIsRejected()
+    {
+        service.LoadFromData(CampaignSaveData.CreateNew());
+
+        Assert.Throws<System.ArgumentException>(() =>
+            service.RecordLevelAttempt(
+                " ",
+                CreateAttempt(LevelOutcome.Success, 10, 10, 20d)));
+    }
+
+    private static LevelAttemptResult CreateAttempt(
+        LevelOutcome outcome,
+        int delivered,
+        int capacity,
+        double simulationSeconds)
+    {
+        return new LevelAttemptResult(
+            outcome,
+            totalDwarves: 10,
+            totalOreCapacity: capacity,
+            requiredMinedResources: 1,
+            spawned: 10,
+            deliveredResources: delivered,
+            died: 0,
+            recalled: 0,
+            activeAtEnd: 0,
+            unspawnedAtEnd: 0,
+            simulationSeconds: simulationSeconds);
+    }
 }

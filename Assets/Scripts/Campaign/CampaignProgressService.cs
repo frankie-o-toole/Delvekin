@@ -141,6 +141,115 @@ public sealed class CampaignProgressService : MonoBehaviour
         return result;
     }
 
+    public CampaignLevelProgressData GetLevelProgress(
+        string levelId)
+    {
+        if (current == null || string.IsNullOrWhiteSpace(levelId))
+        {
+            return null;
+        }
+
+        string normalizedId = levelId.Trim();
+
+        foreach (CampaignLevelProgressData progress in
+                 current.levelProgress)
+        {
+            if (string.Equals(
+                    progress.levelId,
+                    normalizedId,
+                    StringComparison.Ordinal))
+            {
+                return progress.Clone();
+            }
+        }
+
+        return null;
+    }
+
+    public bool RecordLevelAttempt(
+        string levelId,
+        LevelAttemptResult attempt)
+    {
+        if (string.IsNullOrWhiteSpace(levelId))
+        {
+            throw new ArgumentException(
+                "A stable level ID is required.",
+                nameof(levelId));
+        }
+
+        if (attempt == null)
+        {
+            throw new ArgumentNullException(nameof(attempt));
+        }
+
+        EnsureInitialized();
+
+        if (attempt.Outcome != LevelOutcome.Success)
+        {
+            return false;
+        }
+
+        string normalizedId = levelId.Trim();
+        CampaignLevelProgressData progress = null;
+
+        foreach (CampaignLevelProgressData candidate in
+                 current.levelProgress)
+        {
+            if (string.Equals(
+                    candidate.levelId,
+                    normalizedId,
+                    StringComparison.Ordinal))
+            {
+                progress = candidate;
+                break;
+            }
+        }
+
+        if (progress == null)
+        {
+            progress = new CampaignLevelProgressData
+            {
+                levelId = normalizedId
+            };
+            current.levelProgress.Add(progress);
+        }
+
+        bool changed = !progress.completed;
+        progress.completed = true;
+
+        if (attempt.DeliveredResources >
+            progress.bestDeliveredResources)
+        {
+            progress.bestDeliveredResources =
+                attempt.DeliveredResources;
+            changed = true;
+        }
+
+        if (attempt.IsPerfectResourceRun &&
+            !progress.perfectResourceRun)
+        {
+            progress.perfectResourceRun = true;
+            changed = true;
+        }
+
+        if (attempt.SimulationSeconds > 0d &&
+            (progress.bestSimulationSeconds <= 0d ||
+             attempt.SimulationSeconds <
+             progress.bestSimulationSeconds))
+        {
+            progress.bestSimulationSeconds =
+                attempt.SimulationSeconds;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            CampaignChanged?.Invoke();
+        }
+
+        return changed;
+    }
+
     private void EnsureInitialized()
     {
         if (current == null)
