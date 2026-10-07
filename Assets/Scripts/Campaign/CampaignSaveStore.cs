@@ -30,7 +30,7 @@ public sealed class CampaignSaveLoadResult
 }
 
 public sealed class CampaignSaveUnsupportedVersionException :
-    InvalidDataException
+    Exception
 {
     public CampaignSaveUnsupportedVersionException(string message)
         : base(message)
