@@ -3,6 +3,13 @@ using UnityEngine.InputSystem;
 
 public class OrbitCameraMode : MonoBehaviour, ICameraMode
 {
+    [Header("World Integration")]
+    [Tooltip(
+        "Keep enabled in voxel puzzle scenes. Disable in non-voxel hubs " +
+        "such as DwarfIsland.")]
+    [SerializeField]
+    private bool manageVoxelVisibility = true;
+
     [Header("Target")]
     [SerializeField] private Transform target;
 
@@ -68,9 +75,11 @@ public class OrbitCameraMode : MonoBehaviour, ICameraMode
     {
         RestoreState();
 
-        VoxelVisibilitySystem.ResetVisibility();
-
-        DwarfVisibilitySystem.ShowAll();
+        if (manageVoxelVisibility)
+        {
+            VoxelVisibilitySystem.ResetVisibility();
+            DwarfVisibilitySystem.ShowAll();
+        }
 
         justEntered = true;
 
