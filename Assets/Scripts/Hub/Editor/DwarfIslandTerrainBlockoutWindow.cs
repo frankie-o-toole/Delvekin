@@ -42,13 +42,13 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
 
     [Header("Mountain")]
     [SerializeField, Range(0.1f, 0.8f)]
-    private float primaryPeakHeight = 0.49f;
+    private float primaryPeakHeight = 0.55f;
     [SerializeField, Range(-0.55f, 0.55f)]
-    private float primaryPeakAcross = 0.2f;
+    private float primaryPeakAcross = 0.17f;
     [SerializeField, Range(0.1f, 0.7f)]
-    private float secondaryPeakHeight = 0.34f;
+    private float secondaryPeakHeight = 0.43f;
     [SerializeField, Range(-0.55f, 0.55f)]
-    private float secondaryPeakAcross = -0.3f;
+    private float secondaryPeakAcross = -0.16f;
     [SerializeField, Range(-0.65f, 0f)]
     private float mountainDepthPosition = -0.29f;
     [SerializeField, Range(0.2f, 0.9f)]
@@ -77,6 +77,28 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
     private float terraceStrength = 0.24f;
     [SerializeField, Range(0.02f, 0.14f)]
     private float terraceHeight = 0.065f;
+
+    [Header("C-Shaped Mountain")]
+    [SerializeField, Range(0.12f, 0.55f)]
+    private float armOffset = 0.34f;
+    [SerializeField, Range(-0.1f, 0.5f)]
+    private float armForwardPosition = 0.12f;
+    [SerializeField, Range(0.12f, 0.5f)]
+    private float armHeight = 0.2f;
+    [SerializeField, Range(0.15f, 0.65f)]
+    private float armLength = 0.46f;
+    [SerializeField, Range(0.1f, 0.38f)]
+    private float armThickness = 0.2f;
+
+    [Header("Surface Painting")]
+    [SerializeField]
+    private bool paintTerrainLayers = true;
+    [SerializeField, Range(0f, 1f)]
+    private float rockStartHeight = 0.19f;
+    [SerializeField, Range(0f, 1f)]
+    private float snowStartHeight = 0.4f;
+    [SerializeField, Range(0.01f, 0.25f)]
+    private float surfaceBlend = 0.07f;
 
     [Header("Approach")]
     [SerializeField, Range(0f, 0.06f)]
@@ -132,9 +154,10 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
 
         EditorGUILayout.HelpBox(
             "Generates the peninsula composition for the Dwarf Island hub: " +
-            "meadow in front, sea behind, and a two-peak mountain at the " +
-            "coast. East matches a city camera on the positive X side. " +
-            "Generation changes heights only; Terrain layers remain intact.",
+            "meadow in front, sea behind, and a C-shaped two-peak mountain " +
+            "around the recessed city facade. East matches a city camera " +
+            "on the positive X side. Optional surface painting uses Terrain " +
+            "Layers 0-2 as Grass, Rock, and Snow.",
             MessageType.Info);
 
         targetTerrain = (Terrain)EditorGUILayout.ObjectField(
@@ -151,6 +174,7 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
         DrawCoastSettings();
         DrawLandSettings();
         DrawMountainSettings();
+        DrawSurfaceSettings();
         DrawApproachSettings();
 
         EditorGUILayout.Space();
@@ -214,13 +238,13 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Mountain", EditorStyles.boldLabel);
         primaryPeakHeight = EditorGUILayout.Slider(
-            "Primary Peak Height", primaryPeakHeight, 0.1f, 0.8f);
+            "Right Peak Height", primaryPeakHeight, 0.1f, 0.8f);
         primaryPeakAcross = EditorGUILayout.Slider(
-            "Primary Peak Side", primaryPeakAcross, -0.55f, 0.55f);
+            "Right Peak Side", primaryPeakAcross, -0.55f, 0.55f);
         secondaryPeakHeight = EditorGUILayout.Slider(
-            "Secondary Peak Height", secondaryPeakHeight, 0.1f, 0.7f);
+            "Left Peak Height", secondaryPeakHeight, 0.1f, 0.7f);
         secondaryPeakAcross = EditorGUILayout.Slider(
-            "Secondary Peak Side", secondaryPeakAcross, -0.55f, 0.55f);
+            "Left Peak Side", secondaryPeakAcross, -0.55f, 0.55f);
         mountainDepthPosition = EditorGUILayout.Slider(
             "Depth Position", mountainDepthPosition, -0.65f, 0f);
         mountainWidth = EditorGUILayout.Slider(
@@ -249,6 +273,52 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
             "Terrace Strength", terraceStrength, 0f, 0.75f);
         terraceHeight = EditorGUILayout.Slider(
             "Terrace Height", terraceHeight, 0.02f, 0.14f);
+
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField("C Shape", EditorStyles.boldLabel);
+        armOffset = EditorGUILayout.Slider(
+            "Arm Side Offset", armOffset, 0.12f, 0.55f);
+        armForwardPosition = EditorGUILayout.Slider(
+            "Arm Forward Position", armForwardPosition, -0.1f, 0.5f);
+        armHeight = EditorGUILayout.Slider(
+            "Arm Height", armHeight, 0.12f, 0.5f);
+        armLength = EditorGUILayout.Slider(
+            "Arm Length", armLength, 0.15f, 0.65f);
+        armThickness = EditorGUILayout.Slider(
+            "Arm Thickness", armThickness, 0.1f, 0.38f);
+    }
+
+    private void DrawSurfaceSettings()
+    {
+        EditorGUILayout.Space();
+        EditorGUILayout.LabelField(
+            "Surface Painting",
+            EditorStyles.boldLabel);
+        paintTerrainLayers = EditorGUILayout.Toggle(
+            "Paint By Height",
+            paintTerrainLayers);
+
+        using (new EditorGUI.DisabledScope(!paintTerrainLayers))
+        {
+            rockStartHeight = EditorGUILayout.Slider(
+                "Rock Start Height", rockStartHeight, 0f, 1f);
+            snowStartHeight = EditorGUILayout.Slider(
+                "Snow Start Height", snowStartHeight, 0f, 1f);
+            surfaceBlend = EditorGUILayout.Slider(
+                "Surface Blend", surfaceBlend, 0.01f, 0.25f);
+        }
+
+        if (paintTerrainLayers &&
+            targetTerrain != null &&
+            targetTerrain.terrainData != null &&
+            targetTerrain.terrainData.terrainLayers.Length < 3)
+        {
+            EditorGUILayout.HelpBox(
+                "Assign at least three Terrain Layers in this order: " +
+                "Grass, Rock, Snow. Heights can still be generated, but " +
+                "surface painting is skipped until those layers exist.",
+                MessageType.Info);
+        }
     }
 
     private void DrawApproachSettings()
@@ -308,6 +378,12 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
         }
 
         data.SetHeights(0, 0, heights);
+
+        if (paintTerrainLayers && data.terrainLayers.Length >= 3)
+        {
+            PaintSurfaceLayers(data);
+        }
+
         EditorUtility.SetDirty(data);
         targetTerrain.Flush();
         SceneView.RepaintAll();
@@ -358,39 +434,39 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
             acrossMountain,
             mountainDepthPosition - 0.035f,
             primaryPeakAcross,
-            mountainDepth * 0.88f,
-            mountainWidth * 0.62f,
+            mountainDepth * 0.72f,
+            mountainWidth * 0.48f,
             primaryPeakHeight,
-            summitFlatness,
-            slopeCurve,
+            summitFlatness * 0.65f,
+            slopeCurve * 0.92f,
             shapeWarp);
 
         float secondaryPeak = CalculateMountainMass(
             towardViewer,
             acrossMountain,
-            mountainDepthPosition + 0.075f,
+            mountainDepthPosition + 0.015f,
             secondaryPeakAcross,
-            mountainDepth * 0.76f,
-            mountainWidth * 0.54f,
+            mountainDepth * 0.68f,
+            mountainWidth * 0.46f,
             secondaryPeakHeight,
-            summitFlatness * 1.25f,
-            slopeCurve * 0.92f,
+            summitFlatness * 0.82f,
+            slopeCurve * 0.88f,
             -shapeWarp * 0.8f);
 
-        float mountainShoulder = CalculateMountainMass(
+        float rearMountainBody = CalculateMountainMass(
             towardViewer,
             acrossMountain,
-            mountainDepthPosition + 0.015f,
-            -0.025f,
+            mountainDepthPosition + 0.02f,
+            0f,
             mountainDepth,
             mountainWidth,
-            Mathf.Min(primaryPeakHeight, secondaryPeakHeight) * 0.6f,
-            0.08f,
-            0.68f,
+            Mathf.Min(primaryPeakHeight, secondaryPeakHeight) * 0.57f,
+            0.13f,
+            0.72f,
             shapeWarp * 0.45f);
 
-        float mountainShape = Mathf.Max(
-            mountainShoulder,
+        float rearMountain = Mathf.Max(
+            rearMountainBody,
             Mathf.Max(primaryPeak, secondaryPeak));
 
         float cityCliff = 1f - SmoothStep(
@@ -402,20 +478,54 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
             cityFacadeHalfWidth,
             cityFacadeHalfWidth + 0.14f,
             Mathf.Abs(acrossMountain));
-        float facadeDepthMask = 1f - SmoothStep(
-            cityFaceSteepness,
-            cityFaceSteepness * 5f,
-            Mathf.Abs(towardViewer - cityFacePosition));
-        float facadeMask = facadeAcrossMask * facadeDepthMask;
+        float facadeCutMask = 1f - SmoothStep(
+            cityFacadeHalfWidth + 0.08f,
+            cityFacadeHalfWidth + 0.25f,
+            Mathf.Abs(acrossMountain));
+        rearMountain *= Mathf.Lerp(1f, cityCliff, facadeCutMask);
+
+        float leftArm = CalculateMountainMass(
+            towardViewer,
+            acrossMountain,
+            armForwardPosition,
+            -armOffset,
+            armLength,
+            armThickness,
+            armHeight * 0.92f,
+            0.14f,
+            0.74f,
+            shapeWarp * 0.35f);
+
+        float rightArm = CalculateMountainMass(
+            towardViewer,
+            acrossMountain,
+            armForwardPosition - 0.035f,
+            armOffset,
+            armLength * 1.04f,
+            armThickness,
+            armHeight,
+            0.12f,
+            0.72f,
+            -shapeWarp * 0.3f);
 
         float facadeRearMask = SmoothStep(
-            cityFacePosition - cityFacadeDepth - 0.1f,
             cityFacePosition - cityFacadeDepth,
+            cityFacePosition - cityFacadeDepth + 0.055f,
             towardViewer);
         float facadeMass = cityFacadeHeight *
             facadeAcrossMask *
             facadeRearMask *
             cityCliff;
+
+        float mountainShape = Mathf.Max(
+            facadeMass,
+            Mathf.Max(rearMountain, Mathf.Max(leftArm, rightArm)));
+
+        float facadeDepthMask = 1f - SmoothStep(
+            cityFaceSteepness,
+            cityFaceSteepness * 5f,
+            Mathf.Abs(towardViewer - cityFacePosition));
+        float facadeMask = facadeAcrossMask * facadeDepthMask;
 
         float mountainNoise = FractalNoise(
             x * 3.25f + seedOffset.x + 17.3f,
@@ -427,11 +537,8 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
 
         float mountain = Mathf.Max(
             0f,
-            (mountainShape +
-             roughness * SmoothStep(0.015f, 0.12f, mountainShape)) *
-            cityCliff);
-
-        mountain = Mathf.Max(mountain, facadeMass);
+            mountainShape +
+            roughness * SmoothStep(0.015f, 0.12f, mountainShape));
 
         float safeTerraceHeight = Mathf.Max(0.001f, terraceHeight);
         float terraceBase = Mathf.Floor(
@@ -479,6 +586,60 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
             pathDepth * pathMask * approachMask;
 
         return Mathf.Clamp01(Mathf.Max(seaFloorHeight, height));
+    }
+
+    private void PaintSurfaceLayers(TerrainData data)
+    {
+        int width = data.alphamapWidth;
+        int height = data.alphamapHeight;
+        int layerCount = data.terrainLayers.Length;
+        float[,,] weights = new float[height, width, layerCount];
+        float safeTerrainHeight = Mathf.Max(0.01f, data.size.y);
+
+        for (int y = 0; y < height; y++)
+        {
+            float normalizedY = y / (height - 1f);
+
+            for (int x = 0; x < width; x++)
+            {
+                float normalizedX = x / (width - 1f);
+                float normalizedHeight = data.GetInterpolatedHeight(
+                    normalizedX,
+                    normalizedY) / safeTerrainHeight;
+                float steepness = data.GetSteepness(
+                    normalizedX,
+                    normalizedY);
+
+                float exposedRock = Mathf.Max(
+                    SmoothStep(
+                        rockStartHeight,
+                        rockStartHeight + surfaceBlend,
+                        normalizedHeight),
+                    SmoothStep(28f, 54f, steepness));
+                float snowByHeight = SmoothStep(
+                    snowStartHeight,
+                    snowStartHeight + surfaceBlend,
+                    normalizedHeight);
+                float snowOnSlope = 1f - SmoothStep(
+                    48f,
+                    72f,
+                    steepness);
+                float snow = snowByHeight * Mathf.Lerp(
+                    0.38f,
+                    1f,
+                    snowOnSlope);
+                float rock = exposedRock * (1f - snow);
+                float grass = Mathf.Max(0f, 1f - exposedRock) *
+                    (1f - snow);
+                float total = Mathf.Max(0.0001f, grass + rock + snow);
+
+                weights[y, x, 0] = grass / total;
+                weights[y, x, 1] = rock / total;
+                weights[y, x, 2] = snow / total;
+            }
+        }
+
+        data.SetAlphamaps(0, 0, weights);
     }
 
     private static float CalculateMountainMass(
@@ -561,10 +722,10 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
         detailStrength = 0.025f;
         detailScale = 5.5f;
 
-        primaryPeakHeight = 0.49f;
-        primaryPeakAcross = 0.2f;
-        secondaryPeakHeight = 0.34f;
-        secondaryPeakAcross = -0.3f;
+        primaryPeakHeight = 0.55f;
+        primaryPeakAcross = 0.17f;
+        secondaryPeakHeight = 0.43f;
+        secondaryPeakAcross = -0.16f;
         mountainDepthPosition = -0.29f;
         mountainWidth = 0.58f;
         mountainDepth = 0.48f;
@@ -579,6 +740,17 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
         mountainRoughness = 0.055f;
         terraceStrength = 0.24f;
         terraceHeight = 0.065f;
+
+        armOffset = 0.34f;
+        armForwardPosition = 0.12f;
+        armHeight = 0.2f;
+        armLength = 0.46f;
+        armThickness = 0.2f;
+
+        paintTerrainLayers = true;
+        rockStartHeight = 0.19f;
+        snowStartHeight = 0.4f;
+        surfaceBlend = 0.07f;
 
         pathDepth = 0.014f;
         pathHalfWidth = 0.045f;
