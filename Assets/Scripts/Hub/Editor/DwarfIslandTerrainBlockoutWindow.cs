@@ -20,15 +20,15 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
     [SerializeField] private CityFaceDirection cityFace =
         CityFaceDirection.East;
 
-    [Header("Island")]
-    [SerializeField, Range(0.55f, 0.95f)]
-    private float islandRadius = 0.82f;
-    [SerializeField, Range(0.65f, 1.35f)]
-    private float islandAspect = 1f;
-    [SerializeField, Range(0.01f, 0.2f)]
-    private float coastlineVariation = 0.09f;
+    [Header("Coast")]
+    [SerializeField, Range(-0.5f, 0.35f)]
+    private float coastPosition = -0.08f;
+    [SerializeField, Range(0f, 0.15f)]
+    private float coastlineVariation = 0.045f;
     [SerializeField, Range(0.01f, 0.15f)]
-    private float coastSoftness = 0.055f;
+    private float coastSoftness = 0.05f;
+    [SerializeField, Range(0f, 0.04f)]
+    private float seaFloorHeight = 0.004f;
 
     [Header("Land")]
     [SerializeField, Range(0.01f, 0.2f)]
@@ -42,19 +42,31 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
 
     [Header("Mountain")]
     [SerializeField, Range(0.1f, 0.8f)]
-    private float mountainHeight = 0.46f;
-    [SerializeField, Range(0.15f, 0.75f)]
-    private float mountainWidth = 0.48f;
-    [SerializeField, Range(0.15f, 0.8f)]
-    private float mountainDepth = 0.5f;
-    [SerializeField, Range(-0.35f, 0.35f)]
-    private float mountainOffset = -0.06f;
+    private float primaryPeakHeight = 0.49f;
+    [SerializeField, Range(-0.55f, 0.55f)]
+    private float primaryPeakAcross = 0.2f;
+    [SerializeField, Range(0.1f, 0.7f)]
+    private float secondaryPeakHeight = 0.34f;
+    [SerializeField, Range(-0.55f, 0.55f)]
+    private float secondaryPeakAcross = -0.3f;
+    [SerializeField, Range(-0.65f, 0f)]
+    private float mountainDepthPosition = -0.29f;
+    [SerializeField, Range(0.2f, 0.9f)]
+    private float mountainWidth = 0.58f;
+    [SerializeField, Range(0.2f, 0.9f)]
+    private float mountainDepth = 0.48f;
     [SerializeField, Range(-0.1f, 0.65f)]
-    private float cityFacePosition = 0.26f;
+    private float cityFacePosition = 0.16f;
     [SerializeField, Range(0.01f, 0.18f)]
-    private float cityFaceSteepness = 0.055f;
+    private float cityFaceSteepness = 0.045f;
+    [SerializeField, Range(0.05f, 0.4f)]
+    private float cityFacadeHalfWidth = 0.15f;
     [SerializeField, Range(0f, 0.2f)]
-    private float mountainRoughness = 0.085f;
+    private float mountainRoughness = 0.055f;
+    [SerializeField, Range(0f, 0.75f)]
+    private float terraceStrength = 0.24f;
+    [SerializeField, Range(0.02f, 0.14f)]
+    private float terraceHeight = 0.065f;
 
     [Header("Approach")]
     [SerializeField, Range(0f, 0.06f)]
@@ -109,8 +121,9 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
             EditorStyles.boldLabel);
 
         EditorGUILayout.HelpBox(
-            "Generates an editable heightmap for the hub island. " +
-            "East matches a city camera placed on the positive X side. " +
+            "Generates the peninsula composition for the Dwarf Island hub: " +
+            "meadow in front, sea behind, and a two-peak mountain at the " +
+            "coast. East matches a city camera on the positive X side. " +
             "Generation changes heights only; Terrain layers remain intact.",
             MessageType.Info);
 
@@ -125,12 +138,17 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
             "City Face Direction",
             cityFace);
 
-        DrawIslandSettings();
+        DrawCoastSettings();
         DrawLandSettings();
         DrawMountainSettings();
         DrawApproachSettings();
 
         EditorGUILayout.Space();
+
+        if (GUILayout.Button("Reset Parameters To Sketch Defaults"))
+        {
+            ResetToSketchDefaults();
+        }
 
         using (new EditorGUI.DisabledScope(
                    targetTerrain == null ||
@@ -153,18 +171,18 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
         EditorGUILayout.EndScrollView();
     }
 
-    private void DrawIslandSettings()
+    private void DrawCoastSettings()
     {
         EditorGUILayout.Space();
-        EditorGUILayout.LabelField("Island", EditorStyles.boldLabel);
-        islandRadius = EditorGUILayout.Slider(
-            "Radius", islandRadius, 0.55f, 0.95f);
-        islandAspect = EditorGUILayout.Slider(
-            "Aspect", islandAspect, 0.65f, 1.35f);
+        EditorGUILayout.LabelField("Coast", EditorStyles.boldLabel);
+        coastPosition = EditorGUILayout.Slider(
+            "Coast Position", coastPosition, -0.5f, 0.35f);
         coastlineVariation = EditorGUILayout.Slider(
-            "Coast Variation", coastlineVariation, 0.01f, 0.2f);
+            "Coast Variation", coastlineVariation, 0f, 0.15f);
         coastSoftness = EditorGUILayout.Slider(
             "Coast Softness", coastSoftness, 0.01f, 0.15f);
+        seaFloorHeight = EditorGUILayout.Slider(
+            "Sea Floor Height", seaFloorHeight, 0f, 0.04f);
     }
 
     private void DrawLandSettings()
@@ -185,20 +203,32 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
     {
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Mountain", EditorStyles.boldLabel);
-        mountainHeight = EditorGUILayout.Slider(
-            "Height", mountainHeight, 0.1f, 0.8f);
+        primaryPeakHeight = EditorGUILayout.Slider(
+            "Primary Peak Height", primaryPeakHeight, 0.1f, 0.8f);
+        primaryPeakAcross = EditorGUILayout.Slider(
+            "Primary Peak Side", primaryPeakAcross, -0.55f, 0.55f);
+        secondaryPeakHeight = EditorGUILayout.Slider(
+            "Secondary Peak Height", secondaryPeakHeight, 0.1f, 0.7f);
+        secondaryPeakAcross = EditorGUILayout.Slider(
+            "Secondary Peak Side", secondaryPeakAcross, -0.55f, 0.55f);
+        mountainDepthPosition = EditorGUILayout.Slider(
+            "Depth Position", mountainDepthPosition, -0.65f, 0f);
         mountainWidth = EditorGUILayout.Slider(
-            "Width", mountainWidth, 0.15f, 0.75f);
+            "Overall Width", mountainWidth, 0.2f, 0.9f);
         mountainDepth = EditorGUILayout.Slider(
-            "Depth", mountainDepth, 0.15f, 0.8f);
-        mountainOffset = EditorGUILayout.Slider(
-            "Offset From Centre", mountainOffset, -0.35f, 0.35f);
+            "Overall Depth", mountainDepth, 0.2f, 0.9f);
         cityFacePosition = EditorGUILayout.Slider(
             "City Face Position", cityFacePosition, -0.1f, 0.65f);
         cityFaceSteepness = EditorGUILayout.Slider(
             "City Face Steepness", cityFaceSteepness, 0.01f, 0.18f);
+        cityFacadeHalfWidth = EditorGUILayout.Slider(
+            "City Facade Half Width", cityFacadeHalfWidth, 0.05f, 0.4f);
         mountainRoughness = EditorGUILayout.Slider(
             "Roughness", mountainRoughness, 0f, 0.2f);
+        terraceStrength = EditorGUILayout.Slider(
+            "Terrace Strength", terraceStrength, 0f, 0.75f);
+        terraceHeight = EditorGUILayout.Slider(
+            "Terrace Height", terraceHeight, 0.02f, 0.14f);
     }
 
     private void DrawApproachSettings()
@@ -245,14 +275,14 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
                 GetFaceCoordinates(
                     localX,
                     localZ,
-                    out float towardCity,
-                    out float acrossCity);
+                    out float towardViewer,
+                    out float acrossMountain);
 
                 heights[z, x] = CalculateHeight(
                     localX,
                     localZ,
-                    towardCity,
-                    acrossCity,
+                    towardViewer,
+                    acrossMountain,
                     seedOffset);
             }
         }
@@ -271,125 +301,207 @@ public sealed class DwarfIslandTerrainBlockoutWindow : EditorWindow
     private float CalculateHeight(
         float x,
         float z,
-        float towardCity,
-        float acrossCity,
+        float towardViewer,
+        float acrossMountain,
         Vector2 seedOffset)
     {
-        float aspectX = islandAspect >= 1f
-            ? islandAspect
-            : 1f;
-        float aspectZ = islandAspect < 1f
-            ? 1f / islandAspect
-            : 1f;
-
-        float ellipticalDistance = Mathf.Sqrt(
-            Square(x / aspectX) + Square(z / aspectZ));
-        float angle = Mathf.Atan2(z, x);
-
         float coastNoise = FractalNoise(
-            Mathf.Cos(angle) * 0.85f + seedOffset.x,
-            Mathf.Sin(angle) * 0.85f + seedOffset.y,
+            acrossMountain * 1.8f + seedOffset.x,
+            seedOffset.y,
             3);
-
-        float localRadius = islandRadius +
+        float localCoast = coastPosition +
             (coastNoise - 0.5f) * coastlineVariation * 2f;
-        float islandMask = 1f - SmoothStep(
-            localRadius - coastSoftness,
-            localRadius + coastSoftness,
-            ellipticalDistance);
-
-        if (islandMask <= 0f)
-        {
-            return 0f;
-        }
+        float mainlandMask = SmoothStep(
+            localCoast - coastSoftness,
+            localCoast + coastSoftness,
+            towardViewer);
 
         float landNoise = FractalNoise(
             x * detailScale + seedOffset.x,
             z * detailScale + seedOffset.y,
             4);
 
-        float meadow = shoreHeight +
-            meadowRelief * Mathf.SmoothStep(0f, 1f, islandMask) +
-            (landNoise - 0.5f) * detailStrength;
+        float meadow = seaFloorHeight + mainlandMask *
+            (shoreHeight - seaFloorHeight +
+             meadowRelief * mainlandMask +
+             (landNoise - 0.5f) * detailStrength);
 
-        float mountainU =
-            (towardCity - mountainOffset) / Mathf.Max(0.01f, mountainDepth);
-        float mountainV =
-            acrossCity / Mathf.Max(0.01f, mountainWidth);
-        float mountainDome = Mathf.Exp(
-            -(mountainU * mountainU + mountainV * mountainV) * 1.35f);
+        float primaryDepth =
+            (towardViewer - mountainDepthPosition) /
+            Mathf.Max(0.01f, mountainDepth * 0.82f);
+        float primarySide =
+            (acrossMountain - primaryPeakAcross) /
+            Mathf.Max(0.01f, mountainWidth * 0.55f);
+        float primaryPeak = Mathf.Exp(
+            -(Square(primaryDepth) * 1.15f +
+              Square(primarySide) * 1.3f)) *
+            primaryPeakHeight;
+
+        float secondaryDepth =
+            (towardViewer - (mountainDepthPosition + 0.07f)) /
+            Mathf.Max(0.01f, mountainDepth * 0.72f);
+        float secondarySide =
+            (acrossMountain - secondaryPeakAcross) /
+            Mathf.Max(0.01f, mountainWidth * 0.48f);
+        float secondaryPeak = Mathf.Exp(
+            -(Square(secondaryDepth) * 1.25f +
+              Square(secondarySide) * 1.45f)) *
+            secondaryPeakHeight;
+
+        float shoulderDepth =
+            (towardViewer - mountainDepthPosition) /
+            Mathf.Max(0.01f, mountainDepth);
+        float shoulderSide =
+            acrossMountain /
+            Mathf.Max(0.01f, mountainWidth);
+        float mountainShoulder = Mathf.Exp(
+            -(Square(shoulderDepth) + Square(shoulderSide)) * 1.3f) *
+            Mathf.Min(primaryPeakHeight, secondaryPeakHeight) * 0.58f;
+
+        float mountainShape = Mathf.Max(
+            mountainShoulder,
+            Mathf.Max(primaryPeak, secondaryPeak));
 
         float cityCliff = 1f - SmoothStep(
             cityFacePosition - cityFaceSteepness,
             cityFacePosition + cityFaceSteepness,
-            towardCity);
+            towardViewer);
+
+        float facadeAcrossMask = 1f - SmoothStep(
+            cityFacadeHalfWidth,
+            cityFacadeHalfWidth + 0.14f,
+            Mathf.Abs(acrossMountain));
+        float facadeDepthMask = 1f - SmoothStep(
+            cityFaceSteepness,
+            cityFaceSteepness * 5f,
+            Mathf.Abs(towardViewer - cityFacePosition));
+        float facadeMask = facadeAcrossMask * facadeDepthMask;
 
         float mountainNoise = FractalNoise(
             x * 3.25f + seedOffset.x + 17.3f,
             z * 3.25f + seedOffset.y - 9.7f,
             4);
-        float facadeCalm = SmoothStep(
-            cityFaceSteepness,
-            cityFaceSteepness * 4f,
-            Mathf.Abs(towardCity - cityFacePosition));
-        float roughness =
-            (mountainNoise - 0.42f) * mountainRoughness * facadeCalm;
+        float roughness = (mountainNoise - 0.45f) *
+            mountainRoughness *
+            (1f - facadeMask * 0.95f);
 
         float mountain = Mathf.Max(
             0f,
-            mountainDome * cityCliff * (mountainHeight + roughness));
+            (mountainShape +
+             roughness * SmoothStep(0.015f, 0.12f, mountainShape)) *
+            cityCliff);
+
+        float safeTerraceHeight = Mathf.Max(0.001f, terraceHeight);
+        float terraceBase = Mathf.Floor(
+            mountain / safeTerraceHeight) * safeTerraceHeight;
+        float terraceFraction = Mathf.Repeat(
+            mountain,
+            safeTerraceHeight) / safeTerraceHeight;
+        float terracedMountain = terraceBase +
+            SmoothStep(0.72f, 1f, terraceFraction) *
+            safeTerraceHeight;
+        float localTerraceStrength = terraceStrength *
+            (1f - facadeMask);
+        mountain = Mathf.Lerp(
+            mountain,
+            terracedMountain,
+            localTerraceStrength);
+
+        float mountainFootprint = SmoothStep(
+            0.008f,
+            0.085f,
+            mountainShape * cityCliff);
+        float peninsulaBase = Mathf.Lerp(
+            seaFloorHeight,
+            shoreHeight,
+            mountainFootprint);
+        float baseHeight = Mathf.Max(meadow, peninsulaBase);
 
         float pathCentre = Mathf.Sin(
-            Mathf.InverseLerp(-islandRadius, cityFacePosition, towardCity) *
-            Mathf.PI * 1.35f) * pathCurve;
-        float pathDistance = Mathf.Abs(acrossCity - pathCentre);
+            Mathf.InverseLerp(cityFacePosition, 1f, towardViewer) *
+            Mathf.PI * 1.25f) * pathCurve;
+        float pathDistance = Mathf.Abs(
+            acrossMountain - pathCentre);
         float pathMask = 1f - SmoothStep(
             pathHalfWidth,
             pathHalfWidth * 2f,
             pathDistance);
         float approachMask = SmoothStep(
-            -islandRadius,
-            -islandRadius * 0.35f,
-            towardCity) *
-            (1f - SmoothStep(
-                cityFacePosition - 0.1f,
-                cityFacePosition + 0.04f,
-                towardCity));
+            cityFacePosition - 0.03f,
+            cityFacePosition + 0.09f,
+            towardViewer) *
+            (1f - SmoothStep(0.92f, 1.02f, towardViewer));
 
-        float height = meadow + mountain -
+        float height = baseHeight + mountain -
             pathDepth * pathMask * approachMask;
 
-        return Mathf.Clamp01(height * islandMask);
+        return Mathf.Clamp01(Mathf.Max(seaFloorHeight, height));
     }
 
     private void GetFaceCoordinates(
         float x,
         float z,
-        out float towardCity,
-        out float acrossCity)
+        out float towardViewer,
+        out float acrossMountain)
     {
         switch (cityFace)
         {
             case CityFaceDirection.West:
-                towardCity = -x;
-                acrossCity = -z;
+                towardViewer = -x;
+                acrossMountain = -z;
                 break;
 
             case CityFaceDirection.North:
-                towardCity = z;
-                acrossCity = x;
+                towardViewer = z;
+                acrossMountain = x;
                 break;
 
             case CityFaceDirection.South:
-                towardCity = -z;
-                acrossCity = -x;
+                towardViewer = -z;
+                acrossMountain = -x;
                 break;
 
             default:
-                towardCity = x;
-                acrossCity = z;
+                towardViewer = x;
+                acrossMountain = z;
                 break;
         }
+    }
+
+    private void ResetToSketchDefaults()
+    {
+        seed = 2718;
+        cityFace = CityFaceDirection.East;
+
+        coastPosition = -0.08f;
+        coastlineVariation = 0.045f;
+        coastSoftness = 0.05f;
+        seaFloorHeight = 0.004f;
+
+        shoreHeight = 0.045f;
+        meadowRelief = 0.018f;
+        detailStrength = 0.025f;
+        detailScale = 5.5f;
+
+        primaryPeakHeight = 0.49f;
+        primaryPeakAcross = 0.2f;
+        secondaryPeakHeight = 0.34f;
+        secondaryPeakAcross = -0.3f;
+        mountainDepthPosition = -0.29f;
+        mountainWidth = 0.58f;
+        mountainDepth = 0.48f;
+        cityFacePosition = 0.16f;
+        cityFaceSteepness = 0.045f;
+        cityFacadeHalfWidth = 0.15f;
+        mountainRoughness = 0.055f;
+        terraceStrength = 0.24f;
+        terraceHeight = 0.065f;
+
+        pathDepth = 0.014f;
+        pathHalfWidth = 0.045f;
+        pathCurve = 0.13f;
+
+        Repaint();
     }
 
     private static Vector2 BuildSeedOffset(int value)
