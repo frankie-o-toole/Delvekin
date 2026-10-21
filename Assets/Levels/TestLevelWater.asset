@@ -12,11 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9df606da5228470bbad67d7a31c98854, type: 3}
   m_Name: TestLevelWater
   m_EditorClassIdentifier: Assembly-CSharp::LevelDefinition
-  schemaVersion: 8
+  schemaVersion: 9
   levelId: 4803cfc7edad437eb7f2d8a9ea3c93d7
   displayName: New Level
-  totalDwarves: 5
-  requiredRescues: 4
+  totalDwarves: 100
+  requiredMinedResources: 50
   jobRules:
   - jobType: 1
     defaultCount: 20
@@ -25,6 +25,12 @@ MonoBehaviour:
     defaultCount: 5
     maximumCount: 5
   - jobType: 3
+    defaultCount: 5
+    maximumCount: 5
+  - jobType: 4
+    defaultCount: 5
+    maximumCount: 5
+  - jobType: 5
     defaultCount: 5
     maximumCount: 5
   originInChunks: {x: 0, y: 0, z: 0}
@@ -150652,10 +150658,6 @@ MonoBehaviour:
     type: 1
     facing: 0
     waterAmount: 2
-  - position: {x: 13, y: 6, z: 60}
-    type: 1
-    facing: 0
-    waterAmount: 2
   - position: {x: 13, y: 6, z: 61}
     type: 1
     facing: 0
@@ -235353,10 +235355,6 @@ MonoBehaviour:
     facing: 0
     waterAmount: 2
   - position: {x: 27, y: 38, z: 2}
-    type: 1
-    facing: 0
-    waterAmount: 2
-  - position: {x: 27, y: 38, z: 3}
     type: 1
     facing: 0
     waterAmount: 2
@@ -344144,10 +344142,6 @@ MonoBehaviour:
     type: 2
     facing: 0
     waterAmount: 2
-  - position: {x: 40, y: 62, z: 7}
-    type: 1
-    facing: 0
-    waterAmount: 2
   - position: {x: 40, y: 62, z: 8}
     type: 1
     facing: 0
@@ -445180,10 +445174,6 @@ MonoBehaviour:
     type: 1
     facing: 0
     waterAmount: 2
-  - position: {x: 53, y: 10, z: 71}
-    type: 11
-    facing: 0
-    waterAmount: 2
   - position: {x: 53, y: 10, z: 76}
     type: 1
     facing: 0
@@ -539600,10 +539590,6 @@ MonoBehaviour:
     type: 1
     facing: 0
     waterAmount: 2
-  - position: {x: 67, y: 31, z: 6}
-    type: 1
-    facing: 0
-    waterAmount: 2
   - position: {x: 67, y: 31, z: 73}
     type: 1
     facing: 0
@@ -570322,10 +570308,6 @@ MonoBehaviour:
     waterAmount: 2
   - position: {x: 71, y: 61, z: 79}
     type: 2
-    facing: 0
-    waterAmount: 2
-  - position: {x: 71, y: 62, z: 72}
-    type: 11
     facing: 0
     waterAmount: 2
   - position: {x: 72, y: 0, z: 0}
@@ -685775,8 +685757,8 @@ MonoBehaviour:
   entities:
   - entityId: 2e776006ae1b40e5b1770ddbf88b6218
     type: 0
-    position: {x: 62, y: 27.5, z: 5.5}
-    rotation: {x: -0, y: -0, z: -0, w: 1}
+    position: {x: 62.000008, y: 27.5, z: 5.4999847}
+    rotation: {x: -0, y: -0, z: -0, w: 1.0000001}
     volumeSize: {x: 6, y: 1, z: 1}
     facing: 0
     overrideMaximumFillY: 0
@@ -685803,7 +685785,7 @@ MonoBehaviour:
     oreCapacity: 60
   - entityId: d570ee043e1f49fbab1fb2266e6e18e0
     type: 2
-    position: {x: 40.28398, y: 74.89, z: 19.796955}
+    position: {x: 40.28398, y: 74.89, z: 19.796864}
     rotation: {x: -0, y: 0.7099682, z: -0, w: 0.7042338}
     volumeSize: {x: 5, y: 4, z: 5}
     facing: 0
@@ -685817,7 +685799,7 @@ MonoBehaviour:
     oreCapacity: 60
   - entityId: a10fd861a49e41828f39f573bfc334cd
     type: 3
-    position: {x: 40.447353, y: 58.97, z: 33.776276}
+    position: {x: 40, y: 58, z: 34}
     rotation: {x: -0, y: -0, z: -0, w: 1.0000001}
     volumeSize: {x: 6, y: 8, z: 6}
     facing: 0
@@ -685828,10 +685810,10 @@ MonoBehaviour:
     visualPrefab: {fileID: 0}
     visualPrefabResourcePath: 
     spawnMarkerLocalPosition: {x: 0, y: 0, z: 0}
-    oreCapacity: 4
+    oreCapacity: 50
   - entityId: add9c331dad24b8cab30f1d0d78fa276
     type: 3
-    position: {x: 13.972527, y: 10.739998, z: 61.6519}
+    position: {x: 40, y: 58, z: 15}
     rotation: {x: -0, y: -0, z: -0, w: 1.0000001}
     volumeSize: {x: 6, y: 8, z: 6}
     facing: 0
@@ -685842,4 +685824,4 @@ MonoBehaviour:
     visualPrefab: {fileID: 0}
     visualPrefabResourcePath: 
     spawnMarkerLocalPosition: {x: 0, y: 0, z: 0}
-    oreCapacity: 60
+    oreCapacity: 50
