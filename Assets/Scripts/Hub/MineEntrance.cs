@@ -37,7 +37,7 @@ public sealed class MineEntrance : MonoBehaviour
 
     public bool RequestActivation()
     {
-        if (!IsLaunchable)
+        if (CurrentState?.IsValid != true)
         {
             return false;
         }

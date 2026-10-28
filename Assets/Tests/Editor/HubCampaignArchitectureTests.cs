@@ -195,7 +195,7 @@ public sealed class HubCampaignArchitectureTests
     }
 
     [Test]
-    public void LockedEntranceRejectsActivation()
+    public void LockedEntranceCanBeInspectedButNotLaunched()
     {
         LevelDefinition prerequisite =
             CreateLevel("level-a", "Level A");
@@ -228,12 +228,17 @@ public sealed class HubCampaignArchitectureTests
 
         bool activated = entrance.RequestActivation();
 
-        Assert.That(activated, Is.False);
+        Assert.That(activated, Is.True);
         Assert.That(entrance.IsLaunchable, Is.False);
         Assert.That(
             entrance.CurrentState.Availability,
             Is.EqualTo(HubLevelAvailability.Locked));
-        Assert.That(controller.SelectedLevelState, Is.Null);
+        Assert.That(
+            controller.SelectedLevelState.LevelId,
+            Is.EqualTo(lockedLevel.LevelId));
+        Assert.That(
+            controller.SelectedLevelPresentation.LockedReason,
+            Does.Contain(prerequisite.DisplayName));
     }
 
     [Test]
@@ -288,6 +293,36 @@ public sealed class HubCampaignArchitectureTests
         Assert.That(
             refreshedState.Availability,
             Is.EqualTo(HubLevelAvailability.Available));
+    }
+
+    [Test]
+    public void PresentationExposesObjectiveRewardAndBestResult()
+    {
+        LevelDefinition level = CreateLevel("level-a", "Level A");
+        HubLevelNode node = new(
+            level,
+            startsUnlocked: true,
+            HubLevelUnlockMode.CompleteAllPrerequisites);
+        campaign.RecordLevelAttempt(
+            level.LevelId,
+            CreateSuccessfulAttempt(20, 30));
+        HubLevelState state =
+            HubLevelStateResolver.Resolve(node, campaign);
+
+        HubLevelPresentation presentation =
+            HubLevelPresentationResolver.Resolve(
+                state,
+                node,
+                campaign);
+
+        Assert.That(presentation.DisplayName, Is.EqualTo("Level A"));
+        Assert.That(
+            presentation.Availability,
+            Is.EqualTo(HubLevelAvailability.Completed));
+        Assert.That(presentation.RequiredMinedResources, Is.EqualTo(1));
+        Assert.That(presentation.BestDeliveredResources, Is.EqualTo(20));
+        Assert.That(presentation.BestSimulationSeconds, Is.EqualTo(60d));
+        Assert.That(presentation.LockedReason, Is.Empty);
     }
 
     private LevelDefinition CreateLevel(

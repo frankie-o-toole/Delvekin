@@ -24,15 +24,22 @@ public sealed class HubCampaignController : MonoBehaviour
 
     private readonly Dictionary<string, HubLevelState> states =
         new(StringComparer.Ordinal);
+    private readonly Dictionary<string, HubLevelPresentation> presentations =
+        new(StringComparer.Ordinal);
     private CampaignProgressService campaign;
     private GameFlowService gameFlow;
 
     public HubCampaignDefinition Definition => campaignDefinition;
     public HubLevelState SelectedLevelState { get; private set; }
+    public HubLevelPresentation SelectedLevelPresentation { get; private set; }
     public IReadOnlyDictionary<string, HubLevelState> States => states;
+    public IReadOnlyDictionary<string, HubLevelPresentation> Presentations =>
+        presentations;
 
     public event Action<HubLevelState> LevelStateChanged;
     public event Action<HubLevelState> LevelSelected;
+    public event Action<HubLevelPresentation> LevelPresentationSelected;
+    public event Action LevelSelectionCleared;
     public event Action<string> LaunchRejected;
 
     private void OnEnable()
@@ -107,6 +114,7 @@ public sealed class HubCampaignController : MonoBehaviour
     public void RefreshAll()
     {
         states.Clear();
+        presentations.Clear();
 
         if (campaignDefinition != null)
         {
@@ -121,6 +129,12 @@ public sealed class HubCampaignController : MonoBehaviour
                 }
 
                 states.Add(state.LevelId, state);
+                presentations.Add(
+                    state.LevelId,
+                    HubLevelPresentationResolver.Resolve(
+                        state,
+                        node,
+                        campaign));
                 LevelStateChanged?.Invoke(state);
             }
         }
@@ -136,6 +150,12 @@ public sealed class HubCampaignController : MonoBehaviour
                 out HubLevelState refreshedSelection))
         {
             SelectedLevelState = refreshedSelection;
+            presentations.TryGetValue(
+                refreshedSelection.LevelId,
+                out HubLevelPresentation refreshedPresentation);
+            SelectedLevelPresentation = refreshedPresentation;
+            LevelSelected?.Invoke(refreshedSelection);
+            LevelPresentationSelected?.Invoke(refreshedPresentation);
         }
     }
 
@@ -152,18 +172,45 @@ public sealed class HubCampaignController : MonoBehaviour
         return states.TryGetValue(levelId.Trim(), out state);
     }
 
+    public bool TryGetPresentation(
+        string levelId,
+        out HubLevelPresentation presentation)
+    {
+        if (string.IsNullOrWhiteSpace(levelId))
+        {
+            presentation = null;
+            return false;
+        }
+
+        return presentations.TryGetValue(
+            levelId.Trim(),
+            out presentation);
+    }
+
     public bool SelectLevel(string levelId)
     {
         if (!TryGetState(levelId, out HubLevelState state) ||
-            !state.IsLaunchable)
+            !state.IsValid)
         {
             LaunchRejected?.Invoke(levelId ?? string.Empty);
             return false;
         }
 
         SelectedLevelState = state;
+        presentations.TryGetValue(
+            state.LevelId,
+            out HubLevelPresentation presentation);
+        SelectedLevelPresentation = presentation;
         LevelSelected?.Invoke(state);
+        LevelPresentationSelected?.Invoke(presentation);
         return true;
+    }
+
+    public void ClearSelection()
+    {
+        SelectedLevelState = null;
+        SelectedLevelPresentation = null;
+        LevelSelectionCleared?.Invoke();
     }
 
     public bool LaunchSelectedLevel()
