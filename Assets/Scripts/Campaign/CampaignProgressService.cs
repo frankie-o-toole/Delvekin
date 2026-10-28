@@ -47,10 +47,22 @@ public sealed class CampaignProgressService : MonoBehaviour
     {
         if (Instance != null && Instance != this)
         {
-            Debug.LogError(
-                "Only one CampaignProgressService may be active.",
-                this);
-            enabled = false;
+            /*
+             * The hub owns the authored service. When the persistent
+             * instance returns to the hub, Unity also instantiates the
+             * scene-authored copy again. That is an expected scene reload,
+             * so discard the new copy instead of treating it as an error or
+             * leaving a disabled duplicate in the hierarchy.
+             */
+            if (Application.isPlaying)
+            {
+                Destroy(gameObject);
+            }
+            else
+            {
+                enabled = false;
+            }
+
             return;
         }
 
