@@ -13,6 +13,12 @@ public sealed class HubCampaignController : MonoBehaviour
     [SerializeField]
     private bool discoverEntrancesOnEnable = true;
 
+    [Tooltip(
+        "Useful while no level-information UI exists. When disabled, an " +
+        "entrance only selects its level and UI can launch it explicitly.")]
+    [SerializeField]
+    private bool launchImmediatelyOnEntranceActivation;
+
     [SerializeField]
     private List<MineEntrance> entrances = new();
 
@@ -187,6 +193,18 @@ public sealed class HubCampaignController : MonoBehaviour
         return SelectLevel(levelId) && LaunchSelectedLevel();
     }
 
+    [ContextMenu("Development/Refresh Hub States")]
+    private void RefreshFromContextMenu()
+    {
+        RefreshAll();
+    }
+
+    [ContextMenu("Development/Launch Selected Level")]
+    private void LaunchSelectedFromContextMenu()
+    {
+        LaunchSelectedLevel();
+    }
+
     private void BindServices(
         CampaignProgressService campaignService,
         GameFlowService flowService)
@@ -262,9 +280,14 @@ public sealed class HubCampaignController : MonoBehaviour
 
     private void HandleEntranceActivation(MineEntrance entrance)
     {
-        if (entrance != null)
+        if (entrance == null || !SelectLevel(entrance.LevelId))
         {
-            SelectLevel(entrance.LevelId);
+            return;
+        }
+
+        if (launchImmediatelyOnEntranceActivation)
+        {
+            LaunchSelectedLevel();
         }
     }
 
