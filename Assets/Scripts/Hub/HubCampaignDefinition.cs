@@ -33,7 +33,8 @@ public sealed class HubLevelNode
     public bool StartsUnlocked => startsUnlocked;
     public HubLevelUnlockMode UnlockMode => unlockMode;
     public IReadOnlyList<LevelDefinition> Prerequisites =>
-        prerequisites ?? Array.Empty<LevelDefinition>();
+        (IReadOnlyList<LevelDefinition>)prerequisites ??
+        Array.Empty<LevelDefinition>();
 
     public HubLevelNode()
     {
@@ -63,7 +64,8 @@ public sealed class HubCampaignDefinition : ScriptableObject
     private List<HubLevelNode> levels = new();
 
     public IReadOnlyList<HubLevelNode> Levels =>
-        levels ?? Array.Empty<HubLevelNode>();
+        (IReadOnlyList<HubLevelNode>)levels ??
+        Array.Empty<HubLevelNode>();
 
     public bool TryGetNode(
         string levelId,
