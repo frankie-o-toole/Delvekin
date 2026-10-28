@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a6a063b37f1f4e4692a75454e0d062f1, type: 3}
+  m_Name: HubCampaignDefinition
+  m_EditorClassIdentifier: Assembly-CSharp::HubCampaignDefinition
+  levels:
+  - level: {fileID: 11400000, guid: 3ac09c1e9efcac14188ada4aa91e618e, type: 2}
+    startsUnlocked: 1
+    unlockMode: 0
+    prerequisites: []
