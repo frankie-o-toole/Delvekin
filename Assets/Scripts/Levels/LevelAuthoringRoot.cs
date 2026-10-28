@@ -114,6 +114,20 @@ public sealed class LevelAuthoringRoot : MonoBehaviour
     public int MaximumVoxelsPerOperation =>
         Mathf.Max(1, maximumVoxelsPerOperation);
 
+    public bool ConfigureRuntimeLevel(LevelDefinition definition)
+    {
+        if (!Application.isPlaying ||
+            definition == null ||
+            voxelWorld == null)
+        {
+            return false;
+        }
+
+        levelDefinition = definition;
+        voxelWorld.SetStartingLevel(levelDefinition);
+        return true;
+    }
+
     public bool RebuildPreview()
     {
         if (Application.isPlaying ||

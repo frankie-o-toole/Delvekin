@@ -11,6 +11,9 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Main.unity
     guid: 806ad8e636cc33a43a8f009cfd63d1e6
+  - enabled: 1
+    path: Assets/Scenes/DwarfIsland.unity
+    guid: 670a9b49735f3f24a812b9dfd0e913f2
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   m_UseUCBPForAssetBundles: 0
