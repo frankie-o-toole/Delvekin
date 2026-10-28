@@ -194,6 +194,102 @@ public sealed class HubCampaignArchitectureTests
         Assert.That(controller.SelectedLevelState.LevelId, Is.EqualTo("level-a"));
     }
 
+    [Test]
+    public void LockedEntranceRejectsActivation()
+    {
+        LevelDefinition prerequisite =
+            CreateLevel("level-a", "Level A");
+        LevelDefinition lockedLevel =
+            CreateLevel("level-b", "Level B");
+        HubCampaignDefinition definition =
+            CreateScriptable<HubCampaignDefinition>();
+        definition.ReplaceLevels(new[]
+        {
+            new HubLevelNode(
+                prerequisite,
+                true,
+                HubLevelUnlockMode.CompleteAllPrerequisites),
+            new HubLevelNode(
+                lockedLevel,
+                false,
+                HubLevelUnlockMode.CompleteAllPrerequisites,
+                new[] { prerequisite })
+        });
+
+        GameObject controllerObject = CreateGameObject("Hub Controller");
+        HubCampaignController controller =
+            controllerObject.AddComponent<HubCampaignController>();
+        controller.Configure(definition, campaign);
+
+        GameObject entranceObject = CreateGameObject("Mine Entrance");
+        MineEntrance entrance = entranceObject.AddComponent<MineEntrance>();
+        entrance.Configure(lockedLevel);
+        controller.RegisterEntrance(entrance);
+
+        bool activated = entrance.RequestActivation();
+
+        Assert.That(activated, Is.False);
+        Assert.That(entrance.IsLaunchable, Is.False);
+        Assert.That(
+            entrance.CurrentState.Availability,
+            Is.EqualTo(HubLevelAvailability.Locked));
+        Assert.That(controller.SelectedLevelState, Is.Null);
+    }
+
+    [Test]
+    public void CompletingPrerequisiteRefreshesEntranceAutomatically()
+    {
+        LevelDefinition prerequisite =
+            CreateLevel("level-a", "Level A");
+        LevelDefinition unlockedLevel =
+            CreateLevel("level-b", "Level B");
+        HubCampaignDefinition definition =
+            CreateScriptable<HubCampaignDefinition>();
+        definition.ReplaceLevels(new[]
+        {
+            new HubLevelNode(
+                prerequisite,
+                true,
+                HubLevelUnlockMode.CompleteAllPrerequisites),
+            new HubLevelNode(
+                unlockedLevel,
+                false,
+                HubLevelUnlockMode.CompleteAllPrerequisites,
+                new[] { prerequisite })
+        });
+
+        GameObject controllerObject = CreateGameObject("Hub Controller");
+        HubCampaignController controller =
+            controllerObject.AddComponent<HubCampaignController>();
+        controller.Configure(definition, campaign);
+
+        GameObject entranceObject = CreateGameObject("Mine Entrance");
+        MineEntrance entrance = entranceObject.AddComponent<MineEntrance>();
+        entrance.Configure(unlockedLevel);
+        controller.RegisterEntrance(entrance);
+
+        Assert.That(
+            entrance.CurrentState.Availability,
+            Is.EqualTo(HubLevelAvailability.Locked));
+
+        campaign.RecordLevelAttempt(
+            prerequisite.LevelId,
+            CreateSuccessfulAttempt(20, 30));
+
+        Assert.That(
+            entrance.CurrentState.Availability,
+            Is.EqualTo(HubLevelAvailability.Available));
+        Assert.That(entrance.IsLaunchable, Is.True);
+        Assert.That(
+            controller.TryGetState(
+                unlockedLevel.LevelId,
+                out HubLevelState refreshedState),
+            Is.True);
+        Assert.That(
+            refreshedState.Availability,
+            Is.EqualTo(HubLevelAvailability.Available));
+    }
+
     private LevelDefinition CreateLevel(
         string levelId,
         string displayName)
